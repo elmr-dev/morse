@@ -69,7 +69,7 @@ def extract_envelope(audio: np.ndarray, sample_rate: int = 8000,
                             min(pwr.shape[1] - 2, tone_bin + 5)], dtype=int)
 
     bg_power = np.median(pwr[:, bg_bins], axis=1) + 1e-10
-    ch1 = _soft_normalize((tone_power / bg_power)[:n_out])
+    ch1 = _soft_normalize(np.sqrt(tone_power / bg_power)[:n_out])
 
     return np.column_stack([ch0, ch1])
 
