@@ -80,7 +80,7 @@ def extract_envelope(audio: np.ndarray, sample_rate: int = 8000,
     Q_box = np.convolve(Q, box, mode='same')
     mag_box = np.sqrt(I_box**2 + Q_box**2)
     ch_box = _decimate(mag_box, 16)[:n_out]
-    ch_box = _soft_normalize(ch_box)
+    ch_box = _soft_normalize(ch_box, noise_window_ms=750)
 
     # ch2: min(Butterworth, STFT) — spectral+IQ agreement
     ch2 = np.minimum(ch0, ch1)
