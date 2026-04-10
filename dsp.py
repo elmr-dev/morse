@@ -19,10 +19,11 @@ def extract_envelope(audio: np.ndarray, sample_rate: int = 8000,
     """
     Extract multi-channel soft envelope from CW audio.
 
-    ch0: IQ magnitude, N2/fc=20 Hz
-    ch1: Phase coherence, 50 ms (same 20 Hz filtered signal)
-    ch2: STFT spectral contrast, 25 ms window (effective delay ~12 ms vs 25 ms
-         for the 50 ms version — better timing alignment with ch0).
+    ch0: IQ magnitude, N2/fc=20 Hz (group delay ~11 ms)
+    ch1: STFT spectral contrast, 25 ms window (effective delay ~12 ms)
+         ch1 was formerly IQ phase coherence (AUC 0.6265) which was hurting
+         the HMM due to poor discriminability and correlation with ch0.
+         Using only the two best channels (IQ amplitude + STFT contrast).
     """
     n_out = len(audio) // 16
     n = len(audio)
@@ -40,23 +41,8 @@ def extract_envelope(audio: np.ndarray, sample_rate: int = 8000,
     ch0 = _decimate(mag, 16)[:n_out]
     ch0 = _soft_normalize(ch0)
 
-    # === Channel 1: Phase Coherence (50 ms, vectorized) ===
-    phase = np.arctan2(Q_filt, I_filt)
-    win_pc = 400
-    cs_cos = np.concatenate([[0.0], np.cumsum(np.cos(phase))])
-    cs_sin = np.concatenate([[0.0], np.cumsum(np.sin(phase))])
-    R = np.zeros(n)
-    idx_pc = np.arange(win_pc, n)
-    mc = (cs_cos[idx_pc + 1] - cs_cos[idx_pc + 1 - win_pc]) / win_pc
-    ms = (cs_sin[idx_pc + 1] - cs_sin[idx_pc + 1 - win_pc]) / win_pc
-    R[idx_pc] = np.sqrt(mc**2 + ms**2)
-    ch1 = _decimate(R, 16)[:n_out]
-    ch1 = _soft_normalize(ch1)
-
-    # === Channel 2: STFT Spectral Contrast (25 ms window) ===
-    # 25 ms (200 samples) halves the effective delay vs 50 ms.
-    # bin_hz = 40 Hz; aggregate ±1 bin (±40 Hz) around tone.
-    win_stft = 200
+    # === Channel 1: STFT Spectral Contrast (25 ms window) ===
+    win_stft = 200  # 25 ms at 8 kHz; bin_hz = 40 Hz
     hann = np.hanning(win_stft)
     audio_pad = np.concatenate([np.zeros(win_stft), audio])
     frames = np.lib.stride_tricks.as_strided(
@@ -64,7 +50,7 @@ def extract_envelope(audio: np.ndarray, sample_rate: int = 8000,
         shape=(n_out, win_stft),
         strides=(audio_pad.strides[0] * 16, audio_pad.strides[0])
     ).copy()
-    pwr = np.abs(np.fft.rfft(frames * hann, axis=1)) ** 2  # (n_out, 101)
+    pwr = np.abs(np.fft.rfft(frames * hann, axis=1)) ** 2
 
     bin_hz = sample_rate / win_stft  # 40 Hz/bin
     tone_bin = int(round(tone_freq / bin_hz))
@@ -80,9 +66,9 @@ def extract_envelope(audio: np.ndarray, sample_rate: int = 8000,
                             min(pwr.shape[1] - 2, tone_bin + 5)], dtype=int)
 
     bg_power = pwr[:, bg_bins].mean(axis=1) + 1e-10
-    ch2 = _soft_normalize((tone_power / bg_power)[:n_out])
+    ch1 = _soft_normalize((tone_power / bg_power)[:n_out])
 
-    return np.column_stack([ch0, ch1, ch2])
+    return np.column_stack([ch0, ch1])
 
 
 def _decimate(x, factor):
