@@ -68,7 +68,10 @@ def extract_envelope(audio: np.ndarray, sample_rate: int = 8000,
         bg_bins = np.array([max(1, tone_bin - 5),
                             min(pwr.shape[1] - 2, tone_bin + 5)], dtype=int)
 
-    bg_power = np.median(pwr[:, bg_bins], axis=1) + 1e-10
+    bg_power_frame = np.median(pwr[:, bg_bins], axis=1) + 1e-10
+    from scipy.ndimage import median_filter as _mf
+    bg_power_smooth = _mf(bg_power_frame, size=375)  # 750ms running median
+    bg_power = np.maximum(bg_power_frame, bg_power_smooth)
     ch1 = _soft_normalize(((tone_power / bg_power) ** 0.60)[:n_out])
 
     # Compute 48ms box-filter IQ (used for ch2 and ch3).
@@ -106,7 +109,7 @@ def _soft_normalize(env, noise_window_ms=500, sr=500):
     from scipy.ndimage import minimum_filter1d
     noise_floor = minimum_filter1d(smoothed, size=win)
 
-    signal_level = np.percentile(env, 95)
+    signal_level = np.percentile(env, 97)
     denom = max(signal_level - np.median(noise_floor), 1e-10)
     normalized = (env - noise_floor) / denom
 
