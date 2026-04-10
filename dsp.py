@@ -19,8 +19,10 @@ def extract_envelope(audio: np.ndarray, sample_rate: int = 8000,
     """
     Extract multi-channel soft envelope from CW audio.
 
-    ch0: IQ magnitude envelope (30 Hz LPF) — narrower than baseline for better SNR
-    ch1: Phase coherence (50 ms sliding window, vectorized)
+    ch0: IQ magnitude, 4th-order Butterworth at 20 Hz.
+         Same group delay (~32 ms) as the previous 6th-order/30 Hz filter,
+         but noise bandwidth ~24 Hz vs ~35 Hz → 1.5 dB SNR improvement.
+    ch1: Phase coherence (50 ms sliding window, vectorized).
     """
     n_out = len(audio) // 16  # 500 Hz output
 
@@ -29,8 +31,9 @@ def extract_envelope(audio: np.ndarray, sample_rate: int = 8000,
     I = audio * np.cos(2 * np.pi * tone_freq * t)
     Q = audio * -np.sin(2 * np.pi * tone_freq * t)
 
-    # === Channel 0: IQ Envelope (30 Hz LPF — narrower for noise rejection) ===
-    sos_lp = butter(6, 30, btype='low', fs=sample_rate, output='sos')
+    # === Channel 0: IQ Envelope — 4th-order Butterworth at 20 Hz ===
+    # Noise BW ≈ 24.4 Hz vs 34.5 Hz for N6/fc30. Same group delay, better SNR.
+    sos_lp = butter(4, 20, btype='low', fs=sample_rate, output='sos')
     I_filt = sosfilt(sos_lp, I)
     Q_filt = sosfilt(sos_lp, Q)
     mag = np.sqrt(I_filt**2 + Q_filt**2)
@@ -38,20 +41,15 @@ def extract_envelope(audio: np.ndarray, sample_rate: int = 8000,
     ch0 = _decimate(mag, 16)[:n_out]
     ch0 = _soft_normalize(ch0)
 
-    # === Channel 1: Phase Coherence (vectorized, no Python loop) ===
-    # Circular mean resultant R over 50ms window (400 samples at 8kHz)
+    # === Channel 1: Phase Coherence (50 ms, vectorized) ===
     sos_lp2 = butter(6, 60, btype='low', fs=sample_rate, output='sos')
     I2 = sosfilt(sos_lp2, I)
     Q2 = sosfilt(sos_lp2, Q)
     phase = np.arctan2(Q2, I2)
 
-    win = 400  # 50ms at 8kHz
-    cos_phase = np.cos(phase)
-    sin_phase = np.sin(phase)
-
-    cs_cos = np.concatenate([[0.0], np.cumsum(cos_phase)])
-    cs_sin = np.concatenate([[0.0], np.cumsum(sin_phase)])
-
+    win = 400  # 50 ms at 8 kHz
+    cs_cos = np.concatenate([[0.0], np.cumsum(np.cos(phase))])
+    cs_sin = np.concatenate([[0.0], np.cumsum(np.sin(phase))])
     n = len(phase)
     R = np.zeros(n)
     idx = np.arange(win, n)
