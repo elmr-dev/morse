@@ -71,11 +71,7 @@ def extract_envelope(audio: np.ndarray, sample_rate: int = 8000,
     bg_power = np.median(pwr[:, bg_bins], axis=1) + 1e-10
     ch1 = _soft_normalize(((tone_power / bg_power) ** (1/3))[:n_out])
 
-    # ch2: min agreement channel
-    ch_agree = np.minimum(ch0, ch1)
-
-    # ch3: 48ms box-filter IQ — matched filter for dit duration, better -18dB.
-    # Box gives 25.8 dB processing gain vs 24.2 dB (Butterworth), complementary.
+    # Compute 48ms box-filter IQ (used for ch2 and ch3).
     N_dit = int(round(0.048 * sample_rate))  # 384 at 8kHz
     if N_dit % 2 == 0:
         N_dit += 1  # odd for centered convolution
@@ -83,10 +79,15 @@ def extract_envelope(audio: np.ndarray, sample_rate: int = 8000,
     I_box = np.convolve(I, box, mode='same')
     Q_box = np.convolve(Q, box, mode='same')
     mag_box = np.sqrt(I_box**2 + Q_box**2)
-    ch3 = _decimate(mag_box, 16)[:n_out]
-    ch3 = _soft_normalize(ch3)
+    ch_box = _decimate(mag_box, 16)[:n_out]
+    ch_box = _soft_normalize(ch_box)
 
-    return np.column_stack([ch0, ch1, ch_agree, ch3])
+    # ch2: min(Butterworth, STFT) — spectral+IQ agreement
+    ch2 = np.minimum(ch0, ch1)
+    # ch3: min(Butterworth, Box) — IQ persistence (burst filter)
+    ch3 = np.minimum(ch0, ch_box)
+
+    return np.column_stack([ch0, ch1, ch2, ch3])
 
 
 def _decimate(x, factor):
