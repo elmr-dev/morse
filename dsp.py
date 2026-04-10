@@ -19,10 +19,10 @@ def extract_envelope(audio: np.ndarray, sample_rate: int = 8000,
     """
     Extract multi-channel soft envelope from CW audio.
 
-    ch0: IQ magnitude, 4th-order Butterworth at 20 Hz.
-         Same group delay (~32 ms) as the previous 6th-order/30 Hz filter,
-         but noise bandwidth ~24 Hz vs ~35 Hz → 1.5 dB SNR improvement.
-    ch1: Phase coherence (50 ms sliding window, vectorized).
+    ch0: IQ magnitude, 4th-order Butterworth 20 Hz (absolute amplitude)
+    ch1: Phase coherence, 50 ms window (phase stability)
+    ch2: STFT spectral contrast — power at tone_freq bin vs adjacent background.
+         Measures energy *concentration* at tone_freq; complementary to ch0/ch1.
     """
     n_out = len(audio) // 16  # 500 Hz output
 
@@ -32,7 +32,6 @@ def extract_envelope(audio: np.ndarray, sample_rate: int = 8000,
     Q = audio * -np.sin(2 * np.pi * tone_freq * t)
 
     # === Channel 0: IQ Envelope — 4th-order Butterworth at 20 Hz ===
-    # Noise BW ≈ 24.4 Hz vs 34.5 Hz for N6/fc30. Same group delay, better SNR.
     sos_lp = butter(4, 20, btype='low', fs=sample_rate, output='sos')
     I_filt = sosfilt(sos_lp, I)
     Q_filt = sosfilt(sos_lp, Q)
@@ -41,26 +40,67 @@ def extract_envelope(audio: np.ndarray, sample_rate: int = 8000,
     ch0 = _decimate(mag, 16)[:n_out]
     ch0 = _soft_normalize(ch0)
 
+    n = len(audio)
+
     # === Channel 1: Phase Coherence (50 ms, vectorized) ===
     sos_lp2 = butter(6, 60, btype='low', fs=sample_rate, output='sos')
     I2 = sosfilt(sos_lp2, I)
     Q2 = sosfilt(sos_lp2, Q)
     phase = np.arctan2(Q2, I2)
 
-    win = 400  # 50 ms at 8 kHz
+    win_pc = 400  # 50 ms at 8 kHz
     cs_cos = np.concatenate([[0.0], np.cumsum(np.cos(phase))])
     cs_sin = np.concatenate([[0.0], np.cumsum(np.sin(phase))])
-    n = len(phase)
     R = np.zeros(n)
-    idx = np.arange(win, n)
-    mc = (cs_cos[idx + 1] - cs_cos[idx + 1 - win]) / win
-    ms = (cs_sin[idx + 1] - cs_sin[idx + 1 - win]) / win
-    R[idx] = np.sqrt(mc**2 + ms**2)
+    idx_pc = np.arange(win_pc, n)
+    mc = (cs_cos[idx_pc + 1] - cs_cos[idx_pc + 1 - win_pc]) / win_pc
+    ms = (cs_sin[idx_pc + 1] - cs_sin[idx_pc + 1 - win_pc]) / win_pc
+    R[idx_pc] = np.sqrt(mc**2 + ms**2)
 
     ch1 = _decimate(R, 16)[:n_out]
     ch1 = _soft_normalize(ch1)
 
-    return np.column_stack([ch0, ch1])
+    # === Channel 2: STFT Spectral Contrast ===
+    # Causal 50 ms window, 2 ms hop → one output sample per 16 audio samples.
+    # Measures power in the tone-frequency bin relative to nearby background bins.
+    # Tone-present: concentrated peak → high contrast ratio.
+    # Noise-only: flat spectrum → contrast ≈ 1.
+    win_stft = 400  # 50 ms at 8 kHz
+    hann = np.hanning(win_stft)
+    # Zero-pad win_stft at start for causal alignment
+    audio_pad = np.concatenate([np.zeros(win_stft), audio])
+
+    frames = np.lib.stride_tricks.as_strided(
+        audio_pad,
+        shape=(n_out, win_stft),
+        strides=(audio_pad.strides[0] * 16, audio_pad.strides[0])
+    ).copy()  # copy so fft doesn't modify the strided view
+
+    pwr = np.abs(np.fft.rfft(frames * hann, axis=1)) ** 2  # (n_out, 201)
+
+    # Tone bin index (bin width = 20 Hz for win=400 at 8 kHz)
+    bin_hz = sample_rate / win_stft  # 20 Hz/bin
+    tone_bin = int(round(tone_freq / bin_hz))
+    tone_bin = max(3, min(pwr.shape[1] - 4, tone_bin))
+
+    # Aggregate ±1 bin around tone (±20 Hz) to catch slight misalignment
+    tone_power = pwr[:, tone_bin - 1] + pwr[:, tone_bin] + pwr[:, tone_bin + 1]
+
+    # Background: bins 5–12 away from tone on each side (~100–240 Hz away)
+    lo = list(range(max(1, tone_bin - 12), max(1, tone_bin - 4)))
+    hi = list(range(min(tone_bin + 5, pwr.shape[1] - 1),
+                    min(tone_bin + 13, pwr.shape[1] - 1)))
+    bg_bins = np.array(lo + hi, dtype=int)
+    if len(bg_bins) == 0:
+        bg_bins = np.array([max(1, tone_bin - 5), min(pwr.shape[1] - 2, tone_bin + 5)],
+                           dtype=int)
+
+    bg_power = pwr[:, bg_bins].mean(axis=1) + 1e-10
+    contrast = tone_power / bg_power  # higher = more concentrated at tone_freq
+
+    ch2 = _soft_normalize(contrast[:n_out])
+
+    return np.column_stack([ch0, ch1, ch2])
 
 
 def _decimate(x, factor):
