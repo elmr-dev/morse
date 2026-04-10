@@ -33,7 +33,7 @@ def extract_envelope(audio: np.ndarray, sample_rate: int = 8000,
     I = audio * np.cos(2 * np.pi * tone_freq * t)
     Q = audio * -np.sin(2 * np.pi * tone_freq * t)
 
-    sos_lp = butter(2, 20, btype='low', fs=sample_rate, output='sos')
+    sos_lp = butter(2, 15, btype='low', fs=sample_rate, output='sos')
     I_filt = sosfiltfilt(sos_lp, I)   # zero-phase: no group delay, ~16 Hz eff. BW
     Q_filt = sosfiltfilt(sos_lp, Q)
 
