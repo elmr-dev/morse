@@ -44,8 +44,8 @@ def extract_envelope(audio: np.ndarray, sample_rate: int = 8000,
 
     # === Channel 1: STFT Spectral Contrast (centered 25 ms window) ===
     # Centered framing: frame k uses audio[k*16-100 : k*16+100], zero delay.
-    win_stft = 200  # 25 ms at 8 kHz; bin_hz = 40 Hz
-    half_win = win_stft // 2  # 100
+    win_stft = 320  # 40 ms at 8 kHz; bin_hz = 25 Hz; 550,600,650,700 Hz all on exact bins
+    half_win = win_stft // 2  # 160
     hann = np.hanning(win_stft)
     audio_pad = np.concatenate([np.zeros(half_win), audio, np.zeros(half_win)])
     frames = np.lib.stride_tricks.as_strided(
