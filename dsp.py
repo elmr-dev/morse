@@ -80,7 +80,7 @@ def _decimate(x, factor):
     return x[:n].reshape(-1, factor).mean(axis=1)
 
 
-def _soft_normalize(env, noise_window_ms=2000, sr=500):
+def _soft_normalize(env, noise_window_ms=500, sr=500):
     """Normalize envelope to [0, 1] using noise floor and signal level."""
     win = max(int(noise_window_ms * sr / 1000), 1)
 
