@@ -40,7 +40,7 @@ def extract_envelope(audio: np.ndarray, sample_rate: int = 8000,
     # === Channel 0: IQ Envelope (Butterworth, good timing) ===
     mag = np.sqrt(I_filt**2 + Q_filt**2)
     ch0 = _decimate(mag, 16)[:n_out]
-    ch0 = _soft_normalize(ch0)
+    ch0 = _soft_normalize(ch0, noise_window_ms=750)
 
     # === Channel 1: STFT Spectral Contrast (centered 25 ms window) ===
     # Centered framing: frame k uses audio[k*16-100 : k*16+100], zero delay.
