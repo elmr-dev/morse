@@ -106,7 +106,7 @@ def _soft_normalize(env, noise_window_ms=500, sr=500):
     from scipy.ndimage import minimum_filter1d
     noise_floor = minimum_filter1d(smoothed, size=win)
 
-    signal_level = np.percentile(env, 90)
+    signal_level = np.percentile(env, 95)
     denom = max(signal_level - np.median(noise_floor), 1e-10)
     normalized = (env - noise_floor) / denom
 
