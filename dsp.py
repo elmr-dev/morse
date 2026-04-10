@@ -72,7 +72,7 @@ def extract_envelope(audio: np.ndarray, sample_rate: int = 8000,
     from scipy.ndimage import median_filter as _mf
     bg_power_smooth = _mf(bg_power_frame, size=250)  # 500ms running median
     bg_power = np.maximum(bg_power_frame, bg_power_smooth)
-    ch1 = _soft_normalize(((tone_power / bg_power) ** 0.60)[:n_out])
+    ch1 = _soft_normalize(((tone_power / bg_power) ** 0.79)[:n_out])
 
     # Compute 48ms box-filter IQ (used for ch2 and ch3).
     N_dit = int(round(0.048 * sample_rate))  # 384 at 8kHz
