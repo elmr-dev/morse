@@ -37,7 +37,7 @@ def extract_envelope(audio: np.ndarray, sample_rate: int = 8000,
     I_filt = sosfiltfilt(sos_lp, I)   # zero-phase: no group delay, ~16 Hz eff. BW
     Q_filt = sosfiltfilt(sos_lp, Q)
 
-    # === Channel 0: IQ Envelope ===
+    # === Channel 0: IQ Envelope (Butterworth, good timing) ===
     mag = np.sqrt(I_filt**2 + Q_filt**2)
     ch0 = _decimate(mag, 16)[:n_out]
     ch0 = _soft_normalize(ch0)
@@ -71,11 +71,22 @@ def extract_envelope(audio: np.ndarray, sample_rate: int = 8000,
     bg_power = np.median(pwr[:, bg_bins], axis=1) + 1e-10
     ch1 = _soft_normalize(((tone_power / bg_power) ** (1/3))[:n_out])
 
-    # ch_agree: min of ch0 and ch1 = high only when BOTH agree.
-    # Previous 3-ch failures were timing mismatches; this ch is derived from
-    # ch0+ch1 on the same temporal grid — no new timing disagreement.
+    # ch2: min agreement channel
     ch_agree = np.minimum(ch0, ch1)
-    return np.column_stack([ch0, ch1, ch_agree])
+
+    # ch3: 48ms box-filter IQ — matched filter for dit duration, better -18dB.
+    # Box gives 25.8 dB processing gain vs 24.2 dB (Butterworth), complementary.
+    N_dit = int(round(0.048 * sample_rate))  # 384 at 8kHz
+    if N_dit % 2 == 0:
+        N_dit += 1  # odd for centered convolution
+    box = np.ones(N_dit) / N_dit
+    I_box = np.convolve(I, box, mode='same')
+    Q_box = np.convolve(Q, box, mode='same')
+    mag_box = np.sqrt(I_box**2 + Q_box**2)
+    ch3 = _decimate(mag_box, 16)[:n_out]
+    ch3 = _soft_normalize(ch3)
+
+    return np.column_stack([ch0, ch1, ch_agree, ch3])
 
 
 def _decimate(x, factor):
