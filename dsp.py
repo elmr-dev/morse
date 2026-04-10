@@ -71,7 +71,10 @@ def extract_envelope(audio: np.ndarray, sample_rate: int = 8000,
     bg_power = np.median(pwr[:, bg_bins], axis=1) + 1e-10
     ch1 = _soft_normalize(((tone_power / bg_power) ** (1/3))[:n_out])
 
-    return np.column_stack([ch0, ch1])
+    # ch_agree: element-wise min of ch0 and ch1 = high only when BOTH agree.
+    # This vetoes single-channel noise bursts while ch0 still carries full IQ signal.
+    ch_agree = np.minimum(ch0, ch1)
+    return np.column_stack([ch0, ch_agree])
 
 
 def _decimate(x, factor):
