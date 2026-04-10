@@ -19,21 +19,18 @@ def extract_envelope(audio: np.ndarray, sample_rate: int = 8000,
     """
     Extract multi-channel soft envelope from CW audio.
 
-    ch0: IQ magnitude, 2nd-order Butterworth 20 Hz
-         Group delay ~16 ms (halved vs N4) → lower timing errors.
-         Slightly wider noise BW (~31 Hz vs ~24 Hz) is the trade-off.
+    ch0: IQ magnitude, N2/fc=20 Hz
     ch1: Phase coherence, 50 ms (same 20 Hz filtered signal)
-    ch2: STFT spectral contrast, 50 ms window
+    ch2: STFT spectral contrast, 25 ms window (effective delay ~12 ms vs 25 ms
+         for the 50 ms version — better timing alignment with ch0).
     """
-    n_out = len(audio) // 16  # 500 Hz output
+    n_out = len(audio) // 16
     n = len(audio)
 
-    # IQ downconversion (shared by ch0 and ch1)
     t = np.arange(n) / sample_rate
     I = audio * np.cos(2 * np.pi * tone_freq * t)
     Q = audio * -np.sin(2 * np.pi * tone_freq * t)
 
-    # 2nd-order Butterworth at 20 Hz — halved group delay vs N4
     sos_lp = butter(2, 20, btype='low', fs=sample_rate, output='sos')
     I_filt = sosfilt(sos_lp, I)
     Q_filt = sosfilt(sos_lp, Q)
@@ -56,8 +53,10 @@ def extract_envelope(audio: np.ndarray, sample_rate: int = 8000,
     ch1 = _decimate(R, 16)[:n_out]
     ch1 = _soft_normalize(ch1)
 
-    # === Channel 2: STFT Spectral Contrast (50 ms) ===
-    win_stft = 400
+    # === Channel 2: STFT Spectral Contrast (25 ms window) ===
+    # 25 ms (200 samples) halves the effective delay vs 50 ms.
+    # bin_hz = 40 Hz; aggregate ±1 bin (±40 Hz) around tone.
+    win_stft = 200
     hann = np.hanning(win_stft)
     audio_pad = np.concatenate([np.zeros(win_stft), audio])
     frames = np.lib.stride_tricks.as_strided(
@@ -65,11 +64,11 @@ def extract_envelope(audio: np.ndarray, sample_rate: int = 8000,
         shape=(n_out, win_stft),
         strides=(audio_pad.strides[0] * 16, audio_pad.strides[0])
     ).copy()
-    pwr = np.abs(np.fft.rfft(frames * hann, axis=1)) ** 2
+    pwr = np.abs(np.fft.rfft(frames * hann, axis=1)) ** 2  # (n_out, 101)
 
-    bin_hz = sample_rate / win_stft
+    bin_hz = sample_rate / win_stft  # 40 Hz/bin
     tone_bin = int(round(tone_freq / bin_hz))
-    tone_bin = max(3, min(pwr.shape[1] - 4, tone_bin))
+    tone_bin = max(2, min(pwr.shape[1] - 3, tone_bin))
     tone_power = pwr[:, tone_bin - 1] + pwr[:, tone_bin] + pwr[:, tone_bin + 1]
 
     lo = list(range(max(1, tone_bin - 12), max(1, tone_bin - 4)))
