@@ -1,0 +1,4 @@
+testdata/
+results.tsv
+__pycache__/
+*.pyc
