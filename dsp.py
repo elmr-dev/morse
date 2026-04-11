@@ -33,7 +33,7 @@ def extract_envelope(audio: np.ndarray, sample_rate: int = 8000,
     Q = audio * -np.sin(2 * np.pi * tone_freq * t)
 
     # ch0: zero-phase IQ envelope
-    sos = butter(2, 25, btype="low", fs=sample_rate, output="sos")
+    sos = butter(2, 35, btype="low", fs=sample_rate, output="sos")
     mag = np.sqrt(sosfiltfilt(sos, I) ** 2 + sosfiltfilt(sos, Q) ** 2)
     ch0 = _decimate(mag, 16)[:n_out]
     ch0 = _normalize(ch0)
