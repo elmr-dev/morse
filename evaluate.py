@@ -17,7 +17,7 @@ from scipy.io import wavfile
 
 from constants import (
     AUDIO_SR, DECIMATION, MAX_CHANNELS, MAX_EVAL_SAMPLES, MIN_CHANNELS,
-    SNR_TIERS, VALIDATIONS_DIR, W_AUC, W_F1, W_IOU, W_RISE, W_TIMING,
+    SNR_TIERS, WPM_TIERS, VALIDATIONS_DIR, W_AUC, W_F1, W_IOU, W_RISE, W_TIMING,
 )
 
 
@@ -158,6 +158,13 @@ def _snr_tier(snr_db):
     return "high"
 
 
+def _wpm_tier(wpm):
+    for name, (lo, hi) in WPM_TIERS.items():
+        if lo <= wpm < hi:
+            return name
+    return "vfast"
+
+
 # ---------------------------------------------------------------------------
 # Main evaluation
 # ---------------------------------------------------------------------------
@@ -178,6 +185,7 @@ def run_evaluation():
 
     n_channels = None
     results_by_snr = {tier: [] for tier in SNR_TIERS}
+    results_by_wpm = {tier: [] for tier in WPM_TIERS}
     all_composites = []
     all_norm_timing = []
     all_auc = []
@@ -245,6 +253,10 @@ def run_evaluation():
         if tier in results_by_snr:
             results_by_snr[tier].append(comp)
 
+        wtier = _wpm_tier(s["wpm"])
+        if wtier in results_by_wpm:
+            results_by_wpm[wtier].append(comp)
+
         all_composites.append(comp)
         all_norm_timing.append(norm_timing)
         all_auc.append(auc)
@@ -273,6 +285,17 @@ def run_evaluation():
             print(f"  {tier}: {np.mean(scores):.4f}  (n={len(scores)})")
         else:
             print(f"  {tier}: n/a")
+    print()
+
+    print("--- per_wpm ---")
+    for tier in WPM_TIERS:
+        scores = results_by_wpm[tier]
+        lo, hi = WPM_TIERS[tier]
+        label = f"{tier}({lo}-{hi}wpm)"
+        if scores:
+            print(f"  {label}: {np.mean(scores):.4f}  (n={len(scores)})")
+        else:
+            print(f"  {label}: n/a")
     print()
 
     print("--- per_channel_auc ---")

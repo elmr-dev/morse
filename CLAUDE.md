@@ -16,6 +16,7 @@ LOOP FOREVER. The human might be asleep. Do not stop until told to.
 3. Analyze the output:
    - `composite:` is the primary metric to maximize
    - `per_snr:` shows where you're weakest (very_low and low matter most)
+   - `per_wpm:` shows where you're weakest by speed (slow/mid/fast are the targets)
    - `per_channel_auc:` reveals dead channels (< 0.60 = not helping)
    - `per_metric:` shows which sub-score to target next
    - `issues:` lists specific failure modes to investigate
@@ -69,6 +70,12 @@ CWNet uses a CNN + BiGRU + CTC decoder. It needs:
 3. **Good low-SNR sensitivity** — improving very_low (< –10 dB) and low
    (–10 to –4 dB) is worth more than squeezing another 0.01 at +6 dB.
    The training dataset has 60% of samples below –4 dB.
+
+4. **WPM coverage: 15–45 WPM is the primary target** — slow (< 20 WPM) is
+   easy and will score well naturally. vfast (45–60 WPM) is trained on but
+   low operational priority. Focus improvements on mid (20–35) and fast
+   (35–45) tiers. Note: norm_timing and rise_ms are normalized by dit
+   duration so they are directly comparable across speeds.
 
 4. **Channel complementarity** — if you use 2+ channels, they must measure
    DIFFERENT properties. IQ amplitude + phase coherence is good.

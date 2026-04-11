@@ -16,6 +16,15 @@ SNR_TIERS = {
     "high":     (2,    99),
 }
 
+# WPM tier boundaries — practical operating range is 15–45 WPM
+# slow/mid/fast are the primary targets; vfast is trained but less critical
+WPM_TIERS = {
+    "slow":  (0,  20),   # ~15 WPM — easy, human-readable speed
+    "mid":   (20, 35),   # core target range
+    "fast":  (35, 45),   # practical upper ceiling (~45 WPM)
+    "vfast": (45, 999),  # trained on but low operational priority
+}
+
 # CWNet-focused composite weights (timing matters most for CTC)
 W_TIMING = 0.30   # norm_rms_timing: RMS edge error / dit_duration
 W_AUC    = 0.25   # AUC under ROC curve
