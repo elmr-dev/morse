@@ -64,6 +64,11 @@ def extract_envelope(audio: np.ndarray, sample_rate: int = 8000,
         bg_bins = np.array([max(1, tb - 5), min(pwr.shape[1] - 2, tb + 5)], dtype=int)
 
     bg = np.median(pwr[:, bg_bins], axis=1) + 1e-10
+    # Stabilize bg: prevent momentary dips from causing false ratio spikes.
+    # Running median over 500ms (250 frames at 500Hz) smooths transients.
+    from scipy.ndimage import median_filter
+    bg_smooth = median_filter(bg, size=250)
+    bg = np.maximum(bg, bg_smooth)
     ch1 = _normalize((tone_pwr / bg) ** 0.5)
 
     return np.column_stack([ch0, ch1]).astype(np.float32)
