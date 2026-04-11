@@ -38,8 +38,10 @@ def extract_envelope(audio: np.ndarray, sample_rate: int = 8000,
     ch0 = _decimate(mag, 16)[:n_out]
     ch0 = _normalize(ch0)
 
-    # ch1: STFT spectral contrast, centered 40 ms window (320 samples at 8 kHz)
-    win = 320
+    # ch1: STFT spectral contrast, centered 20 ms window (160 samples at 8 kHz)
+    # 50 Hz/bin — all standard CW tone freqs (multiples of 50) land on exact bins
+    # 20ms < dit at 45 WPM (27ms) → no temporal smearing for fast CW
+    win = 160
     half = win // 2
     hann = np.hanning(win)
     pad = np.concatenate([np.zeros(half), audio, np.zeros(half)])
