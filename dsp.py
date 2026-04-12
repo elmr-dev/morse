@@ -25,14 +25,14 @@ def extract_envelope(audio: np.ndarray, sample_rate: int = 8000,
     n_out = len(audio) // 16
     n = len(audio)
 
-    # IQ downconversion
-    t = np.arange(n) / sample_rate
-    I = audio * np.cos(2 * np.pi * tone_freq * t)
-    Q = audio * -np.sin(2 * np.pi * tone_freq * t)
-
-    # ch0: zero-phase IQ envelope, 1st-order 22Hz Butterworth
-    sos = butter(1, 22, btype="low", fs=sample_rate, output="sos")
-    mag = np.sqrt(sosfiltfilt(sos, I) ** 2 + sosfiltfilt(sos, Q) ** 2)
+    # Bandpass ±22Hz around tone_freq + Hilbert envelope.
+    # Equivalent to IQ demod but avoids DC bias from the mixing products.
+    from scipy.signal import hilbert
+    lo = max(tone_freq - 22, 1.0)
+    hi = min(tone_freq + 22, sample_rate / 2 - 1)
+    sos = butter(1, [lo, hi], btype="bandpass", fs=sample_rate, output="sos")
+    bp = sosfiltfilt(sos, audio)
+    mag = np.abs(hilbert(bp))
     ch0 = _decimate(mag, 16)[:n_out]
     # Power compression expands low-amplitude region for better noise-floor separation.
     ch0 = ch0 ** 0.69
