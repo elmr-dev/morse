@@ -1,0 +1,52 @@
+# Debug config — small dataset, CPU-friendly, smoke-test on local machine
+name: debug
+
+paths:
+  train_dir: data/debug/train
+  val_dir:   data/debug/val
+  run_dir:   runs
+
+dsp:
+  channels: 1
+  sample_rate: 8000
+  envelope_rate: 500
+
+model:
+  in_channels: 1
+  gru_hidden: 64
+  gru_layers: 2
+  dropout: 0.1
+
+training:
+  epochs: 3
+  ce_pretrain_epochs: 1
+  ce_blend_epochs: 1
+  batch_size: 8
+  lr: 0.001
+  warmup_epochs: 1
+  num_workers: 0
+  entropy_weight: 0.03
+  ce_blank_weight: 0.2
+  ce_char_weight: 3.0
+
+data:
+  n_train: 50
+  n_val: 10
+  seed: 42
+  max_chars: 12
+  max_clip_s: 8.0
+  gen_workers: 1
+  dsp_workers: 1
+  snr_tiers:
+    mid:  {range: [-3, 6], weight: 1.0}
+  buckets:
+    mid:
+      wpm: [18, 30]
+      weight: 1.0
+      impairment: clean
+      fist:
+        jitter_pct:          [0.02, 0.08]
+        dah_bias:            [0.97, 1.03]
+        speed_drift:         [0.0,  0.01]
+        char_gap_stretch_frac: [0.0, 0.05]
+        char_gap_stretch:    [0.9, 1.1]
