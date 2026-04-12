@@ -71,7 +71,9 @@ def extract_envelope(audio: np.ndarray, sample_rate: int = 8000,
     bg = np.maximum(bg, bg_smooth)
     ch1 = _normalize((tone_pwr / bg) ** 0.8)
 
-    return np.column_stack([ch0, ch1]).astype(np.float32)
+    # Weighted fusion: ch0 (higher AUC) gets more weight than ch1
+    fused = ch0
+    return fused[:, np.newaxis].astype(np.float32)
 
 
 def _decimate(x: np.ndarray, factor: int) -> np.ndarray:
