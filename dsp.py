@@ -55,7 +55,7 @@ def extract_envelope(audio: np.ndarray, sample_rate: int = 8000,
     bin_hz = sample_rate / win  # 25 Hz/bin
     tb = int(round(tone_freq / bin_hz))
     tb = max(2, min(pwr.shape[1] - 3, tb))
-    tone_pwr = pwr[:, tb - 1] + pwr[:, tb] + pwr[:, tb + 1]
+    tone_pwr = pwr[:, tb]
 
     lo = list(range(max(1, tb - 16), max(1, tb - 4)))
     hi = list(range(min(tb + 5, pwr.shape[1] - 1), min(tb + 17, pwr.shape[1] - 1)))
