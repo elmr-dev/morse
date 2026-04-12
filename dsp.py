@@ -36,7 +36,7 @@ def extract_envelope(audio: np.ndarray, sample_rate: int = 8000,
     sos = butter(2, 35, btype="low", fs=sample_rate, output="sos")
     mag = np.sqrt(sosfiltfilt(sos, I) ** 2 + sosfiltfilt(sos, Q) ** 2)
     ch0 = _decimate(mag, 16)[:n_out]
-    ch0 = _normalize(ch0, noise_win_ms=750)
+    ch0 = _normalize(ch0, noise_win_ms=1000)
 
     # ch1: STFT spectral contrast, centered 20 ms window (160 samples at 8 kHz)
     # 50 Hz/bin — all standard CW tone freqs (multiples of 50) land on exact bins
