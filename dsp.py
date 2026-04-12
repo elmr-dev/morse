@@ -62,6 +62,6 @@ def _normalize(env: np.ndarray, noise_win_ms: float = 500.0, sr: int = 500) -> n
     kernel = np.ones(max(win // 23, 1)) / max(win // 23, 1)
     smoothed = np.convolve(env, kernel, mode="same")
     noise_floor = minimum_filter1d(smoothed, size=win)
-    signal_level = np.percentile(env, 82)
+    signal_level = np.percentile(env, 83)
     denom = max(signal_level - float(np.median(noise_floor)), 1e-10)
     return np.clip((env - noise_floor) / denom, 0.0, 1.0)
