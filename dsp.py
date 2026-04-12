@@ -59,7 +59,7 @@ def _normalize(env: np.ndarray, noise_win_ms: float = 500.0, sr: int = 500) -> n
     from scipy.ndimage import minimum_filter1d
 
     win = max(int(noise_win_ms * sr / 1000), 1)
-    kernel = np.ones(max(win // 10, 1)) / max(win // 10, 1)
+    kernel = np.ones(max(win // 23, 1)) / max(win // 23, 1)
     smoothed = np.convolve(env, kernel, mode="same")
     noise_floor = minimum_filter1d(smoothed, size=win)
     signal_level = np.percentile(env, 82)
