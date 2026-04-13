@@ -14,6 +14,8 @@ import time
 from pathlib import Path
 
 import numpy as np
+from scipy.optimize import minimize
+from scipy.special import expit
 
 from constants import (
     AUDIO_SR, EVAL_DIR, MAX_CHANNELS, MIN_CHANNELS, N_EVAL_SAMPLES,
@@ -21,6 +23,20 @@ from constants import (
 )
 
 SR = 500  # scoring sample rate (ENVELOPE_SR)
+
+# Aux-channel info-gain bonus: probe_AUC(all channels) - AUC(ch0) per sample.
+# Only rewards aux channels for adding linearly-extractable tone-presence info
+# beyond ch0. A pure metadata channel (e.g. noise level uncorrelated with ON/OFF)
+# earns ~0; a complementary presence detector (e.g. phase coherence) earns more.
+W_INFOGAIN = 0.15
+
+# Tier weights for the headline `composite:` score. Steers the autoresearch loop
+# toward the operationally-hard regions (low SNR + fast dits) instead of averaging
+# them away with easier samples. The reported `composite:` is the mean of an
+# SNR-weighted composite and a WPM-weighted composite so both axes are steered.
+# Weights auto-renormalize over tiers that have ≥1 sample in the eval set.
+SNR_TIER_WEIGHTS = {"very_low": 0.35, "low": 0.30, "mid": 0.20, "high": 0.15}
+WPM_TIER_WEIGHTS = {"slow":     0.15, "mid": 0.30, "fast": 0.35, "vfast": 0.20}
 
 
 # ---------------------------------------------------------------------------
@@ -56,24 +72,22 @@ def load_samples():
 # ---------------------------------------------------------------------------
 
 def _auc(soft, gt):
-    """Trapezoidal AUC."""
+    """ROC AUC via Mann–Whitney U (rank-based). O(n log n) with tie correction.
+
+    Equivalent to the trapezoidal ROC integral to within float precision, but
+    stable on long arrays (the scorer calls this on the full stacked eval set
+    for marginal-info-gain probes, where O(n²) per-threshold sweeps were taking
+    several minutes).
+    """
+    from scipy.stats import rankdata  # local import keeps cold-start lean
     gt_bool = gt.astype(bool)
     n_pos = int(np.sum(gt_bool))
     n_neg = int(np.sum(~gt_bool))
     if n_pos == 0 or n_neg == 0:
         return 0.5
-
-    thresholds = np.sort(np.unique(soft))[::-1]
-    tprs, fprs = [], []
-    for t in thresholds:
-        pred = soft >= t
-        tprs.append(np.sum(pred & gt_bool) / n_pos)
-        fprs.append(np.sum(pred & ~gt_bool) / n_neg)
-
-    tprs = np.array(tprs)
-    fprs = np.array(fprs)
-    order = np.argsort(fprs)
-    return float(np.trapezoid(tprs[order], fprs[order]))
+    ranks = rankdata(soft)
+    sum_pos = float(ranks[gt_bool].sum())
+    return (sum_pos - n_pos * (n_pos + 1) / 2.0) / (n_pos * n_neg)
 
 
 def _norm_rms_timing(soft, gt, wpm, sr=SR):
@@ -124,7 +138,34 @@ def _rise_ms(soft, gt, sr=SR):
     return float(np.mean(times)) if times else 999.0
 
 
-def _composite(norm_timing, auc, f1, iou, rise_ms_val, wpm):
+def _fall_ms(soft, gt, sr=SR):
+    """Mean 90→10% fall time at tone offsets (ms). Lower = sharper = better.
+    Symmetric to _rise_ms; CTC also relies on clean offset alignment."""
+    offsets = np.where(np.diff(gt.astype(int)) < 0)[0]
+    times = []
+    window = int(0.15 * sr)
+    for e in offsets:
+        seg = soft[e: e + window]
+        if len(seg) < 5:
+            continue
+        below_90 = np.where(seg <= 0.9)[0]
+        below_10 = np.where(seg <= 0.1)[0]
+        if len(below_90) and len(below_10):
+            times.append((below_10[0] - below_90[0]) / sr * 1000.0)
+    return float(np.mean(times)) if times else 999.0
+
+
+def _weighted_mean_by_tier(scores_by_tier, weights):
+    """Weighted mean over tiers, renormalized across tiers that have samples."""
+    present = {t: scores_by_tier[t] for t in weights if scores_by_tier.get(t)}
+    if not present:
+        return 0.0
+    total_w = sum(weights[t] for t in present)
+    return float(sum(weights[t] * np.mean(present[t]) for t in present) / total_w)
+
+
+def _envelope_score(norm_timing, auc, f1, iou, rise_ms_val, wpm):
+    """Composite on ch0 alone — the tone-presence envelope for CTC."""
     dit_ms = 1200.0 / wpm
     timing_score = max(0.0, 1.0 - norm_timing)
     rise_score = max(0.0, 1.0 - rise_ms_val / (0.5 * dit_ms))
@@ -135,6 +176,32 @@ def _composite(norm_timing, auc, f1, iou, rise_ms_val, wpm):
         + W_IOU * iou
         + W_RISE * rise_score
     )
+
+
+def _fit_logreg(X, y, max_iter=200):
+    """Logistic regression with bias, numpy/scipy only.
+
+    X: (N, C) frame-stacked channels. y: (N,) binary. Returns (w (C,), b).
+    For C=1 the resulting sigmoid is monotonic in X, so probe AUC == ch0 AUC
+    (info_gain == 0), which is the desired sanity property.
+    """
+    n, C = X.shape
+    y = y.astype(np.float64)
+
+    def loss_and_grad(params):
+        w, b = params[:C], params[C]
+        logits = X @ w + b
+        # Numerically stable BCE: mean(logaddexp(0, logits) - y*logits)
+        loss = float(np.mean(np.logaddexp(0.0, logits) - y * logits))
+        p = expit(logits)
+        dw = X.T @ (p - y) / n
+        db = float(np.mean(p - y))
+        return loss, np.concatenate([dw, [db]])
+
+    x0 = np.zeros(C + 1)
+    res = minimize(loss_and_grad, x0, jac=True, method="L-BFGS-B",
+                   options={"maxiter": max_iter})
+    return res.x[:C], float(res.x[C])
 
 
 def _snr_tier(snr_db):
@@ -169,17 +236,11 @@ def run_evaluation():
         print("ERROR: no samples loaded")
         sys.exit(1)
 
+    # ------------------------------------------------------------------
+    # Pass 1: extract envelopes, align with gt, validate shapes.
+    # ------------------------------------------------------------------
+    extracted = []  # list of (env (T,C), gt (T,), sample_dict)
     n_channels = None
-    results_by_snr = {tier: [] for tier in SNR_TIERS}
-    results_by_wpm = {tier: [] for tier in WPM_TIERS}
-    all_composites = []
-    all_norm_timing = []
-    all_auc = []
-    all_f1 = []
-    all_iou = []
-    all_rise = []
-    per_channel_auc = None
-    issues = []
 
     for i, s in enumerate(samples):
         try:
@@ -195,7 +256,6 @@ def run_evaluation():
 
         if n_channels is None:
             n_channels = env.shape[1]
-            per_channel_auc = [[] for _ in range(n_channels)]
             if not (MIN_CHANNELS <= n_channels <= MAX_CHANNELS):
                 print(f"CHANNEL_ERROR: {n_channels} channels, must be {MIN_CHANNELS}–{MAX_CHANNELS}")
                 sys.exit(1)
@@ -203,29 +263,87 @@ def run_evaluation():
             print(f"CHANNEL_ERROR: inconsistent channels {env.shape[1]} vs {n_channels}")
             sys.exit(1)
 
-        # Align envelope and gt to the same length
         gt = s["gt_500"]
         min_T = min(env.shape[0], len(gt))
-        env = env[:min_T]
-        gt = gt[:min_T]
+        env = env[:min_T].astype(np.float64)
+        gt = gt[:min_T].astype(np.float64)
+        extracted.append((env, gt, s))
 
-        # Channel-mean fusion
-        fused = env.mean(axis=1)
+    # ------------------------------------------------------------------
+    # Fit logistic probe globally on stacked (env, gt).
+    # For C=1 the probe is AUC-identical to ch0 (monotonic sigmoid), so the
+    # info_gain bonus is ~0 and composite reduces to envelope_score(ch0).
+    # ------------------------------------------------------------------
+    if n_channels > 1:
+        X_stack = np.concatenate([e for e, _, _ in extracted], axis=0)
+        y_stack = np.concatenate([g for _, g, _ in extracted], axis=0)
+        w_probe, b_probe = _fit_logreg(X_stack, y_stack)
 
-        # Per-channel AUC
+        # Marginal info-gain per aux channel: AUC(ch0, chk) - AUC(ch0) via a 2-col
+        # probe. Exposes dead aux channels that the global probe could otherwise
+        # hide behind a strong neighbor.
+        auc_ch0_global = _auc(X_stack[:, 0], y_stack)
+        marginal_info_gain = {}
+        for k in range(1, n_channels):
+            X_pair = X_stack[:, [0, k]]
+            wk, bk = _fit_logreg(X_pair, y_stack)
+            probe_k = expit(X_pair @ wk + bk)
+            marginal_info_gain[k] = max(0.0, _auc(probe_k, y_stack) - auc_ch0_global)
+    else:
+        w_probe, b_probe = None, None
+        marginal_info_gain = {}
+
+    # ------------------------------------------------------------------
+    # Pass 2: score each sample on ch0 metrics + info-gain bonus.
+    # ------------------------------------------------------------------
+    results_by_snr = {tier: [] for tier in SNR_TIERS}
+    results_by_wpm = {tier: [] for tier in WPM_TIERS}
+    all_composites = []
+    all_envelope = []
+    all_norm_timing = []
+    all_auc = []
+    all_f1 = []
+    all_iou = []
+    all_rise = []
+    all_info_gain = []
+    per_channel_auc = [[] for _ in range(n_channels)]
+    per_channel_rise = [[] for _ in range(n_channels)]
+    per_channel_fall = [[] for _ in range(n_channels)]
+    per_channel_norm_timing = [[] for _ in range(n_channels)]
+    issues = []
+
+    for i, (env, gt, s) in enumerate(extracted):
+        ch0 = env[:, 0]
+
+        # Per-channel AUC + temporal diagnostics (rise/fall/norm_timing).
+        # Slow aux channels (long windows) can still earn info_gain, but their
+        # temporal cost must stay visible so the loop doesn't regress edge sharpness.
         for c in range(n_channels):
+            ch = env[:, c]
             try:
-                per_channel_auc[c].append(_auc(env[:, c], gt))
+                per_channel_auc[c].append(_auc(ch, gt))
             except Exception:
                 per_channel_auc[c].append(0.5)
+            per_channel_rise[c].append(_rise_ms(ch, gt))
+            per_channel_fall[c].append(_fall_ms(ch, gt))
+            per_channel_norm_timing[c].append(_norm_rms_timing(ch, gt, s["wpm"]))
 
         wpm = s["wpm"]
-        norm_timing = _norm_rms_timing(fused, gt, wpm)
-        auc = _auc(fused, gt)
-        f1 = _f1(fused, gt)
-        iou = _iou(fused, gt)
-        rise_ms_val = _rise_ms(fused, gt)
-        comp = _composite(norm_timing, auc, f1, iou, rise_ms_val, wpm)
+        norm_timing = _norm_rms_timing(ch0, gt, wpm)
+        auc = _auc(ch0, gt)
+        f1 = _f1(ch0, gt)
+        iou = _iou(ch0, gt)
+        rise_ms_val = _rise_ms(ch0, gt)
+        env_score = _envelope_score(norm_timing, auc, f1, iou, rise_ms_val, wpm)
+
+        if w_probe is not None:
+            probe = expit(env @ w_probe + b_probe)
+            probe_auc = _auc(probe, gt)
+            info_gain = max(0.0, probe_auc - auc)  # clip negative (probe overfit noise)
+        else:
+            info_gain = 0.0
+
+        comp = env_score + W_INFOGAIN * info_gain
 
         snr_tier = _snr_tier(s["snr_db"])
         if snr_tier in results_by_snr:
@@ -236,11 +354,13 @@ def run_evaluation():
             results_by_wpm[wpm_tier].append(comp)
 
         all_composites.append(comp)
+        all_envelope.append(env_score)
         all_norm_timing.append(norm_timing)
         all_auc.append(auc)
         all_f1.append(f1)
         all_iou.append(iou)
         all_rise.append(rise_ms_val)
+        all_info_gain.append(info_gain)
 
         if norm_timing > 1.5:
             issues.append(f"sample {i} (snr={s['snr_db']:+.0f}dB wpm={wpm:.0f}): "
@@ -251,8 +371,18 @@ def run_evaluation():
 
     elapsed = time.time() - t0
 
+    # Tier-weighted headline composite — steers the loop toward low-SNR + fast WPM.
+    # Mean of SNR-weighted and WPM-weighted tier means so both axes pull equally.
+    comp_snr_w = _weighted_mean_by_tier(results_by_snr, SNR_TIER_WEIGHTS)
+    comp_wpm_w = _weighted_mean_by_tier(results_by_wpm, WPM_TIER_WEIGHTS)
+    composite_weighted = 0.5 * (comp_snr_w + comp_wpm_w)
+    composite_flat = float(np.mean(all_composites))
+
     # === STDOUT OUTPUT (parsed by agent) ===
-    print(f"composite: {np.mean(all_composites):.4f}")
+    print(f"composite: {composite_weighted:.4f}")
+    print(f"flat_composite: {composite_flat:.4f}  (unweighted mean, legacy)")
+    print(f"snr_weighted: {comp_snr_w:.4f}")
+    print(f"wpm_weighted: {comp_wpm_w:.4f}")
     print(f"n_channels: {n_channels}")
     print(f"n_samples: {len(samples)}")
     print(f"eval_time_s: {elapsed:.1f}")
@@ -278,13 +408,25 @@ def run_evaluation():
             print(f"  {label}: n/a")
     print()
 
-    print("--- per_channel_auc ---")
+    print("--- per_channel ---")
+    print("  channel   auc   rise_ms  fall_ms  norm_timing")
     for c in range(n_channels):
-        mean_auc = np.mean(per_channel_auc[c]) if per_channel_auc[c] else 0.0
-        print(f"  ch{c}: {mean_auc:.4f}")
+        a = float(np.mean(per_channel_auc[c])) if per_channel_auc[c] else 0.0
+        r = float(np.mean(per_channel_rise[c])) if per_channel_rise[c] else 999.0
+        f = float(np.mean(per_channel_fall[c])) if per_channel_fall[c] else 999.0
+        nt = float(np.mean(per_channel_norm_timing[c])) if per_channel_norm_timing[c] else 2.0
+        print(f"  ch{c}       {a:.4f}  {r:6.1f}  {f:6.1f}  {nt:.3f}")
     print()
 
     print("--- per_metric ---")
+    print(f"  envelope_score: {np.mean(all_envelope):.4f}  (ch0 only)")
+    print(f"  info_gain: {np.mean(all_info_gain):.4f}  (probe_auc - ch0_auc, clipped ≥0)")
+    if w_probe is not None:
+        wstr = ", ".join(f"{wc:+.2f}" for wc in w_probe)
+        print(f"  probe: w=[{wstr}]  b={b_probe:+.2f}")
+    if marginal_info_gain:
+        mstr = ", ".join(f"ch{k}:{v:+.4f}" for k, v in marginal_info_gain.items())
+        print(f"  marginal_info_gain: {mstr}  (AUC(ch0,chk) - AUC(ch0))")
     print(f"  norm_timing: {np.mean(all_norm_timing):.3f}")
     print(f"  auc: {np.mean(all_auc):.3f}")
     print(f"  f1: {np.mean(all_f1):.3f}")

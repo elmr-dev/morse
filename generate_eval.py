@@ -33,7 +33,7 @@ from constants import AUDIO_SR, DECIMATION, ENVELOPE_SR
 # ============================================================================
 
 EVAL_DIR = "evaldata"
-MORSE_AUDIO_DIR = os.path.join(os.path.dirname(__file__), "..", "morse-audio")
+MORSE_AUDIO_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "morse-audio")
 GENERATE_CLI = os.path.join(
     MORSE_AUDIO_DIR,
     "packages", "morse-audio", "src", "ml-training", "generate-cli.ts"
@@ -82,20 +82,21 @@ CW_TEXTS = [
 # ============================================================================
 # Eval config grid
 # ============================================================================
-# Total: 160 samples, weighted toward low SNR where DSP matters most
-#   very_low (-18 to -10): 50 samples (31%)
-#   low      (-10 to  -4): 40 samples (25%)
-#   mid      ( -4 to   2): 40 samples (25%)
-#   high     (  2 to   6): 30 samples (19%)
+# Total: 200 samples, weighted toward low SNR where DSP matters most.
+# Operational envelope: SNR -16 to +5 dB, WPM 25-45.
+#   very_low (-16 to -10): 62 samples (31%)
+#   low      (-10 to  -4): 50 samples (25%)
+#   mid      ( -4 to   2): 50 samples (25%)
+#   high     (  2 to   5): 38 samples (19%)
 
 def _build_configs(seed=42):
     rng = np.random.RandomState(seed)
 
     tier_specs = [
-        ("very_low", -18.0, -10.0, 50),
-        ("low",      -10.0,  -4.0, 40),
-        ("mid",       -4.0,   2.0, 40),
-        ("high",       2.0,   6.0, 30),
+        ("very_low", -16.0, -10.0, 62),
+        ("low",      -10.0,  -4.0, 50),
+        ("mid",       -4.0,   2.0, 50),
+        ("high",       2.0,   5.0, 38),
     ]
     tone_freqs = [500, 550, 600, 650, 700, 750, 800]
 
@@ -193,9 +194,12 @@ def _read_wav_float32(wav_path, target_sr=8000):
 # ============================================================================
 
 def _generate_one(args):
-    idx, config, seed = args
+    idx, config, seed, out_dir = args
+    # WAV is written directly into out_dir so the user can listen/spot-check;
+    # the matching .npz next to it is what the scorer loads.
+    # Absolute path required — the CLI runs with cwd=MORSE_AUDIO_DIR.
+    wav_path = os.path.abspath(os.path.join(out_dir, f"sample_{idx:03d}.wav"))
     with tempfile.TemporaryDirectory() as tmpdir:
-        wav_path = os.path.join(tmpdir, "sample.wav")
         cfg_path = os.path.join(tmpdir, "config.json")
 
         gen_cfg = {
@@ -255,7 +259,7 @@ if __name__ == "__main__":
     n = len(configs)
 
     print(f"Generating {n} eval samples → {EVAL_DIR}/")
-    print(f"WPM range: 25–45  |  SNR range: –18 to +6 dB  |  seed: 42 (fixed)")
+    print(f"WPM range: 25–45  |  SNR range: –16 to +5 dB  |  seed: 42 (fixed)")
     print()
 
     # Tier summary
@@ -265,7 +269,7 @@ if __name__ == "__main__":
         print(f"  {tier}: {tier_counts[tier]} samples")
     print()
 
-    args = [(i, c, 1000 + i) for i, c in enumerate(configs)]
+    args = [(i, c, 1000 + i, EVAL_DIR) for i, c in enumerate(configs)]
     errors = []
     done = 0
 
