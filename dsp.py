@@ -16,7 +16,7 @@ from scipy.ndimage import uniform_filter1d
 from scipy.signal import butter, hilbert, sosfiltfilt
 
 
-_BP_BW_HZ = 30.0          # ch0+ch2 bandpass half-width (narrow → low-SNR)
+_BP_BW_HZ = 27.0          # ch0+ch2 bandpass half-width (narrow → low-SNR)
 _TKEO_SMOOTH_MS = 8.0     # ch1: TKEO smoothing window
 _MATCHED_MS = 48.0        # ch2: dit-scale integration (BW~20 Hz)
 _SHARPEN_GAMMA = 35.0     # soft — preserves gradient for CWNet
