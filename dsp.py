@@ -32,7 +32,7 @@ def extract_envelope(audio: np.ndarray, sample_rate: int = 8000,
     # ±25 Hz bandpass, shared by ch0 (via Hilbert) and ch2 (autocorr)
     lo = max(tone_freq - _BP_BW_HZ, 1.0)
     hi = min(tone_freq + _BP_BW_HZ, sample_rate / 2 - 1)
-    sos_bp = butter(4, [lo, hi], btype="bandpass", fs=sample_rate, output="sos")
+    sos_bp = butter(1, [lo, hi], btype="bandpass", fs=sample_rate, output="sos")
     bp = sosfiltfilt(sos_bp, audio64)
 
     ch0 = _ch0_amplitude(bp, n_out)
