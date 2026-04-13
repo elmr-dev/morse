@@ -84,8 +84,8 @@ def _decimate(x: np.ndarray, factor: int) -> np.ndarray:
 
 
 def _normalize(env: np.ndarray) -> np.ndarray:
-    lo = float(np.percentile(env, 22))
-    hi = float(np.percentile(env, 84))
+    lo = float(np.percentile(env, 10))
+    hi = float(np.percentile(env, 85))
     denom = max(hi - lo, 1e-10)
     return np.clip((env - lo) / denom, 0.0, 1.0)
 
