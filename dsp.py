@@ -44,7 +44,7 @@ def _ch0_amplitude(bp: np.ndarray, n_out: int) -> np.ndarray:
     mag = np.abs(hilbert(bp))
     env = _decimate(mag, 16)[:n_out]
     env = _normalize(env)
-    env = np.clip((env - 0.09) / 0.76, 0.0, 1.0)
+    env = np.clip((env - 0.05) / 0.76, 0.0, 1.0)
     env = _sharpen(env, _SHARPEN_GAMMA)
     return _sharpen(env, _SHARPEN_GAMMA)
 
