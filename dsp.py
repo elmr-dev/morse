@@ -19,7 +19,7 @@ from scipy.signal import butter, hilbert, sosfiltfilt
 _BP_BW_HZ = 30.0          # ch0+ch2 bandpass half-width (narrow → low-SNR)
 _LP_WIDE_HZ = 75.0        # ch1 baseband LPF (wide so noise stays random)
 _INSTFREQ_WIN_MS = 20.0
-_MATCHED_MS = 40.0
+_MATCHED_MS = 48.0
 _SHARPEN_GAMMA = 35.0     # soft — preserves gradient for CWNet
 
 
