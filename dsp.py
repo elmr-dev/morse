@@ -84,7 +84,7 @@ def _decimate(x: np.ndarray, factor: int) -> np.ndarray:
     return x[:n].reshape(-1, factor).mean(axis=1)
 
 
-def _normalize(env: np.ndarray, lo_pct: float = 10.0, hi_pct: float = 85.0) -> np.ndarray:
+def _normalize(env: np.ndarray, lo_pct: float = 13.0, hi_pct: float = 87.0) -> np.ndarray:
     lo = float(np.percentile(env, lo_pct))
     hi = float(np.percentile(env, hi_pct))
     denom = max(hi - lo, 1e-10)
