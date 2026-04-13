@@ -27,7 +27,6 @@ def extract_envelope(audio: np.ndarray, sample_rate: int = 8000,
     n_out = n // 16
     audio64 = audio.astype(np.float64)
 
-    # ±BW_HZ bandpass, shared by ch0 (via Hilbert) and ch1 (TKEO)
     lo = max(tone_freq - _BP_BW_HZ, 1.0)
     hi = min(tone_freq + _BP_BW_HZ, sample_rate / 2 - 1)
     sos_bp = butter(_BP_ORDER, [lo, hi], btype="bandpass", fs=sample_rate, output="sos")
@@ -84,7 +83,7 @@ def _decimate(x: np.ndarray, factor: int) -> np.ndarray:
     return x[:n].reshape(-1, factor).mean(axis=1)
 
 
-def _normalize(env: np.ndarray, lo_pct: float = 13.0, hi_pct: float = 87.0) -> np.ndarray:
+def _normalize(env: np.ndarray, lo_pct: float = 17.0, hi_pct: float = 88.0) -> np.ndarray:
     lo = float(np.percentile(env, lo_pct))
     hi = float(np.percentile(env, hi_pct))
     denom = max(hi - lo, 1e-10)
