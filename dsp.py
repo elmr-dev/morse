@@ -9,18 +9,16 @@ Contract:
   extract_envelope(audio, sample_rate, tone_freq) → (T, C) float32 in [0, 1]
   T = len(audio) // 16. Dependencies: numpy, scipy only.
 """
-import math
-
 import numpy as np
 from scipy.ndimage import uniform_filter1d
 from scipy.signal import butter, hilbert, sosfiltfilt
 
 
-_BP_BW_HZ = 25.0          # ch0+ch2 bandpass half-width (narrow → low-SNR)
-_BP_ORDER = 1
+_BP_BW_HZ = 25.0          # ch0 bandpass half-width (narrow → low-SNR)
+_BP_ORDER = 1             # lowest order → shortest impulse response → sharpest edges
 _TKEO_SMOOTH_MS = 30.0    # ch1: TKEO smoothing window
-_MATCHED_MS = 48.0        # ch2: dit-scale integration (BW~20 Hz)
-_SHARPEN_GAMMA = 35.0     # soft — preserves gradient for CWNet
+_MATCHED_MS = 48.0        # ch2: dit-scale IQ integration (BW~20 Hz)
+_SHARPEN_GAMMA = 8.0      # applied twice (effective γ≈64 via composition)
 
 
 def extract_envelope(audio: np.ndarray, sample_rate: int = 8000,
@@ -47,8 +45,8 @@ def _ch0_amplitude(bp: np.ndarray, n_out: int) -> np.ndarray:
     env = _decimate(mag, 16)[:n_out]
     env = _normalize(env)
     env = np.clip((env - 0.09) / 0.76, 0.0, 1.0)
-    env = _sharpen(env, 8.0)
-    return _sharpen(env, 8.0)
+    env = _sharpen(env, _SHARPEN_GAMMA)
+    return _sharpen(env, _SHARPEN_GAMMA)
 
 
 def _tkeo(bp: np.ndarray, sample_rate: int, n_out: int) -> np.ndarray:
