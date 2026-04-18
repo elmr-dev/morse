@@ -5,6 +5,8 @@ Offline evaluation: load a checkpoint, run on val/test set, report CER by bucket
 from __future__ import annotations
 
 import json
+import math
+from collections import defaultdict
 from pathlib import Path
 
 import torch
@@ -30,14 +32,27 @@ def evaluate_checkpoint(
 
     model_cfg = cfg.get("model", {})
     sd = torch.load(checkpoint, map_location=device, weights_only=True)
-    # Auto-detect in_channels from checkpoint
-    in_channels = sd["conv.0.weight"].shape[1]
+    # Auto-detect in_channels from the first conv layer's weight (shape: out_ch, in_ch, k).
+    # _CausalConv1d wraps nn.Conv1d, so the stored key is "conv.0.conv.weight"; older
+    # layouts used "conv.0.weight".
+    # Auto-detect architecture dims from the checkpoint so eval works regardless
+    # of the config passed in.
+    first_conv_key = next(
+        k for k in ("conv.0.conv.weight", "conv.0.0.conv.weight", "conv.0.weight") if k in sd
+    )
+    in_channels = sd[first_conv_key].shape[1]
+    gru_hidden = sd["gru_fwd.weight_ih_l0"].shape[0] // 3
+    tcn_block_ids = {k.split(".")[1] for k in sd if k.startswith("tcn.")}
+    tcn_blocks = len(tcn_block_ids)
+    tcn_channels = sd["tcn.0.conv1.conv.weight"].shape[0] if tcn_blocks else 128
     model = CWNet(
         num_classes=NUM_CLASSES,
-        gru_hidden=model_cfg.get("gru_hidden", 128),
+        gru_hidden=gru_hidden,
         gru_layers=model_cfg.get("gru_layers", 2),
         dropout=0.0,
         in_channels=in_channels,
+        tcn_channels=tcn_channels,
+        tcn_blocks=tcn_blocks,
     )
     model.load_state_dict(sd)
     model = model.to(device)
@@ -85,6 +100,7 @@ def evaluate_checkpoint(
                 })
 
     summary = tracker.summary()
+    summary["fine_breakdown"] = fine_grained_breakdown(sample_results)
     summary["samples"] = sample_results
 
     if out_json is not None:
@@ -95,6 +111,53 @@ def evaluate_checkpoint(
 
     _print_summary(summary)
     return summary
+
+
+def fine_grained_breakdown(samples: list[dict]) -> dict:
+    """Granular SNR/WPM breakdown from per-sample CERs.
+
+    Produces three views:
+      - snr_1db:    1 dB SNR bins (where does it break down across SNR?)
+      - wpm_2wpm:   2 WPM WPM bins (where does it break down across WPM?)
+      - snr_x_wpm:  3 dB × 5 WPM cross-tab (joint degradation surface)
+    """
+    def floor_bin(val: float, width: float) -> int:
+        return int(math.floor(val / width) * width)
+
+    def stats(vals: list[float]) -> dict:
+        if not vals:
+            return {"n": 0, "mean_cer": None, "median_cer": None, "p90_cer": None}
+        s = sorted(vals)
+        n = len(s)
+        return {
+            "n": n,
+            "mean_cer": round(sum(s) / n, 4),
+            "median_cer": round(s[n // 2], 4),
+            "p90_cer": round(s[min(n - 1, int(0.9 * n))], 4),
+        }
+
+    snr_1db: dict[int, list[float]] = defaultdict(list)
+    wpm_2: dict[int, list[float]] = defaultdict(list)
+    cross: dict[tuple[int, int], list[float]] = defaultdict(list)
+
+    for s in samples:
+        cer, snr, wpm = s["cer"], float(s["snr_db"]), float(s["wpm"])
+        snr_1db[floor_bin(snr, 1)].append(cer)
+        wpm_2[floor_bin(wpm, 2)].append(cer)
+        cross[(floor_bin(snr, 3), floor_bin(wpm, 5))].append(cer)
+
+    return {
+        "snr_1db": {
+            f"{k:+d}..{k+1:+d}dB": stats(v) for k, v in sorted(snr_1db.items())
+        },
+        "wpm_2wpm": {
+            f"{k}-{k+2}wpm": stats(v) for k, v in sorted(wpm_2.items())
+        },
+        "snr_x_wpm": {
+            f"snr={snr:+d}..{snr+3:+d}dB,wpm={wpm}-{wpm+5}": stats(v)
+            for (snr, wpm), v in sorted(cross.items())
+        },
+    }
 
 
 def _print_summary(s: dict):

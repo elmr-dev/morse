@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 # Build the cw-model Docker image.
 #
-# Run from either morse/ or cw-ml/model/:
+# Build context is the morse/ parent directory (needed for local morse-audio source).
+# Can be run from either morse/ or cw-ml/model/:
+#
 #   ./build-docker.sh [--smoke] [--push REGISTRY/IMAGE:TAG]
 #
 # Options:
@@ -11,6 +13,7 @@
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+MORSE_DIR="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 IMAGE="mpercival/cw-model:latest"
 RUN_SMOKE=false
 PUSH_TAG=""
@@ -24,13 +27,14 @@ while [[ $# -gt 0 ]]; do
 done
 
 echo "=== Building ${IMAGE} ==="
-echo "    Context:    ${SCRIPT_DIR}"
+echo "    Context:    ${MORSE_DIR}"
+echo "    Dockerfile: ${SCRIPT_DIR}/Dockerfile"
 echo ""
 
 docker build \
     -f "${SCRIPT_DIR}/Dockerfile" \
     -t "${IMAGE}" \
-    "${SCRIPT_DIR}"
+    "${MORSE_DIR}"
 
 echo ""
 echo "=== Checking image for .env files ==="
@@ -63,3 +67,16 @@ if [ -n "${PUSH_TAG}" ]; then
     docker push "${PUSH_TAG}"
     echo "=== Pushed: ${PUSH_TAG} ==="
 fi
+
+echo ""
+echo "Run on RunPod (with Cloudflare R2 upload):"
+echo ""
+echo "  docker run --gpus all \\"
+echo "    -e RUN_CMD=\"pipeline --config configs/4090.yaml\" \\"
+echo "    -e RUNPOD_API_KEY=\$RUNPOD_API_KEY \\"
+echo "    -e S3_BUCKET=ml-runs \\"
+echo "    -e S3_ENDPOINT_URL=\$S3_ENDPOINT_URL \\"
+echo "    -e AWS_ACCESS_KEY_ID=\$AWS_ACCESS_KEY_ID \\"
+echo "    -e AWS_SECRET_ACCESS_KEY=\$AWS_SECRET_ACCESS_KEY \\"
+echo "    -v /workspace:/workspace \\"
+echo "    ${IMAGE}"

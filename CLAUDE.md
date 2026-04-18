@@ -4,10 +4,10 @@
 
 ## Architecture
 
-**DSP** (`data/dsp.py`): Single-channel IQ magnitude envelope.
-- Validated in `../cw-dsp-research/` (0.8651 composite score)
-- IQ demodulation → 21 Hz Butterworth → magnitude → decimate 16× → 500 Hz
-- Sigmoid sharpened (gamma=37) for clean CTC edges
+**DSP** (`data/dsp.py`): Single-channel bandpass + Hilbert envelope.
+- Synced from `../cw-dsp-research/dsp.py` (autoresearch, 0.8651 composite score)
+- Bandpass ±22 Hz → Hilbert magnitude → decimate 16× → 500 Hz
+- Power compression (^0.69) → global percentile normalize → sigmoid sharpen (gamma=37)
 
 **Model** (`model/cwnet.py`):
 - Input: `(B, T, 1)` at 500 Hz

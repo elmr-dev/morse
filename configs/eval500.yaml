@@ -1,44 +1,44 @@
-# Base training config — full run on RunPod (RTX 4090 or A100)
-name: base
+# Local eval config — 500 val samples, 3-channel, matches 4090 training distribution
+name: eval500
 
 paths:
-  train_dir: data/train
-  val_dir:   data/val
+  train_dir: data/eval500/train
+  val_dir:   data/eval500/val
   run_dir:   runs
 
 dsp:
-  channels: 1          # Single IQ magnitude channel (cw-ml/cw-dsp-research validated)
+  channels: 3
   sample_rate: 8000
   envelope_rate: 500
 
 model:
-  in_channels: 1
+  in_channels: 3
   gru_hidden: 128
   gru_layers: 2
+  tcn_channels: 128
+  tcn_blocks: 4
   dropout: 0.2
 
 training:
-  epochs: 60
-  ce_pretrain_epochs: 5
-  ce_blend_epochs: 3
-  batch_size: 96
-  lr: 0.0002
-  warmup_epochs: 3
-  num_workers: 4
-  # Anti-hallucination: push blank/char distinction harder than cw-decode did
-  entropy_weight: 0.03   # Was 0.01 in cw-decode — primary low-SNR anti-hallucination knob
-  ce_blank_weight: 0.2   # Was 0.5 in cw-decode — force model to learn silence → blank
-  ce_char_weight: 3.0    # Was 2.0 in cw-decode — force model to learn signal → char
+  epochs: 1
+  ce_pretrain_epochs: 0
+  ce_blend_epochs: 0
+  batch_size: 32
+  lr: 0.0001
+  warmup_epochs: 0
+  num_workers: 0
+  entropy_weight: 0.03
+  ce_blank_weight: 0.2
+  ce_char_weight: 3.0
 
 data:
-  n_train: 100000
-  n_val: 2000
+  n_train: 0
+  n_val: 500
   seed: 42
   max_chars: 20
   max_clip_s: 15.0
   gen_workers: 4
   dsp_workers: 8
-  # SNR: reduce very-low tier vs cw-decode (was 40%) — over-training on noise teaches hallucination
   snr_tiers:
     very_low: {range: [-18, -10], weight: 0.25}
     low:      {range: [-10,  -4], weight: 0.20}

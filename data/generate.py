@@ -421,10 +421,26 @@ def generate_dataset(
     args_list = [(i, configs[i], meta_list[i], str(npz_dir), keep_wav) for i in range(n)]
 
     errors = []
+    import os, time
+    quiet = os.environ.get("CW_QUIET", "0") == "1"
+    t0 = time.time()
+    last_bucket = 0
+    done = 0
     with ProcessPoolExecutor(max_workers=dsp_workers) as pool:
-        for i, err in tqdm(pool.map(_dsp_work, args_list), total=n, desc="DSP"):
-            if err:
-                errors.append((i, err))
+        if quiet:
+            for i, err in pool.map(_dsp_work, args_list):
+                done += 1
+                if err:
+                    errors.append((i, err))
+                pct = int(100 * done / max(n, 1))
+                bucket = (pct // 25) * 25
+                if bucket > last_bucket and bucket > 0:
+                    last_bucket = bucket
+                    print(f"  DSP {bucket:>3d}%  ({done}/{n}, {time.time()-t0:.0f}s)", flush=True)
+        else:
+            for i, err in tqdm(pool.map(_dsp_work, args_list), total=n, desc="DSP"):
+                if err:
+                    errors.append((i, err))
 
     if errors:
         print(f"\nDSP errors ({len(errors)}/{n}):")

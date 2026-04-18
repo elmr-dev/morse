@@ -1,85 +1,109 @@
 """
-CW DSP envelope extraction — 1-channel IQ magnitude pipeline.
+CW DSP envelope extraction — 3-channel orthogonal physics.
 
-Ported from cw-ml/cw-dsp-research/dsp.py (the autoresearch-validated pipeline).
+Synced from cw-ml/cw-dsp-research/dsp.py (autoresearch-validated, 3-channel pipeline).
+
+ch0: amplitude       — ±25 Hz bandpass + Hilbert + pct-norm + gentle sharpen
+ch1: TKEO            — Teager-Kaiser energy on bandpassed signal (zero-delay)
+ch2: matched filter  — 48 ms coherent IQ box — narrow BW for low-SNR
 
 Contract:
-  extract_envelope(audio, sample_rate, tone_freq) → np.ndarray shape (T, 1)
-  T = len(audio) // 16  (decimation: 8000 Hz → 500 Hz)
-  Values in [0, 1], dtype float32
+  extract_envelope(audio, sample_rate, tone_freq) → (T, 3) float32 in [0, 1]
+  T = len(audio) // 16. Dependencies: numpy, scipy only.
 
-process_wav(wav_path, tone_freq_hz) → np.ndarray (T, 1)
+process_wav(wav_path, tone_freq_hz) → np.ndarray (T, 3)
   Convenience wrapper: reads WAV, runs extract_envelope.
 """
 import numpy as np
 import soundfile as sf
-from scipy.signal import butter, sosfiltfilt
+from scipy.ndimage import gaussian_filter1d, uniform_filter1d
+from scipy.signal import butter, hilbert, sosfiltfilt
 
 DSP_SAMPLE_RATE = 8000
 ENVELOPE_SR = 500
 DECIMATION = 16
 
+_BP_BW_HZ = 25.0          # ch0 bandpass half-width (narrow → low-SNR)
+_BP_ORDER = 1             # lowest order → shortest impulse response → sharpest edges
+_TKEO_SMOOTH_MS = 30.0    # ch1: TKEO smoothing window
+_MATCHED_MS = 48.0        # ch2: dit-scale IQ integration (BW~20 Hz)
+_SHARPEN_GAMMA = 8.0      # applied twice (effective γ≈64 via composition)
 
-def extract_envelope(audio: np.ndarray, sample_rate: int = 8000,
+
+def extract_envelope(audio: np.ndarray, sample_rate: int = DSP_SAMPLE_RATE,
                      tone_freq: float = 600.0) -> np.ndarray:
-    """
-    Single-channel IQ magnitude envelope.
-
-    ch0: IQ magnitude, 21 Hz zero-phase Butterworth (sosfiltfilt).
-         No group delay — edges land at the correct frame.
-         Sigmoid-sharpened (gamma=37) to push values toward 0/1 for clean CTC edges.
-    """
-    n_out = len(audio) // 16
     n = len(audio)
+    n_out = n // DECIMATION
+    audio64 = audio.astype(np.float64)
 
-    # IQ downconversion
-    t = np.arange(n) / sample_rate
-    I = audio * np.cos(2 * np.pi * tone_freq * t)
-    Q = audio * -np.sin(2 * np.pi * tone_freq * t)
+    lo = max(tone_freq - _BP_BW_HZ, 1.0)
+    hi = min(tone_freq + _BP_BW_HZ, sample_rate / 2 - 1)
+    sos_bp = butter(_BP_ORDER, [lo, hi], btype="bandpass", fs=sample_rate, output="sos")
+    bp = sosfiltfilt(sos_bp, audio64)
 
-    # ch0: zero-phase IQ envelope, 1st-order 21Hz Butterworth
-    sos = butter(1, 21, btype="low", fs=sample_rate, output="sos")
-    mag = np.sqrt(sosfiltfilt(sos, I) ** 2 + sosfiltfilt(sos, Q) ** 2)
-    ch0 = _decimate(mag, 16)[:n_out]
-    ch0 = _normalize(ch0, noise_win_ms=750)
-    # Sigmoid sharpening: push values toward 0/1 for sharper CTC edges.
-    # gamma=37 is empirically optimal (cw-dsp-research autoresearch, Apr 2026).
-    ch0 = _sharpen(ch0, gamma=37.0)
+    ch0 = _ch0_amplitude(bp, n_out)
+    ch1 = _tkeo(bp, sample_rate, n_out)
+    ch2 = _matched(audio64, sample_rate, tone_freq, n_out, _MATCHED_MS)
 
-    return ch0[:, np.newaxis].astype(np.float32)
+    return np.stack([ch0, ch1, ch2], axis=1).astype(np.float32)
 
 
 def process_wav(wav_path: str, tone_freq_hz: float,
                 sample_rate: int = DSP_SAMPLE_RATE) -> np.ndarray:
-    """Read a WAV file and return the 1-channel DSP envelope (T, 1)."""
+    """Read a WAV file and return the 3-channel DSP envelope (T, 3)."""
     audio, sr = sf.read(wav_path, dtype="float32")
     if sr != sample_rate:
         raise ValueError(f"Expected {sample_rate} Hz, got {sr} in {wav_path}")
     if audio.ndim > 1:
-        audio = audio[:, 0]  # mono
+        audio = audio[:, 0]
     return extract_envelope(audio, sample_rate, tone_freq_hz)
 
 
+def _ch0_amplitude(bp: np.ndarray, n_out: int) -> np.ndarray:
+    mag = np.abs(hilbert(bp))
+    mag = gaussian_filter1d(mag, sigma=4.0, mode="reflect")
+    env = _decimate(mag, DECIMATION)[:n_out]
+    env = _normalize(env)
+    env = np.clip((env - 0.05) / 0.76, 0.0, 1.0)
+    env = _sharpen(env, _SHARPEN_GAMMA)
+    return _sharpen(env, _SHARPEN_GAMMA)
+
+
+def _tkeo(bp: np.ndarray, sample_rate: int, n_out: int) -> np.ndarray:
+    psi = np.zeros_like(bp)
+    psi[1:-1] = bp[1:-1] ** 2 - bp[:-2] * bp[2:]
+    psi = np.maximum(psi, 0.0)
+    win = max(3, int(_TKEO_SMOOTH_MS / 1000.0 * sample_rate))
+    psi = uniform_filter1d(psi, size=win, mode="reflect")
+    env = _decimate(psi, DECIMATION)[:n_out]
+    return _normalize(env)
+
+
+def _matched(audio: np.ndarray, sample_rate: int, tone_freq: float,
+             n_out: int, duration_ms: float) -> np.ndarray:
+    t = np.arange(len(audio)) / sample_rate
+    I = audio * np.cos(2.0 * np.pi * tone_freq * t)
+    Q = audio * (-np.sin(2.0 * np.pi * tone_freq * t))
+    win = max(3, int(duration_ms / 1000.0 * sample_rate))
+    I_mf = uniform_filter1d(I, size=win, mode="reflect")
+    Q_mf = uniform_filter1d(Q, size=win, mode="reflect")
+    mag = np.sqrt(I_mf ** 2 + Q_mf ** 2)
+    env = _decimate(mag, DECIMATION)[:n_out]
+    return _normalize(env)
+
+
 def _decimate(x: np.ndarray, factor: int) -> np.ndarray:
-    """Decimate by averaging blocks of `factor` samples."""
     n = len(x) // factor * factor
     return x[:n].reshape(-1, factor).mean(axis=1)
 
 
-def _sharpen(x: np.ndarray, gamma: float = 2.0) -> np.ndarray:
-    """Push values toward 0/1: x^g / (x^g + (1-x)^g). AUC-preserving."""
+def _normalize(env: np.ndarray, lo_pct: float = 17.0, hi_pct: float = 88.0) -> np.ndarray:
+    lo = float(np.percentile(env, lo_pct))
+    hi = float(np.percentile(env, hi_pct))
+    denom = max(hi - lo, 1e-10)
+    return np.clip((env - lo) / denom, 0.0, 1.0)
+
+
+def _sharpen(x: np.ndarray, gamma: float) -> np.ndarray:
     xg = x ** gamma
     return xg / (xg + (1.0 - x) ** gamma + 1e-12)
-
-
-def _normalize(env: np.ndarray, noise_win_ms: float = 500.0, sr: int = 500) -> np.ndarray:
-    """Normalize envelope to [0, 1] using running noise floor estimate."""
-    from scipy.ndimage import minimum_filter1d
-
-    win = max(int(noise_win_ms * sr / 1000), 1)
-    kernel = np.ones(max(win // 23, 1)) / max(win // 23, 1)
-    smoothed = np.convolve(env, kernel, mode="same")
-    noise_floor = minimum_filter1d(smoothed, size=win)
-    signal_level = np.percentile(env, 82)
-    denom = max(signal_level - float(np.median(noise_floor)), 1e-10)
-    return np.clip((env - noise_floor) / denom, 0.0, 1.0)

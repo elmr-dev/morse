@@ -45,14 +45,16 @@ class CWDataset(Dataset):
         data = np.load(self.files[idx], allow_pickle=True)
         envelopes = data["envelopes"].astype(np.float32)   # (T, 1)
         if self.augment:
+            # Only label-safe augmentations. time_shift and time_mask mutate the
+            # envelope without touching frame_labels — they explicitly train the
+            # model to hallucinate chars onto silence and ignore precise timing.
+            # additive_noise on top of already-normalised envelopes double-noises
+            # every sample on top of the SNR that was baked in at generation.
             envelopes = apply_augmentations(envelopes, {
                 "amplitude_scale":   True,
-                "additive_noise":    True,
-                "noise_sigma":       0.05,
-                "time_mask":         True,
-                "time_mask_frac":    0.30,
-                "time_mask_n":       1,
-                "time_shift":        True,
+                "additive_noise":    False,
+                "time_mask":         False,
+                "time_shift":        False,
             })
         text = str(data["text"])
         wpm = float(data.get("wpm", 20.0))
@@ -94,7 +96,8 @@ def collate_fn(batch: list[dict]) -> tuple:
     Returns: (inputs, targets, input_lengths, target_lengths, frame_labels, metadata)
     """
     max_T = max(b["input"].shape[0] for b in batch)
-    max_T_out = max_T // CNN_DOWNSAMPLE
+    max_T = max_T + (max_T % 2)          # round up to even — causal stride-2 conv outputs ceil(T/2)
+    max_T_out = max_T // CNN_DOWNSAMPLE  # now exact
 
     B = len(batch)
     n_channels = batch[0]["input"].shape[1]
@@ -109,7 +112,7 @@ def collate_fn(batch: list[dict]) -> tuple:
 
     targets = torch.cat([b["target"] for b in batch])   # CTC needs flat
     input_lengths = torch.tensor(
-        [b["input_length"] // CNN_DOWNSAMPLE for b in batch], dtype=torch.long
+        [(b["input_length"] + 1) // CNN_DOWNSAMPLE for b in batch], dtype=torch.long
     )
     target_lengths = torch.tensor(
         [b["target_length"] for b in batch], dtype=torch.long

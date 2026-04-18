@@ -7,10 +7,11 @@ data/val/
 data/debug/
 checkpoints/*.pt
 checkpoints/*.onnx
+!checkpoints/best.pt
+!checkpoints/best.yaml
 __pycache__/
 *.pyc
 *.npz
 *.wav
-*.onnx
 .DS_Store
 uv.lock

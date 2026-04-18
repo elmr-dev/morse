@@ -11,6 +11,7 @@ Two-phase training to avoid blank collapse:
 from __future__ import annotations
 
 import json
+import os
 import time
 from pathlib import Path
 
@@ -19,6 +20,42 @@ import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader, Sampler
 from tqdm import tqdm
+
+
+# CW_QUIET=1 → suppress per-batch tqdm output, print 25% progress markers only.
+# Set by docker-entrypoint.sh so RunPod pod logs aren't dominated by progress bars.
+_QUIET = os.environ.get("CW_QUIET", "0") == "1"
+
+
+class _QuietProgress:
+    """tqdm-compatible wrapper that prints one line per 25% epoch progress."""
+    def __init__(self, iterable, desc: str = ""):
+        self.iterable = iterable
+        self.total = len(iterable)
+        self.desc = desc
+        self._postfix = ""
+        self._last_bucket = 0
+        self._t0 = time.time()
+
+    def __iter__(self):
+        for i, item in enumerate(self.iterable, start=1):
+            yield item
+            pct = int(100 * i / max(self.total, 1))
+            bucket = (pct // 25) * 25
+            if bucket > self._last_bucket and bucket > 0:
+                self._last_bucket = bucket
+                elapsed = time.time() - self._t0
+                print(f"  {self.desc} {bucket:>3d}%  {self._postfix}  ({elapsed:.0f}s)",
+                      flush=True)
+
+    def set_postfix(self, **kwargs):
+        self._postfix = " ".join(f"{k}={v}" for k, v in kwargs.items())
+
+
+def _progress(loader, desc: str):
+    if _QUIET:
+        return _QuietProgress(loader, desc=desc)
+    return tqdm(loader, desc=f"  {desc}", leave=False, dynamic_ncols=True)
 
 from data.dataset import CWDataset, collate_fn
 from model.cwnet import CWNet, NUM_CLASSES
@@ -32,7 +69,9 @@ def build_model(cfg: dict) -> CWNet:
         gru_hidden=model_cfg.get("gru_hidden", 128),
         gru_layers=model_cfg.get("gru_layers", 2),
         dropout=model_cfg.get("dropout", 0.2),
-        in_channels=model_cfg.get("in_channels", 1),
+        in_channels=model_cfg.get("in_channels", 3),
+        tcn_channels=model_cfg.get("tcn_channels", 128),
+        tcn_blocks=model_cfg.get("tcn_blocks", 4),
     )
 
 
@@ -79,7 +118,7 @@ def train_one_epoch_blended(
     ce_weights = _build_ce_weights(NUM_CLASSES, device, ce_blank_weight, ce_char_weight)
     ce_loss_fn = nn.CrossEntropyLoss(weight=ce_weights, ignore_index=-1)
 
-    pbar = tqdm(loader, desc=f"  {phase_tag}", leave=False, dynamic_ncols=True)
+    pbar = _progress(loader, phase_tag)
     for inputs, targets, input_lengths, target_lengths, frame_labels, _meta in pbar:
         inputs = inputs.to(device)
         targets = targets.to(device)
@@ -256,8 +295,11 @@ def train_phase(
 
     if starting_checkpoint is not None:
         state = torch.load(starting_checkpoint, map_location=device, weights_only=True)
-        ckpt_in_ch = state["conv.0.weight"].shape[1]
-        model_in_ch = model.conv[0].weight.shape[1]
+        first_conv_key = next(
+            k for k in ("conv.0.conv.weight", "conv.0.0.conv.weight", "conv.0.weight") if k in state
+        )
+        ckpt_in_ch = state[first_conv_key].shape[1]
+        model_in_ch = model.conv[0].conv.weight.shape[1]
         if ckpt_in_ch != model_in_ch:
             print(f"WARNING: checkpoint has {ckpt_in_ch} input channels, "
                   f"model has {model_in_ch} — skipping checkpoint, training from scratch")

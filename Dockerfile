@@ -1,23 +1,36 @@
 # CW Model training image
 #
-# Includes:
-#   - PyTorch 2.2 + CUDA 12.1 (RTX 4090 / A100)
-#   - Node 24 + pnpm  (TypeScript WAV generator via morse-audio)
-#   - Python 3.12 + uv  (DSP pipeline + ML training)
-#   - awscli  (upload checkpoints to S3/R2)
+# Build context MUST be the morse/ parent directory:
+#   cd morse/
+#   docker build -f cw-ml/model/Dockerfile -t mpercival/cw-model:latest .
 #
-# Build:
-#   docker build -t cw-model:latest .
+# Or use the helper script:
+#   ./cw-ml/model/build-docker.sh [--smoke] [--push TAG]
+#
+# Smoke test (CPU):
+#   docker run --rm -e RUN_CMD="pipeline --config configs/debug.yaml" mpercival/cw-model:latest
 #
 # RunPod usage:
 #   docker run --gpus all \
-#     -e RUN_CMD="pipeline --config configs/base.yaml" \
+#     -e RUN_CMD="pipeline --config configs/4090.yaml" \
 #     -e RUNPOD_API_KEY=xxx \
-#     -e S3_BUCKET=my-bucket \
+#     -e S3_BUCKET=ml-runs \
+#     -e S3_ENDPOINT_URL=https://....r2.cloudflarestorage.com \
 #     -e AWS_ACCESS_KEY_ID=xxx \
 #     -e AWS_SECRET_ACCESS_KEY=xxx \
-#     -v /workspace:/workspace cw-model:latest
+#     -v /workspace:/workspace mpercival/cw-model:latest
 
+# ── Stage 1: build morse-audio from local source ──────────────────────────────
+FROM node:24-alpine AS morse-audio-builder
+
+WORKDIR /build
+COPY morse-audio/packages/morse-audio/package.json ./
+RUN npm install && npm install tsup typescript@~5
+COPY morse-audio/tsconfig.base.json /tsconfig.base.json
+COPY morse-audio/packages/morse-audio/ ./
+RUN npm run build
+
+# ── Stage 2: main training image ──────────────────────────────────────────────
 FROM pytorch/pytorch:2.2.0-cuda12.1-cudnn8-runtime
 
 # ── System packages ────────────────────────────────────────────────────────────
@@ -46,20 +59,23 @@ RUN curl -LsSf https://astral.sh/uv/install.sh | sh
 ENV PATH="/root/.local/bin:${PATH}"
 
 # ── AWS CLI ───────────────────────────────────────────────────────────────────
-RUN pip install --no-cache-dir awscli
+ENV UV_SYSTEM_PYTHON=1
+RUN uv pip install --system awscli
 
-# ── Copy repo ─────────────────────────────────────────────────────────────────
+# ── Copy cw-model source ──────────────────────────────────────────────────────
 WORKDIR /app
-COPY . .
+COPY cw-ml/model/ .
 
-# ── Bake in starting checkpoint (optional) ────────────────────────────────────
-COPY checkpoints/ /app/checkpoints/
+# ── Wire in morse-audio built from local source ───────────────────────────────
+COPY morse-audio/packages/morse-audio/package.json morse-audio/packages/morse-audio/package.json
+COPY --from=morse-audio-builder /build/dist morse-audio/packages/morse-audio/dist
 
 # ── Install Node dependencies ──────────────────────────────────────────────────
-RUN pnpm install --frozen-lockfile
+RUN pnpm install
 
 # ── Install Python dependencies ───────────────────────────────────────────────
-ENV UV_SYSTEM_PYTHON=1
+# Use the base image's conda Python (which already has torch+CUDA) so uv does
+# NOT re-download torch (~2.5 GB CPU-only). Install only the non-torch deps.
 RUN uv pip install --system \
         numpy \
         scipy \
@@ -77,9 +93,6 @@ ENV PYTHONPATH=/app
 ENV PATH="/app/node_modules/.bin:${PATH}"
 
 # ── Entrypoint ────────────────────────────────────────────────────────────────
-COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
-RUN chmod +x /usr/local/bin/docker-entrypoint.sh
-
-WORKDIR /app
-ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
+RUN chmod +x /app/docker-entrypoint.sh
+ENTRYPOINT ["/app/docker-entrypoint.sh"]
 CMD []

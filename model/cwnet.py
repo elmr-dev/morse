@@ -86,36 +86,36 @@ class _TCNBlock(nn.Module):
 
 class CWNet(nn.Module):
     def __init__(self, num_classes: int = NUM_CLASSES, gru_hidden: int = 128,
-                 gru_layers: int = 2, dropout: float = 0.2, in_channels: int = 1):
+                 gru_layers: int = 2, dropout: float = 0.2, in_channels: int = 1,
+                 tcn_channels: int = 128, tcn_blocks: int = 4, **_unused):
         super().__init__()
 
         # Causal CNN frontend: 500 Hz → 250 Hz (stride-2 at layer 1)
+        c0 = max(tcn_channels // 2, 16)
+        c1 = max(tcn_channels * 3 // 4, 24)
+        c2 = tcn_channels
         self.conv = nn.Sequential(
             # Layer 1: stride-2 downsampling (not MaxPool — cleaner ONNX export)
-            _CausalConv1d(in_channels, 64, kernel_size=7, stride=2),
-            nn.BatchNorm1d(64),
+            _CausalConv1d(in_channels, c0, kernel_size=7, stride=2),
+            nn.BatchNorm1d(c0),
             nn.ReLU(),
             # Layer 2
-            _CausalConv1d(64, 96, kernel_size=5),
-            nn.BatchNorm1d(96),
+            _CausalConv1d(c0, c1, kernel_size=5),
+            nn.BatchNorm1d(c1),
             nn.ReLU(),
             # Layer 3
-            _CausalConv1d(96, 128, kernel_size=3),
-            nn.BatchNorm1d(128),
+            _CausalConv1d(c1, c2, kernel_size=3),
+            nn.BatchNorm1d(c2),
             nn.ReLU(),
         )
 
-        # Causal TCN: 4 blocks, dilations 1/2/4/8
-        # Total receptive field: (1 + 2 + 4 + 8) * 2 + 1 ≈ 30 output frames = ~120ms
+        # Causal TCN: tcn_blocks blocks, dilations 1/2/4/8/...
         self.tcn = nn.Sequential(
-            _TCNBlock(128, kernel_size=3, dilation=1),
-            _TCNBlock(128, kernel_size=3, dilation=2),
-            _TCNBlock(128, kernel_size=3, dilation=4),
-            _TCNBlock(128, kernel_size=3, dilation=8),
+            *[_TCNBlock(c2, kernel_size=3, dilation=2**i) for i in range(tcn_blocks)]
         )
 
         gru_kwargs = dict(
-            input_size=128,
+            input_size=c2,
             hidden_size=gru_hidden,
             num_layers=gru_layers,
             batch_first=True,

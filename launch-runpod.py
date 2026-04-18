@@ -19,6 +19,8 @@ Reads credentials from .env (in morse/ dir or cwd):
 import argparse
 import os
 import sys
+import time
+from datetime import datetime
 from pathlib import Path
 
 
@@ -61,11 +63,25 @@ def main():
                         help="Train from scratch, ignore checkpoints/base.pt")
     parser.add_argument("--gpu", default="NVIDIA GeForce RTX 4090",
                         help='GPU type (default: "NVIDIA GeForce RTX 4090")')
+    parser.add_argument("--cloud-type", default="SECURE",
+                        choices=["SECURE", "COMMUNITY", "ALL"],
+                        help="RunPod cloud pool (default: SECURE)")
+    parser.add_argument("--no-public-ip", action="store_true",
+                        help="Don't require a public IP (needed for most COMMUNITY hosts)")
     parser.add_argument("--image", help="Docker image (overrides DOCKER_IMAGE in .env)")
     parser.add_argument("--name", help="Pod name")
     parser.add_argument("--volume-gb", type=int, default=40)
     parser.add_argument("--disk-gb",   type=int, default=20)
     parser.add_argument("--list-gpus", action="store_true")
+    parser.add_argument("--retry-until-available", action="store_true",
+                        help="Poll until capacity is available (Ctrl+C to abort)")
+    parser.add_argument("--retry-interval", type=int, default=60,
+                        help="Seconds between retries (default: 60)")
+    parser.add_argument("--debug", action="store_true",
+                        help="Print the GraphQL mutation and availability query result before deploying")
+    parser.add_argument("--keep-alive-on-error", action="store_true",
+                        help="If training or upload fails, keep the pod alive for SSH debugging "
+                             "(skips auto-terminate; you pay until you stop it manually)")
     args = parser.parse_args()
 
     load_env()
@@ -103,6 +119,9 @@ def main():
         if os.environ.get(optional):
             container_env[optional] = os.environ[optional]
 
+    if args.keep_alive_on_error:
+        container_env["KEEP_ALIVE_ON_ERROR"] = "1"
+
     config_stem = Path(args.config).stem
     pod_name = args.name or f"cw-model-{config_stem}"
 
@@ -117,30 +136,90 @@ def main():
             print(f"{g['id']:<40} {g['displayName']}")
         sys.exit(0)
 
+    support_public_ip = not args.no_public_ip
+
     print(f"\n[launch] Launching pod: {pod_name}")
-    print(f"  Image:   {image}")
-    print(f"  GPU:     {args.gpu}")
-    print(f"  Config:  {args.config}")
+    print(f"  Image:      {image}")
+    print(f"  GPU:        {args.gpu}")
+    print(f"  Cloud:      {args.cloud_type}")
+    print(f"  Public IP:  {support_public_ip}")
+    print(f"  Config:     {args.config}")
     if starting_checkpoint:
-        print(f"  Ckpt:    {starting_checkpoint}")
-    print(f"  Volume:  {args.volume_gb} GB")
-    print(f"  S3:      s3://{os.environ['S3_BUCKET']}/cw-model/runs/")
+        print(f"  Ckpt:       {starting_checkpoint}")
+    print(f"  Disk:       {args.disk_gb} GB container / {args.volume_gb} GB volume")
+    print(f"  S3:         s3://{os.environ['S3_BUCKET']}/cw-model/runs/")
+    print(f"  S3 endpoint:  {container_env.get('S3_ENDPOINT_URL', '<NOT SET>')}")
+    print(f"  AWS key ID:   {container_env.get('AWS_ACCESS_KEY_ID', '<NOT SET>')}")
+    print(f"  Env vars passed: {list(container_env.keys())}")
     print()
 
-    pod = runpod.create_pod(
+    create_kwargs = dict(
         name=pod_name,
         image_name=image,
         gpu_type_id=args.gpu,
-        cloud_type="SECURE",
+        cloud_type=args.cloud_type,
+        support_public_ip=support_public_ip,
         env=container_env,
         container_disk_in_gb=args.disk_gb,
         volume_in_gb=args.volume_gb,
-        volume_mount_path="/workspace",
     )
+    # Only set volume_mount_path when a volume is actually requested; passing
+    # it with volume_in_gb=0 is inconsistent and excludes hosts.
+    if args.volume_gb > 0:
+        create_kwargs["volume_mount_path"] = "/workspace"
+
+    if args.debug:
+        from runpod.api import ctl_commands as _ctl
+        from runpod.api.graphql import run_graphql_query as _gql
+        from runpod.api.queries import gpus as _gpu_q
+        print("\n--- [debug] GPU availability probe ---")
+        try:
+            q = _gpu_q.generate_gpu_query(args.gpu, gpu_count=1)
+            resp = _gql(q)
+            print(resp)
+        except Exception as e:
+            print(f"gpu query failed: {e}")
+        print("\n--- [debug] GraphQL mutation about to be sent ---")
+        redacted_env = {k: "<REDACTED>" for k in create_kwargs["env"]}
+        mut = _ctl.pod_mutations.generate_pod_deployment_mutation(
+            create_kwargs["name"],
+            create_kwargs["image_name"],
+            create_kwargs["gpu_type_id"],
+            create_kwargs["cloud_type"],
+            create_kwargs["support_public_ip"],
+            True,  # start_ssh default
+            None, None,  # data_center_id, country_code
+            1,  # gpu_count
+            create_kwargs["volume_in_gb"],
+            create_kwargs["container_disk_in_gb"],
+            1, 1,  # min_vcpu_count, min_memory_in_gb
+            "", None,  # docker_args, ports
+            create_kwargs.get("volume_mount_path"),
+            redacted_env,
+            None, None, None, None, None, None,
+        )
+        print(mut)
+        print("--- [debug] end ---\n")
+
+    attempt = 0
+    while True:
+        attempt += 1
+        try:
+            pod = runpod.create_pod(**create_kwargs)
+            break
+        except Exception as e:
+            msg = str(e)
+            transient = "does not have the resources" in msg or "no longer any instances" in msg
+            if not (args.retry_until_available and transient):
+                raise
+            ts = datetime.now().strftime("%H:%M:%S")
+            print(f"[{ts}] attempt {attempt}: no capacity — retrying in {args.retry_interval}s "
+                  f"(Ctrl+C to abort)", flush=True)
+            time.sleep(args.retry_interval)
 
     pod_id = pod.get("id") or pod.get("podId") or str(pod)
     print(f"[launch] Pod started: {pod_id}")
-    print(f"  Dashboard: https://www.runpod.io/console/pods/{pod_id}")
+    print(f"  Dashboard: https://console.runpod.io/pods?id={pod_id}")
     print(f"\n  Artifacts will upload to: s3://{os.environ['S3_BUCKET']}/cw-model/runs/")
 
 

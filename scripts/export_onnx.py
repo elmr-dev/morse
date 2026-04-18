@@ -48,9 +48,14 @@ def export_onnx(checkpoint: Path, output_path: Path, cfg: dict) -> None:
 
     model_cfg = cfg.get("model", {})
     sd = torch.load(checkpoint, map_location=device, weights_only=True)
-    in_channels = sd["conv.0.weight"].shape[1]
-    gru_hidden  = model_cfg.get("gru_hidden", 128)
+    first_conv_key = next(
+        k for k in ("conv.0.0.conv.weight", "conv.0.conv.weight", "conv.0.weight") if k in sd
+    )
+    in_channels = sd[first_conv_key].shape[1]
+    gru_hidden  = sd["gru_fwd.weight_ih_l0"].shape[0] // 3
     gru_layers  = model_cfg.get("gru_layers", 2)
+    tcn_blocks  = model_cfg.get("tcn_blocks", 4)
+    tcn_channels = model_cfg.get("tcn_channels", 128)
 
     model = CWNet(
         num_classes=NUM_CLASSES,
@@ -58,6 +63,8 @@ def export_onnx(checkpoint: Path, output_path: Path, cfg: dict) -> None:
         gru_layers=gru_layers,
         dropout=0.0,
         in_channels=in_channels,
+        tcn_channels=tcn_channels,
+        tcn_blocks=tcn_blocks,
     )
     model.load_state_dict(sd)
     model.eval()
@@ -69,7 +76,8 @@ def export_onnx(checkpoint: Path, output_path: Path, cfg: dict) -> None:
     wrapper = _StreamChunkWrapper(model)
     wrapper.eval()
 
-    total_input_frames = CHUNK_FRAMES + LOOKAHEAD_FRAMES  # 150 frames = 300ms at 500 Hz
+    # LOOKAHEAD_FRAMES is in 250-Hz units (per cwnet.py) so the lookahead is 2*LOOKAHEAD_FRAMES at 500 Hz.
+    total_input_frames = CHUNK_FRAMES + 2 * LOOKAHEAD_FRAMES  # 200 frames = 400ms at 500 Hz
     envelopes  = torch.zeros(1, total_input_frames, in_channels)
     fwd_hidden = torch.zeros(gru_layers, 1, gru_hidden)
 
@@ -111,7 +119,7 @@ def _verify_onnx(model: CWNet, onnx_path: Path, in_channels: int,
         print("\nSkipping ONNX verify: onnxruntime not installed.")
         return
 
-    total_frames = CHUNK_FRAMES + LOOKAHEAD_FRAMES
+    total_frames = CHUNK_FRAMES + 2 * LOOKAHEAD_FRAMES
     rng = np.random.default_rng(42)
     env_np    = rng.standard_normal((1, total_frames, in_channels)).astype(np.float32)
     hidden_np = rng.standard_normal((gru_layers, 1, gru_hidden)).astype(np.float32)
