@@ -1,0 +1,17 @@
+node_modules/
+.venv/
+.env
+runs/
+data/train/
+data/val/
+data/debug/
+checkpoints/*.pt
+checkpoints/*.onnx
+!checkpoints/best.pt
+!checkpoints/best.yaml
+__pycache__/
+*.pyc
+*.npz
+*.wav
+.DS_Store
+uv.lock

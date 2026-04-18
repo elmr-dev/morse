@@ -1,0 +1,13 @@
+node_modules/
+.venv/
+.env
+runs/
+*.npz
+*.wav
+*.pt
+!checkpoints/base.pt
+*.onnx
+__pycache__/
+*.pyc
+.DS_Store
+data/
