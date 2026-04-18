@@ -15,11 +15,16 @@ LOOP FOREVER. The human might be asleep. Do not stop until told to.
 2. Run `python evaluate.py` to get the current baseline score.
 3. Analyze the output:
    - `composite:` is the primary metric to maximize
-   - `per_snr:` shows where you're weakest (very_low and low matter most)
-   - `per_wpm:` shows where you're weakest by speed (slow/mid/fast are the targets)
-   - `per_channel_auc:` reveals dead channels (< 0.60 = not helping)
-   - `per_metric:` shows which sub-score to target next
-   - `issues:` lists specific failure modes to investigate
+     (composite = envelope_score(ch0) + 0.15 × info_gain)
+   - `envelope_score:` ch0-only tone-presence quality (timing, rise, F1, IoU, AUC)
+   - `info_gain:` how much independent tone-presence info the aux channels add,
+     measured as `probe_auc − ch0_auc` via a global logistic probe (clipped ≥0)
+   - `per_snr:` weakest SNR tier (very_low and low matter most)
+   - `per_wpm:` weakest speed tier (slow/mid/fast are the targets)
+   - `per_channel_auc:` per-channel AUC — ch0 should be strong; aux channels
+     can be weaker but must add info (check `info_gain`)
+   - `per_metric:` sub-scores + probe weights (diagnoses dead aux channels)
+   - `issues:` specific failure modes to investigate
 4. Propose ONE change to `dsp.py`. Make it. Commit with a descriptive message.
 5. Run `python evaluate.py` again.
 6. Parse the new `composite:` score.
@@ -34,7 +39,12 @@ and try something completely different.
 
 ## What You May Edit
 
-ONLY `dsp.py`. Everything else is immutable.
+`dsp.py` is the primary file you modify in the research loop.
+
+`evaluate.py` is only mutable for scorer / reporting changes explicitly
+approved by the human. Do not change it as part of routine experimentation.
+
+`hmm_scorer.py`, `constants.py`, and `generate_testset.py` are immutable.
 
 ## Constraints on dsp.py
 
@@ -77,9 +87,17 @@ CWNet uses a CNN + BiGRU + CTC decoder. It needs:
    (35–45) tiers. Note: norm_timing and rise_ms are normalized by dit
    duration so they are directly comparable across speeds.
 
-4. **Channel complementarity** — if you use 2+ channels, they must measure
+5. **Channel complementarity** — if you use 2+ channels, they must measure
    DIFFERENT properties. IQ amplitude + phase coherence is good.
    IQ amplitude + slightly-different IQ amplitude is worthless.
+
+   The scorer enforces this: ch0 is scored on its own as the tone-presence
+   envelope (timing, rise, F1, IoU, AUC). Aux channels earn an info-gain
+   bonus equal to `probe_auc − ch0_auc` (clipped ≥0), where `probe` is a
+   logistic regression fit globally on (all channels → ground truth). An
+   aux channel that duplicates ch0 gets zero bonus; one that carries
+   independent tone-presence info (e.g. phase coherence fails differently
+   from amplitude under QSB) gets a meaningful bonus.
 
 ## What the Metrics Mean
 
@@ -90,19 +108,41 @@ CWNet uses a CNN + BiGRU + CTC decoder. It needs:
 - `rise_ms` < 15 ms = sharp edges; > 40 ms = too slow for fast CW
 - `composite` > 0.75 = deployment-quality; 0.60–0.75 = usable; < 0.60 = broken
 
-## CRITICAL: Never Use min() Fusion
+## Do Not Fuse Channels Inside `dsp.py`
 
-**Do NOT use `np.minimum(ch0, ch1)` or similar to fuse channels.**
+The downstream consumer is CWNet (CNN+BiGRU+CTC). It wants soft,
+gradient-bearing channels — it will learn its own fusion.
 
-The `min()` operation suppresses the signal *during transitions* — exactly when
-CTC needs a sharp edge. Benchmarking showed min() fusion caused `norm_timing`
-to spike from 0.24 to 0.52 (2× worse). The composite collapsed from 0.73 to 0.58.
-
-Safe fusion strategies: `mean()`, geometric mean, weighted mean, max().
+- **Emit channels unfused.** ch0 is the tone-presence envelope. Aux channels
+  are independent measurements (phase coherence, spectral statistics, etc.).
+  Do not `mean()` / `min()` / `max()` them together before returning.
+- **The scorer does not fuse either.** It evaluates ch0 on envelope metrics
+  and grants aux channels an info-gain bonus via a linear probe (see §4 above).
+- **Historical note:** earlier experiments used `np.minimum(ch0, ch1)` as an
+  "agreement filter." It suppressed signal during transitions and pushed
+  `norm_timing` from 0.24 to 0.52. Do not reintroduce it.
 
 ## Exploration Agenda
 
-Work through these levels in order. Skip ahead if a level is clearly exhausted.
+### Level 0 — Add a Complementary Aux Channel (highest leverage)
+
+Single-channel tuning has diminished to ~+0.001 per experiment. The scorer
+now rewards aux channels that add linearly-independent tone-presence
+information via an info-gain bonus. Prefer this before more ch0 tweaks.
+
+The canonical first move: keep ch0 as the current bandpass+Hilbert envelope,
+add **ch1 = phase coherence** — short-time circular variance of instantaneous
+phase `arctan2(Q,I)`, inverted and normalized to [0,1]. Amplitude-invariant,
+so it fails differently from ch0 under QSB fading. Preserve soft values;
+do not binarize.
+
+Other aux-channel candidates (pick one, measure info_gain):
+- TKEO (very fast response, no group delay)
+- Sliding Goertzel at tone_freq (narrow-bin power)
+- Spectral kurtosis (Gaussian noise ≈3, tone >3)
+- Wavelet (Morlet) envelope at carrier
+
+Reject the channel if info_gain stays ≤0.005 after 2 variants of parameters.
 
 ### Level 1 — IQ Lowpass Bandwidth (highest leverage)
 
@@ -171,12 +211,10 @@ Multi-scale; may improve low-SNR edge detection.
 - Try adaptive AGC: divide by running RMS (tracks QSB fading)
 - Try sigmoid normalization: `1 / (1 + exp(-k*(x - x_median)))` after noise sub
 
-### Level 6 — Channel Fusion (only with 2+ good channels)
+### Level 6 — (removed) Channel Fusion
 
-- `mean()` — current default, safe
-- `geometric_mean = sqrt(ch0 * ch1)` — favors agreement, less noise
-- `max()` — aggressive, try at mid/high SNR
-- Weighted: `0.6*ch0 + 0.4*ch1` if per-channel AUC shows one dominates
+Do not fuse channels inside `dsp.py`. See "Do Not Fuse Channels" above.
+CWNet learns its own fusion; emit raw soft channels.
 
 ## DSP Reference
 
@@ -192,9 +230,12 @@ CW is harder (variable timing) but benefits from the same narrow-bandwidth insig
 
 ## Do Not
 
-- Do not modify `evaluate.py`, `hmm_scorer.py`, `constants.py`, or `generate_testset.py`
+- Do not modify `hmm_scorer.py`, `constants.py`, or `generate_testset.py`
+- Do not modify `evaluate.py` as part of routine experimentation (only on
+  explicit human-approved scorer/reporting changes)
 - Do not hardcode anything that assumes specific test samples
 - Do not use ML libraries (torch, sklearn, tensorflow) in `dsp.py`
 - Do not exceed 4 output channels
 - Do not make the pipeline slower than 5 seconds per 10-second clip
-- Do not use `np.minimum()` or `np.min()` for channel fusion (see CRITICAL above)
+- Do not fuse channels inside `dsp.py` (`mean`, `min`, `max`, geometric mean,
+  weighted sums, etc.) — emit soft raw channels for CWNet to fuse

@@ -1,4 +1,8 @@
 testdata/
+evaldata/
 results.tsv
 __pycache__/
 *.pyc
+*.wav
+*.npz
+.DS_Store
