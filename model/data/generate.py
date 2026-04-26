@@ -276,7 +276,16 @@ def run_ts_generator(configs: list[dict], out_dir: Path, gen_workers: int = 1) -
             chunk_meta = json.load(f)
         if not isinstance(chunk_meta, list):
             chunk_meta = [chunk_meta]
-        all_meta.extend(chunk_meta)
+        for m in chunk_meta:
+            # Strip down to only what _dsp_and_save_npz reads, and compact
+            # `elements` from list-of-dicts to list-of-tuples. This keeps
+            # per-task pickle payload small enough for ProcessPoolExecutor's
+            # 64KB call-queue pipe — without this, 50k tasks deadlock.
+            all_meta.append({
+                "outputPath": m.get("outputPath", ""),
+                "characters": m.get("characters", []),
+                "elements":   _compact_elements(m.get("elements") or []),
+            })
         meta_path.unlink(missing_ok=True)
 
     return all_meta
@@ -308,40 +317,55 @@ def build_frame_labels(
     return labels
 
 
+def _compact_elements(elements: list[dict]) -> list[tuple]:
+    """Compact morse-audio element dicts to (startMs, endMs, is_on) tuples.
+
+    The dict form (5+ string keys per element, ~150 bytes Python overhead per
+    element after pickling) blows up ProcessPoolExecutor's IPC pipe at scale —
+    50k tasks × 500 elements × dict-of-dicts deadlocks the call queue. Tuples
+    drop ~50% of payload and pickle roughly an order of magnitude faster.
+    """
+    return [(float(e["startMs"]),
+             float(e["endMs"]),
+             e["elementType"] in ("dit", "dah"))
+            for e in (elements or [])]
+
+
 def build_tone_labels(
-    elements: list[dict],
+    elements: list[tuple],
     total_samples: int,
     sample_rate: int = ENVELOPE_SR,
     downsample: int = CNN_DOWNSAMPLE,
 ) -> np.ndarray:
     """Per-frame tone-on/off mask at the model output rate (250 Hz default).
 
-    Uses morse-audio's per-element metadata (post-jitter/drift actual durations).
-    Marks frames inside any 'dit' or 'dah' element as 1; gap elements
-    ('intra_char_gap', 'char_gap', 'word_gap') stay 0. This is the supervision
-    target for the auxiliary tone head (Phase 3 multi-head retraining).
+    elements: list of (startMs, endMs, is_on) tuples — see `_compact_elements`.
+    Marks frames inside any on-segment as 1; gap segments stay 0.
     """
     T_out = total_samples // downsample
     labels = np.zeros(T_out, dtype=np.uint8)
-
-    for el in elements:
-        if el.get("elementType") not in ("dit", "dah"):
+    for start_ms, end_ms, is_on in elements:
+        if not is_on:
             continue
-        start_frame = int(el["startMs"] / 1000.0 * sample_rate / downsample)
-        end_frame   = int(el["endMs"]   / 1000.0 * sample_rate / downsample)
+        start_frame = int(start_ms / 1000.0 * sample_rate / downsample)
+        end_frame   = int(end_ms   / 1000.0 * sample_rate / downsample)
         start_frame = max(0, min(start_frame, T_out - 1))
         end_frame   = max(0, min(end_frame,   T_out))
         labels[start_frame:end_frame] = 1
-
     return labels
 
 
-def _shift_timings(items: list[dict], offset_ms: float) -> list[dict]:
-    """Return a copy of items with startMs/endMs shifted by offset_ms."""
+def _shift_chars(items: list[dict], offset_ms: float) -> list[dict]:
+    """Return a copy of character dicts with startMs/endMs shifted by offset_ms."""
     return [{**it,
              "startMs": it["startMs"] + offset_ms,
              "endMs":   it["endMs"]   + offset_ms}
             for it in items]
+
+
+def _shift_elements(elements: list[tuple], offset_ms: float) -> list[tuple]:
+    """Return tuple list with start/end shifted by offset_ms."""
+    return [(s + offset_ms, e + offset_ms, on) for (s, e, on) in elements]
 
 
 def _dsp_and_save_npz(i: int, cfg: dict, meta: dict, npz_dir: Path) -> None:
@@ -352,7 +376,10 @@ def _dsp_and_save_npz(i: int, cfg: dict, meta: dict, npz_dir: Path) -> None:
     env = process_wav(wav_path, float(freq))  # (T, 1) at 500 Hz
 
     characters = meta.get("characters", [])
-    elements   = meta.get("elements", []) or []
+    # elements arrive in compact tuple form (start_ms, end_ms, is_on) — see
+    # _compact_elements() and run_ts_generator(). Dict form bloats pickle and
+    # deadlocks ProcessPoolExecutor's call-queue pipe at scale.
+    elements   = meta.get("elements") or []
     text = "".join(c["char"] for c in characters)
 
     # Silence augmentation: randomised lead + tail + occasional mid-sequence gap
@@ -379,15 +406,15 @@ def _dsp_and_save_npz(i: int, cfg: dict, meta: dict, npz_dir: Path) -> None:
 
         env_ms = len(env) * 1000.0 / ENVELOPE_SR
         characters = [c for c in characters if c["endMs"] <= env_ms]
-        elements   = [e for e in elements   if e["endMs"] <= env_ms]
+        elements   = [(s, e, on) for (s, e, on) in elements if e <= env_ms]
         text = "".join(c["char"] for c in characters)
 
         lead_samples = int(lead_ms * ENVELOPE_SR / 1000)
         if lead_samples:
             env = np.concatenate([np.zeros((lead_samples, env.shape[1]), dtype=np.float32), env])
         lead_ms_actual = lead_samples * 1000.0 / ENVELOPE_SR
-        characters = _shift_timings(characters, lead_ms_actual)
-        elements   = _shift_timings(elements,   lead_ms_actual)
+        characters = _shift_chars(characters, lead_ms_actual)
+        elements   = _shift_elements(elements, lead_ms_actual)
 
         if gap_pos == "mid" and len(characters) >= 2:
             split_idx = int(rng.integers(1, len(characters)))
@@ -403,9 +430,8 @@ def _dsp_and_save_npz(i: int, cfg: dict, meta: dict, npz_dir: Path) -> None:
                 for c in characters
             ]
             elements = [
-                e if e["endMs"] <= insert_after_ms else
-                {**e, "startMs": e["startMs"] + gap_ms, "endMs": e["endMs"] + gap_ms}
-                for e in elements
+                (s, e, on) if e <= insert_after_ms else (s + gap_ms, e + gap_ms, on)
+                for (s, e, on) in elements
             ]
 
     frame_labels = build_frame_labels(characters, len(env), sample_rate=ENVELOPE_SR)
