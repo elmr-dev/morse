@@ -5,7 +5,9 @@ runs/
 *.npz
 *.wav
 *.pt
+!checkpoints/best.pt
 !checkpoints/base.pt
+!checkpoints/best.yaml
 *.onnx
 __pycache__/
 *.pyc
