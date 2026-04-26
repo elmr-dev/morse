@@ -1,6 +1,11 @@
 # 4090 training config — causal TCN + chunked BiGRU streaming decoder (275ms latency)
-# 4-channel DSP (Hilbert + TKEO + 48 ms MF + 200 ms MF) — synced from
-# cw-ml/cw-dsp-research/dsp.py (composite 0.8249 on v1.3.1 -16..-8 dB eval).
+# 5-channel DSP: Hilbert + TKEO + 48 ms MF + 200 ms MF + cadence. The 5th
+# channel is a temporal-cadence detector (sliding 512 ms FFT on the envelope,
+# ratio of CW dit-rate band power to off-cadence reference band power) —
+# orthogonal physics from the four amplitude detectors. Tests the "BiGRU
+# should learn autocorrelation for free" hypothesis from the multi-stream
+# discussion: at low SNR with weak gradients, an explicit autocorr-like
+# feature may beat what the model can discover.
 # SNR floor matches eval: -16 dB. Below that the DSP is sub-2% accurate
 # (see cw-dsp-research/CURRENT.md detection-floor table) — training there
 # is mostly memorization of language priors.
@@ -13,12 +18,12 @@ paths:
   run_dir:   runs
 
 dsp:
-  channels: 4
+  channels: 5
   sample_rate: 8000
   envelope_rate: 500
 
 model:
-  in_channels: 4
+  in_channels: 5
   gru_hidden: 128
   gru_layers: 2
   tcn_channels: 128
