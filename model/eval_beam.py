@@ -35,7 +35,7 @@ t_start = time.time()
 n_done = 0
 
 with torch.no_grad():
-    for inputs, targets, input_lengths, target_lengths, _, meta in loader:
+    for inputs, targets, input_lengths, target_lengths, _, _, meta in loader:
         inputs = inputs.to(device)
         lp = m.infer(inputs)
         tgt_list, tgt_lens = targets.tolist(), target_lengths.tolist()

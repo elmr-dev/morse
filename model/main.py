@@ -181,7 +181,7 @@ def cmd_verify(args: argparse.Namespace, cfg: dict):
     print(f"  Envelope min/max: {sample['input'].min():.3f} / {sample['input'].max():.3f}")
 
     loader = DataLoader(ds, batch_size=4, collate_fn=collate_fn, num_workers=0)
-    inputs, targets, input_lengths, target_lengths, frame_labels, meta = next(iter(loader))
+    inputs, targets, input_lengths, target_lengths, frame_labels, tone_labels, meta = next(iter(loader))
 
     device = _auto_device()
     print(f"\nDevice: {device}")

@@ -74,6 +74,15 @@ class CWDataset(Dataset):
         else:
             frame_labels = np.zeros(T_out, dtype=np.int64)
 
+        if "tone_labels" in data.files:
+            tone_labels = data["tone_labels"].astype(np.uint8)     # (T_out,) 0/1
+            tone_labels = tone_labels[:T_out]
+        else:
+            # Older NPZs without tone supervision — fall back to frame_labels != 0.
+            # Coarser (whole-character window incl. intra-char gaps) but harmless
+            # if the auxiliary BCE loss has weight 0.
+            tone_labels = (frame_labels != 0).astype(np.uint8)
+
         # Encode text to class indices, skip unknown chars
         targets = [char_to_idx[c] for c in text.upper() if c in char_to_idx]
 
@@ -81,6 +90,7 @@ class CWDataset(Dataset):
             "input": torch.tensor(envelopes, dtype=torch.float32),   # (T, 1)
             "target": torch.tensor(targets, dtype=torch.long),
             "frame_labels": torch.tensor(frame_labels, dtype=torch.long),  # (T_out,)
+            "tone_labels":  torch.tensor(tone_labels,  dtype=torch.uint8), # (T_out,) 0/1
             "input_length": T,
             "target_length": len(targets),
             "wpm": wpm,
@@ -93,7 +103,8 @@ class CWDataset(Dataset):
 def collate_fn(batch: list[dict]) -> tuple:
     """
     Collate variable-length samples. Pads each batch to its longest sample.
-    Returns: (inputs, targets, input_lengths, target_lengths, frame_labels, metadata)
+    Returns: (inputs, targets, input_lengths, target_lengths, frame_labels,
+              tone_labels, metadata)
     """
     max_T = max(b["input"].shape[0] for b in batch)
     max_T = max_T + (max_T % 2)          # round up to even — causal stride-2 conv outputs ceil(T/2)
@@ -103,12 +114,15 @@ def collate_fn(batch: list[dict]) -> tuple:
     n_channels = batch[0]["input"].shape[1]
     inputs = torch.zeros(B, max_T, n_channels)
     frame_labels = torch.zeros(B, max_T_out, dtype=torch.long)
+    tone_labels  = torch.zeros(B, max_T_out, dtype=torch.uint8)
 
     for i, b in enumerate(batch):
         T = b["input"].shape[0]
         inputs[i, :T] = b["input"]
         Tf = b["frame_labels"].shape[0]
         frame_labels[i, :Tf] = b["frame_labels"]
+        Tt = b["tone_labels"].shape[0]
+        tone_labels[i, :Tt]  = b["tone_labels"]
 
     targets = torch.cat([b["target"] for b in batch])   # CTC needs flat
     input_lengths = torch.tensor(
@@ -123,4 +137,4 @@ def collate_fn(batch: list[dict]) -> tuple:
         "impairment": [b["impairment"] for b in batch],
         "text": [b["text"] for b in batch],
     }
-    return inputs, targets, input_lengths, target_lengths, frame_labels, meta
+    return inputs, targets, input_lengths, target_lengths, frame_labels, tone_labels, meta

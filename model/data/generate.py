@@ -308,6 +308,42 @@ def build_frame_labels(
     return labels
 
 
+def build_tone_labels(
+    elements: list[dict],
+    total_samples: int,
+    sample_rate: int = ENVELOPE_SR,
+    downsample: int = CNN_DOWNSAMPLE,
+) -> np.ndarray:
+    """Per-frame tone-on/off mask at the model output rate (250 Hz default).
+
+    Uses morse-audio's per-element metadata (post-jitter/drift actual durations).
+    Marks frames inside any 'dit' or 'dah' element as 1; gap elements
+    ('intra_char_gap', 'char_gap', 'word_gap') stay 0. This is the supervision
+    target for the auxiliary tone head (Phase 3 multi-head retraining).
+    """
+    T_out = total_samples // downsample
+    labels = np.zeros(T_out, dtype=np.uint8)
+
+    for el in elements:
+        if el.get("elementType") not in ("dit", "dah"):
+            continue
+        start_frame = int(el["startMs"] / 1000.0 * sample_rate / downsample)
+        end_frame   = int(el["endMs"]   / 1000.0 * sample_rate / downsample)
+        start_frame = max(0, min(start_frame, T_out - 1))
+        end_frame   = max(0, min(end_frame,   T_out))
+        labels[start_frame:end_frame] = 1
+
+    return labels
+
+
+def _shift_timings(items: list[dict], offset_ms: float) -> list[dict]:
+    """Return a copy of items with startMs/endMs shifted by offset_ms."""
+    return [{**it,
+             "startMs": it["startMs"] + offset_ms,
+             "endMs":   it["endMs"]   + offset_ms}
+            for it in items]
+
+
 def _dsp_and_save_npz(i: int, cfg: dict, meta: dict, npz_dir: Path) -> None:
     """Run DSP on one WAV and write sample_{i:06d}.npz."""
     wav_path = meta.get("outputPath", "")
@@ -316,6 +352,7 @@ def _dsp_and_save_npz(i: int, cfg: dict, meta: dict, npz_dir: Path) -> None:
     env = process_wav(wav_path, float(freq))  # (T, 1) at 500 Hz
 
     characters = meta.get("characters", [])
+    elements   = meta.get("elements", []) or []
     text = "".join(c["char"] for c in characters)
 
     # Silence augmentation: randomised lead + tail + occasional mid-sequence gap
@@ -342,17 +379,15 @@ def _dsp_and_save_npz(i: int, cfg: dict, meta: dict, npz_dir: Path) -> None:
 
         env_ms = len(env) * 1000.0 / ENVELOPE_SR
         characters = [c for c in characters if c["endMs"] <= env_ms]
+        elements   = [e for e in elements   if e["endMs"] <= env_ms]
         text = "".join(c["char"] for c in characters)
 
         lead_samples = int(lead_ms * ENVELOPE_SR / 1000)
         if lead_samples:
             env = np.concatenate([np.zeros((lead_samples, env.shape[1]), dtype=np.float32), env])
         lead_ms_actual = lead_samples * 1000.0 / ENVELOPE_SR
-        characters = [
-            {**c, "startMs": c["startMs"] + lead_ms_actual,
-                   "endMs":   c["endMs"]   + lead_ms_actual}
-            for c in characters
-        ]
+        characters = _shift_timings(characters, lead_ms_actual)
+        elements   = _shift_timings(elements,   lead_ms_actual)
 
         if gap_pos == "mid" and len(characters) >= 2:
             split_idx = int(rng.integers(1, len(characters)))
@@ -367,13 +402,20 @@ def _dsp_and_save_npz(i: int, cfg: dict, meta: dict, npz_dir: Path) -> None:
                 {**c, "startMs": c["startMs"] + gap_ms, "endMs": c["endMs"] + gap_ms}
                 for c in characters
             ]
+            elements = [
+                e if e["endMs"] <= insert_after_ms else
+                {**e, "startMs": e["startMs"] + gap_ms, "endMs": e["endMs"] + gap_ms}
+                for e in elements
+            ]
 
     frame_labels = build_frame_labels(characters, len(env), sample_rate=ENVELOPE_SR)
+    tone_labels  = build_tone_labels(elements, len(env), sample_rate=ENVELOPE_SR)
 
     np.savez_compressed(
         npz_dir / f"sample_{i:06d}.npz",
         envelopes=env,
         frame_labels=frame_labels,
+        tone_labels=tone_labels,
         text=np.array(text),
         wpm=np.array(cfg["_wpm"], dtype=np.float32),
         snr_db=np.array(cfg["_snr"], dtype=np.float32),

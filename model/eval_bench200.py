@@ -30,7 +30,7 @@ loader = DataLoader(ds, batch_size=32, shuffle=False, collate_fn=collate_fn, num
 tracker = BucketTracker()
 samples = []
 with torch.no_grad():
-    for inputs, targets, input_lengths, target_lengths, _, meta in loader:
+    for inputs, targets, input_lengths, target_lengths, _, _, meta in loader:
         inputs = inputs.to(device)
         log_probs = model.infer(inputs)
         tgt_list, tgt_lens = targets.tolist(), target_lengths.tolist()

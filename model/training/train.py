@@ -119,7 +119,7 @@ def train_one_epoch_blended(
     ce_loss_fn = nn.CrossEntropyLoss(weight=ce_weights, ignore_index=-1)
 
     pbar = _progress(loader, phase_tag)
-    for inputs, targets, input_lengths, target_lengths, frame_labels, _meta in pbar:
+    for inputs, targets, input_lengths, target_lengths, frame_labels, _tone_labels, _meta in pbar:
         inputs = inputs.to(device)
         targets = targets.to(device)
         input_lengths = input_lengths.to(device)
@@ -171,7 +171,7 @@ def evaluate(
     tracker = BucketTracker()
     blank_ratios = []
 
-    for inputs, targets, input_lengths, target_lengths, _frame_labels, meta in loader:
+    for inputs, targets, input_lengths, target_lengths, _frame_labels, _tone_labels, meta in loader:
         inputs = inputs.to(device)
         targets_dev = targets.to(device)
         input_lengths = input_lengths.to(device)

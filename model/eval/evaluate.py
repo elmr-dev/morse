@@ -85,7 +85,7 @@ def evaluate_checkpoint(
     sample_results = []
 
     with torch.no_grad():
-        for inputs, targets, input_lengths, target_lengths, _frame_labels, meta in loader:
+        for inputs, targets, input_lengths, target_lengths, _frame_labels, _tone_labels, meta in loader:
             wpms = list(meta["wpm"]) if (decoder == "hsmm" and wpm_mode == "oracle") else None
             results = decode_batch(
                 model, inputs, input_lengths.tolist(), device,

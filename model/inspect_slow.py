@@ -25,7 +25,7 @@ for i in range(len(ds)):
 print(f"Sample {idx}: wpm={s['wpm']:.1f} snr={s['snr_db']:.1f}dB text={s['text']!r}")
 
 loader = DataLoader([s], batch_size=1, collate_fn=collate_fn)
-inp, _, il, _, _, _ = next(iter(loader))
+inp, _, il, _, _, _, _ = next(iter(loader))
 with torch.no_grad():
     lp = model.infer(inp)[0]
 arg = lp.argmax(dim=-1).tolist()
