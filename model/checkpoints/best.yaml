@@ -1,11 +1,17 @@
-# 4090 training config — causal TCN + chunked BiGRU streaming decoder (275ms latency)
-# 4-channel DSP (Hilbert + TKEO + 48 ms MF + 200 ms MF) — synced from
-# cw-ml/cw-dsp-research/dsp.py (composite 0.8249 on v1.3.1 -16..-8 dB eval).
-# SNR floor matches eval: -16 dB. Below that the DSP is sub-2% accurate
-# (see cw-dsp-research/CURRENT.md detection-floor table) — training there
-# is mostly memorization of language priors.
-# Launch: python launch-runpod.py --config configs/4090.yaml
-name: 4090
+# Phase 3 fine-tune: warm-start from prod 4090_best.pt, add auxiliary tone head.
+# Skips CE pre-training and CE→CTC blend (those would re-anchor the converged
+# CTC head). Goes straight into pure CTC + entropy + tone BCE for 20 epochs to
+# let the fresh tone_head linear converge while the rest of the network is
+# barely perturbed.
+#
+# Pass: greedy CTC val_cer drifts up by < 0.005 absolute from the 0.0909
+# baseline AND tone-head AUC vs tone_labels >= 0.95 at high SNR, >= 0.80
+# at <= -10 dB. (Hand-pulled from val final_eval.json after the run.)
+#
+# Launch:
+#   python launch-runpod.py --config configs/4090-phase3.yaml \
+#     --starting-checkpoint runs/20260425_172212/4090_best.pt
+name: 4090-phase3
 
 paths:
   train_dir: data/train
@@ -26,16 +32,25 @@ model:
   dropout: 0.2
 
 training:
-  epochs: 60
-  ce_pretrain_epochs: 5
-  ce_blend_epochs: 3
-  batch_size: 64
-  lr: 0.0003
-  warmup_epochs: 3
+  epochs: 20
+  ce_pretrain_epochs: 0
+  ce_blend_epochs: 0
+  # batch_size 48 (vs prod 64) buys ~25% memory headroom for the dual-head
+  # forward + BCE intermediate. Prod 4090 sits at ~95% on bs=64; the new
+  # tensors are small (~hundreds of KB) but margin is cheap insurance.
+  batch_size: 48
+  # 0.5x prod LR — we're fine-tuning a converged backbone, not training fresh.
+  lr: 0.00015
+  warmup_epochs: 1
   num_workers: 8
   entropy_weight: 0.03
   ce_blank_weight: 0.2
   ce_char_weight: 3.0
+  # Phase 3 dual-task knobs. tone_weight=0.3 is the plan's hypothesis —
+  # strong tone supervision without dragging CTC. Sweep candidates if it
+  # under/overshoots: 0.1, 0.3, 1.0.
+  tone_weight: 0.3
+  tone_pos_weight: 2.5
 
 data:
   n_train: 50000

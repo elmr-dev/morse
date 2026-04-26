@@ -10,18 +10,136 @@ All CER numbers are character error rate, lower-is-better, scored on the
 
 ## Latest verdict
 
-**Production DSP: 4-channel — Hilbert + TKEO + 48 ms MF + 200 ms long MF.**
-Best CER 0.0909 on the v1.3.1 -16..+6 dB val set.
+**Phase 3 multi-head model — 4-channel DSP + auxiliary tone-on/off head.**
+Best CER **0.0880** on the same -16..+6 dB val set (slightly beats prod 0.0909).
+The tone head trained cleanly (val BCE 0.147, AUC 0.988 vs DSP ch0); CTC was not
+dragged by the dual-task loss. `checkpoints/best.pt` now points at this run.
+
+The HSMM milestone (Phase 3 plan's stated goal) **did NOT pass** — the parked
+`eval/hsmm.py` decoder has a real bug that mis-classifies element types even on
+textbook-clean tone emissions (verified: at WPM 15.4, raw ON-run lengths
+61/21/20/57 frames cleanly map to dah/dit/dit/dah = X, but HSMM still produces
+garbled output). The wiring (`emissions_from_tone_head` + `--emission tone_head`
+flag) is in place; the decoder needs root-cause work in a future session.
 
 ## Run log
 
 | Date | Run dir | Architecture | Overall CER | Notes |
 |---|---|---|---|---|
 | 2026-04-16 | `20260416_171918` | 3-channel (no ch3) | 0.1115 (orig) / 0.0999 (v1.3.1 re-eval) | OLD morse-audio (~7 dB SNR-calibration error). Re-evaluated against v1.3.1 audio in `eval_v131.json`. |
-| 2026-04-25 | `20260425_172212` | 4-channel + ch3 = 200 ms long MF | **0.0909** | Production. Wins decisively at very-low SNR. |
+| 2026-04-25 | `20260425_172212` | 4-channel + ch3 = 200 ms long MF | 0.0909 | Previous prod baseline (long-MF). |
 | 2026-04-25 | `20260425_190314` | 4-channel + ch3 = STFT contrast | 0.1002 | Reverted. See "STFT experiment" below. |
 | 2026-04-26 | `20260426_025710` | 5-channel + ch4 = temporal cadence | 0.0927 | Reverted. See "Cadence experiment" below. |
-| 2026-04-26 | (no new training) | offline Morse HSMM/Viterbi over `runs/20260425_172212/4090_best.pt` | n/a | Decoder-only experiment. Pivoted before full eval — see "HSMM offline-decoder experiment" below. |
+| 2026-04-26 | (no new training) | offline Morse HSMM/Viterbi over `runs/20260425_172212/4090_best.pt` | n/a | Decoder-only experiment, parked. See "HSMM offline-decoder experiment" below. |
+| 2026-04-26 | `20260426_185002` | 4-channel + Phase 3 auxiliary tone head, warm-started from prod | **0.0880** | Current best. CTC didn't drift; tone head converged cleanly. See "Phase 3 multi-head" below. |
+
+## Phase 3 multi-head (2026-04-26, run `20260426_185002`)
+
+Goal: train an auxiliary tone-on/off head on the same backbone as the
+existing CTC head, supervised against per-frame Morse element timings.
+Two motivations: (a) check whether tone supervision drags or improves
+CTC, (b) produce sustained on/off envelopes the parked HSMM was waiting
+on.
+
+Setup: warm-start from prod `20260425_172212/4090_best.pt`. Skipped CE
+pretrain + CE→CTC blend (CTC was already converged; rerunning those phases
+would re-anchor it). Pure CTC + entropy + tone BCE for 20 epochs at
+lr=1.5e-4 (0.5× prod). `tone_weight=0.3`, `tone_pos_weight=2.5`.
+
+Results (full `final_eval.json`):
+
+| Metric | Phase 3 | Prod (`20260425_172212`) | Δ |
+|---|---:|---:|---:|
+| Overall CER (n=1000) | **0.0880** | 0.0909 | -0.0029 |
+| `≤-10 dB` tier | **0.3741** | 0.3822 | -0.008 |
+| `-10..-4 dB` tier | 0.0319 | 0.0357 | -0.004 |
+| `-4..2 dB` tier | 0.0039 | 0.0046 | -0.001 |
+| `>2 dB` tier | 0.0030 | 0.0034 | -0.000 |
+| blank_ratio | 0.996 | 0.996 | 0 |
+| val_tone_loss (final) | 0.147 | n/a | — |
+
+Per-1dB-bin edit ops (showing the deletion-dominated failure mode is
+still present, just slightly mitigated across the board — see
+`memory/project_failure_mode.md` for the prod baseline):
+
+| SNR bin | n | CER | ins/c | del/c | sub/c | len_ratio |
+|---|---:|---:|---:|---:|---:|---:|
+| -16..-15 | 33 | 0.621 | 0.016 | 0.351 | 0.311 | 0.664 |
+| -14..-13 | 43 | 0.403 | 0.006 | 0.170 | 0.271 | 0.836 |
+| -12..-11 | 22 | 0.176 | 0.007 | 0.044 | 0.147 | 0.963 |
+| -10..-9  | 39 | 0.098 | 0.009 | 0.024 | 0.078 | 0.985 |
+| -8..-7   | 32 | 0.030 | 0.002 | 0.009 | 0.024 | 0.994 |
+| -4..-3   | 53 | 0.006 | 0.000 | 0.004 | 0.003 | 0.996 |
+| +0..+1   | 74 | 0.002 | 0.000 | 0.000 | 0.002 | 1.000 |
+
+**Reading:** Tone supervision was complementary — backbone features
+serve both CTC and tone heads from a single BiGRU pass. Insertions
+remain near zero everywhere. Deletions still dominate at ≤-14 dB
+(model emits only 66% of target length at -16 dB) — the
+anti-hallucination gates are still too conservative for the regime
+where we want gains.
+
+The HSMM follow-up (run on this checkpoint) failed structurally:
+even given clean sustained on/off emissions from the tone head, the
+parked `eval/hsmm.py` decoder mis-classifies element identities.
+See "HSMM/tone_head experiment" below.
+
+## HSMM/tone_head experiment (2026-04-26)
+
+Wired `emissions_from_tone_head` into `decode_batch` and ran HSMM
+oracle-WPM on a 100-sample stratified subset of val:
+
+| tier | n | greedy CER | HSMM CER | delta |
+|---|---:|---:|---:|---:|
+| ≤-10dB  | 25 | 0.419 | 0.808 | +0.390 |
+| -10..-4 | 25 | 0.029 | 0.773 | +0.744 |
+| -4..2   | 25 | 0.003 | 0.780 | +0.778 |
+| >2      | 25 | 0.005 | 0.786 | +0.781 |
+| overall | 100 | 0.114 | 0.787 | +0.673 |
+
+HSMM is broken across **all** tiers, not just low-SNR. Diagnostic:
+visualized raw ON/off run lengths from tone_head emissions on a
+known sample (text=`X888/K2/`, WPM 15.4, SNR +4.3) — runs are
+textbook clean (61f/21f/20f/57f → dah/dit/dit/dah = X). Yet HSMM
+produces `'TITTOEMTEEENASOEEETATFA/'` at the default char prior;
+even with 16× stronger char prior it gets length ~right but mis-
+identifies elements (`'Y98OD9O1/'`).
+
+**Reading:** the parked decoder has a real bug in
+duration-prior + segment-score combination, NOT an emissions
+problem (emissions are great). Fix is non-trivial and parked.
+The wiring is correct so the next session can pick up directly.
+
+## Phase 4 plan
+
+Phase 3 model is **deletion-dominated** at low SNR. The doc decision
+tree (`GPT5.5-ideas-2026-04-26.md`) for that failure mode prescribes
+two directions; Phase 4 attempts both.
+
+**Phase 4a — quick win** (`configs/4090-phase4a.yaml`): warm-start from
+Phase 3 best.pt with relaxed anti-hallucination gates and reweighted
+SNR distribution:
+- `entropy_weight: 0.03 → 0.01`
+- `ce_blank_weight: 0.2 → 0.4`
+- `snr_tiers.very_low: 0.20 → 0.30` (from `mid: 0.40 → 0.30`)
+- 15 epochs (vs 20 in Phase 3 — fine-tune)
+
+Hypothesis: gates were tuned for the older insertion failure mode that
+is no longer the bottleneck. Loosening them lets the model emit more
+characters where evidence exists, directly attacking deletions in the
+≤-10 dB tier.
+
+Pass: `≤-10dB` CER drops below Phase 3's 0.374, AND overall CER stays
+within 0.005 of 0.088. ~1 hour training run.
+
+**Phase 4b — paired clean/noisy distillation** (after 4a). Generate each
+training sample at its sampled SNR AND at a clean reference (+20 dB or
+similar) with identical seed = identical Morse timing. Add KL loss
+pulling noisy-forward logits toward clean-forward logits. Per the doc,
+this is the highest-conviction move for deletion-dominated failure
+because it gives dense supervision exactly where CTC is weakest. Bigger
+lift: data-generator change, training-loop change, longer run. Plan
+sketch in `Phase4-distillation-plan-2026-04-26.md`.
 
 ## Multi-stream evaluation (2026-04-25)
 

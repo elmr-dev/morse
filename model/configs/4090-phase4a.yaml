@@ -1,0 +1,105 @@
+# Phase 4a quick-win: relax anti-hallucination gates and reweight low-SNR.
+#
+# Phase 3 model is del-dominated at very low SNR (memory: project_failure_mode):
+#   -16..-15dB:  ins/c=0.016  del/c=0.351  sub/c=0.311  len_ratio=0.664
+#   -14..-13dB:  ins/c=0.006  del/c=0.170  sub/c=0.271  len_ratio=0.836
+# The model emits ~66% of target length at -16 dB — it's too cautious. The
+# anti-hallucination gates were tuned for the older insertion failure mode
+# that the trained model has long since solved (insertions are < 0.02/char
+# everywhere). Per the doc decision tree for deletion-dominated failure:
+# lower entropy gate, lower blank weight bias, and overweight very-low SNR.
+#
+# Knob deltas vs Phase 3:
+#   entropy_weight:    0.03 → 0.01   (less penalty for confident emissions)
+#   ce_blank_weight:   0.2  → 0.4    (less push toward blank)
+#   snr_tiers very_low 0.20 → 0.30   (more low-SNR training signal)
+#   snr_tiers mid      0.40 → 0.30   (rebalance — easy SNR doesn't need 40%)
+#   epochs:            20   → 15     (fine-tune; 15 is enough to see if gates
+#                                     were the bottleneck)
+#
+# Pass = -10..-4dB CER drop AND ≤-10dB CER drop AND overall CER not worse
+# than 0.0959 (prod baseline + 0.005 tolerance).
+#
+# Launch:
+#   python launch-runpod.py --config configs/4090-phase4a.yaml
+#   (auto-detects checkpoints/best.pt = Phase 3 best at 0.0880)
+name: 4090-phase4a
+
+paths:
+  train_dir: data/train
+  val_dir:   data/val
+  run_dir:   runs
+
+dsp:
+  channels: 4
+  sample_rate: 8000
+  envelope_rate: 500
+
+model:
+  in_channels: 4
+  gru_hidden: 128
+  gru_layers: 2
+  tcn_channels: 128
+  tcn_blocks: 5
+  dropout: 0.2
+
+training:
+  epochs: 15
+  ce_pretrain_epochs: 0
+  ce_blend_epochs: 0
+  batch_size: 48
+  lr: 0.00015
+  warmup_epochs: 1
+  num_workers: 8
+  # Phase 4a: relaxed gates for the deletion-dominated regime.
+  entropy_weight: 0.01     # was 0.03
+  ce_blank_weight: 0.4     # was 0.2
+  ce_char_weight: 3.0
+  tone_weight: 0.3
+  tone_pos_weight: 2.5
+
+data:
+  n_train: 50000
+  n_val: 1000
+  seed: 42
+  max_chars: 20
+  max_clip_s: 15.0
+  gen_workers: 4
+  dsp_workers: 12
+  # Phase 4a: rebalance toward very-low SNR where current model deletes most.
+  snr_tiers:
+    very_low: {range: [-16, -10], weight: 0.30}   # was 0.20
+    low:      {range: [-10,  -4], weight: 0.20}
+    mid:      {range: [ -4,   2], weight: 0.30}   # was 0.40
+    high:     {range: [  2,   6], weight: 0.20}
+  buckets:
+    slow:
+      wpm: [12, 25]
+      weight: 0.35
+      impairment: {clean: 0.7, qsb: 0.3}
+      fist:
+        jitter_pct:          [0.01, 0.15]
+        dah_bias:            [-0.05, 0.05]
+        speed_drift:         [0.0,  0.02]
+        char_gap_stretch_frac: [0.0, 0.10]
+        char_gap_stretch:    [0.8, 1.2]
+    mid:
+      wpm: [25, 40]
+      weight: 0.40
+      impairment: {clean: 0.6, qsb: 0.4}
+      fist:
+        jitter_pct:          [0.02, 0.20]
+        dah_bias:            [-0.07, 0.07]
+        speed_drift:         [0.0,  0.03]
+        char_gap_stretch_frac: [0.0, 0.15]
+        char_gap_stretch:    [0.7, 1.3]
+    fast:
+      wpm: [40, 60]
+      weight: 0.25
+      impairment: {clean: 0.6, qsb: 0.4}
+      fist:
+        jitter_pct:          [0.01, 0.10]
+        dah_bias:            [-0.03, 0.03]
+        speed_drift:         [0.0,  0.02]
+        char_gap_stretch_frac: [0.0, 0.05]
+        char_gap_stretch:    [0.9, 1.1]
