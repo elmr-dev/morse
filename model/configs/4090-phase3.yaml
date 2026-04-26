@@ -1,0 +1,95 @@
+# Phase 3 fine-tune: warm-start from prod 4090_best.pt, add auxiliary tone head.
+# Skips CE pre-training and CE→CTC blend (those would re-anchor the converged
+# CTC head). Goes straight into pure CTC + entropy + tone BCE for 20 epochs to
+# let the fresh tone_head linear converge while the rest of the network is
+# barely perturbed.
+#
+# Pass: greedy CTC val_cer drifts up by < 0.005 absolute from the 0.0909
+# baseline AND tone-head AUC vs tone_labels >= 0.95 at high SNR, >= 0.80
+# at <= -10 dB. (Hand-pulled from val final_eval.json after the run.)
+#
+# Launch:
+#   python launch-runpod.py --config configs/4090-phase3.yaml \
+#     --starting-checkpoint runs/20260425_172212/4090_best.pt
+name: 4090-phase3
+
+paths:
+  train_dir: data/train
+  val_dir:   data/val
+  run_dir:   runs
+
+dsp:
+  channels: 4
+  sample_rate: 8000
+  envelope_rate: 500
+
+model:
+  in_channels: 4
+  gru_hidden: 128
+  gru_layers: 2
+  tcn_channels: 128
+  tcn_blocks: 5
+  dropout: 0.2
+
+training:
+  epochs: 20
+  ce_pretrain_epochs: 0
+  ce_blend_epochs: 0
+  batch_size: 64
+  # 0.5x prod LR — we're fine-tuning a converged backbone, not training fresh.
+  lr: 0.00015
+  warmup_epochs: 1
+  num_workers: 8
+  entropy_weight: 0.03
+  ce_blank_weight: 0.2
+  ce_char_weight: 3.0
+  # Phase 3 dual-task knobs. tone_weight=0.3 is the plan's hypothesis —
+  # strong tone supervision without dragging CTC. Sweep candidates if it
+  # under/overshoots: 0.1, 0.3, 1.0.
+  tone_weight: 0.3
+  tone_pos_weight: 2.5
+
+data:
+  n_train: 50000
+  n_val: 1000
+  seed: 42
+  max_chars: 20
+  max_clip_s: 15.0
+  gen_workers: 4
+  dsp_workers: 12
+  snr_tiers:
+    very_low: {range: [-16, -10], weight: 0.20}
+    low:      {range: [-10,  -4], weight: 0.20}
+    mid:      {range: [ -4,   2], weight: 0.40}
+    high:     {range: [  2,   6], weight: 0.20}
+  buckets:
+    slow:
+      wpm: [12, 25]
+      weight: 0.35
+      impairment: {clean: 0.7, qsb: 0.3}
+      fist:
+        jitter_pct:          [0.01, 0.15]
+        dah_bias:            [-0.05, 0.05]
+        speed_drift:         [0.0,  0.02]
+        char_gap_stretch_frac: [0.0, 0.10]
+        char_gap_stretch:    [0.8, 1.2]
+    mid:
+      wpm: [25, 40]
+      weight: 0.40
+      impairment: {clean: 0.6, qsb: 0.4}
+      fist:
+        jitter_pct:          [0.02, 0.20]
+        dah_bias:            [-0.07, 0.07]
+        speed_drift:         [0.0,  0.03]
+        char_gap_stretch_frac: [0.0, 0.15]
+        char_gap_stretch:    [0.7, 1.3]
+    fast:
+      wpm: [40, 60]
+      weight: 0.25
+      impairment: {clean: 0.6, qsb: 0.4}
+      fist:
+        jitter_pct:          [0.01, 0.10]
+        dah_bias:            [-0.03, 0.03]
+        speed_drift:         [0.0,  0.02]
+        char_gap_stretch_frac: [0.0, 0.05]
+        char_gap_stretch:    [0.9, 1.1]
