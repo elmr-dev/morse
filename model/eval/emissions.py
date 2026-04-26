@@ -1,16 +1,22 @@
 """
 Frame-level tone-on/off log-likelihood-ratio sources for the HSMM decoder.
 
-Two emission sources, both at 250 Hz (the model's output rate after the
+Three emission sources, all at 250 Hz (the model's output rate after the
 stride-2 CNN):
 
   - model_blank: log p(non-blank) - log p(blank) per frame from the trained
-    CTC model's log_softmax output. No retraining needed — uses what the
-    model already emits.
+    CTC model's log_softmax output. Note: spiky 1-frame-per-character peaks,
+    not sustained envelopes — segment-scoring HSMM expects sustained on/off,
+    so this source historically gave catastrophic CER. Kept for reference.
 
   - dsp_ch0: log P(tone-on | DSP ch0) - log P(tone-off | DSP ch0), where
-    P(.|env) is fit from a held-out slice of the val set with `frame_labels`
-    as the binary tone-on/off target. Bypasses the trained model entirely.
+    P(.|env) is fit from a held-out slice of the val set. Bypasses the
+    trained model entirely. Right shape but mediocre AUC at very low SNR.
+
+  - tone_head: raw logits from the auxiliary tone head trained alongside
+    CTC (Phase 3). Sustained on/off envelopes that match the HSMM's
+    segment-scoring expectation. logit = log-odds = LLR under sigmoid,
+    so the raw logit IS the per-frame tone LLR — no calibration needed.
 """
 
 from __future__ import annotations
@@ -130,6 +136,21 @@ def fit_dsp_ch0_calibration(
     res = minimize(neg_log_lik, x0=np.array([4.0, -2.0]), jac=grad, method="L-BFGS-B")
     a, b = float(res.x[0]), float(res.x[1])
     return DspCalibration(a=a, b=b)
+
+
+def emissions_from_tone_head(tone_logits: torch.Tensor | np.ndarray) -> np.ndarray:
+    """Per-frame tone LLR from the auxiliary tone head.
+
+    tone_logits: (T,) raw logits from CWNet.tone_head — typically
+    `model.infer_dual(x)[1][b]` for sample `b`.
+
+    Returns (T,) numpy array. The raw logit equals the log-odds of
+    P(tone-on | features) under the sigmoid head's logistic model, which
+    is exactly the per-frame tone LLR the HSMM expects.
+    """
+    if isinstance(tone_logits, torch.Tensor):
+        return tone_logits.detach().cpu().float().numpy()
+    return np.asarray(tone_logits, dtype=np.float32)
 
 
 def emissions_from_dsp(

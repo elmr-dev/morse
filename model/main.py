@@ -508,7 +508,7 @@ def main():
     parser.add_argument("--out", help="Output path for ONNX model")
     parser.add_argument("--decoder", choices=["greedy", "beam", "hsmm"],
                         default="greedy", help="Eval decoder (default: greedy CTC)")
-    parser.add_argument("--emission", choices=["model_blank", "dsp_ch0"],
+    parser.add_argument("--emission", choices=["model_blank", "dsp_ch0", "tone_head"],
                         default="model_blank", help="HSMM emission source")
     parser.add_argument("--wpm-mode", choices=["oracle", "grid"],
                         default="oracle", help="HSMM WPM strategy")

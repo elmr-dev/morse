@@ -229,6 +229,8 @@ def decode_batch(
     emission (only for decoder="hsmm"):
       "model_blank" — log p_nonblank - log p_blank from CTC logits (250 Hz)
       "dsp_ch0"     — calibrated logistic on inputs[..., 0] (250 Hz, downsampled)
+      "tone_head"   — raw logits from the auxiliary tone head (Phase 3); the
+                      logit IS the LLR under sigmoid, no calibration needed.
 
     dsp_calib: required when emission="dsp_ch0". A {"a": float, "b": float}
       from `eval.emissions.fit_dsp_ch0_calibration`.
@@ -241,14 +243,23 @@ def decode_batch(
     if device is not None:
         inputs = inputs.to(device)
 
-    log_probs = model.infer(inputs)  # (B, T//2, C)
+    # Need tone_logits only when emission == "tone_head" — call infer_dual then.
+    # Otherwise stick with the CTC-only forward to preserve old behavior for
+    # greedy/beam paths and the model_blank/dsp_ch0 emissions.
+    needs_tone = decoder == "hsmm" and emission == "tone_head"
+    if needs_tone:
+        log_probs, tone_logits = model.infer_dual(inputs)   # (B, T//2, C), (B, T//2)
+    else:
+        log_probs = model.infer(inputs)                      # (B, T//2, C)
+        tone_logits = None
     B = log_probs.shape[0]
 
     results: list[DecodeResult] = []
     if decoder == "hsmm":
         from eval.hsmm import hsmm_decode
         from eval.emissions import (
-            emissions_from_logits, emissions_from_dsp, DspCalibration,
+            emissions_from_logits, emissions_from_dsp,
+            emissions_from_tone_head, DspCalibration,
         )
         calib_obj = DspCalibration.from_json(dsp_calib) if dsp_calib else None
         for b in range(B):
@@ -266,6 +277,11 @@ def decode_batch(
                 if il is not None:
                     x = x[: il * 2]  # 250 Hz output → 500 Hz input
                 e = emissions_from_dsp(x, calib_obj)
+            elif emission == "tone_head":
+                t = tone_logits[b]
+                if il is not None:
+                    t = t[:il]
+                e = emissions_from_tone_head(t)
             else:
                 raise ValueError(f"unknown emission: {emission}")
             wpm_b = wpms[b] if wpms is not None else None
