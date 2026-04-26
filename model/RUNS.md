@@ -20,6 +20,7 @@ Best CER 0.0909 on the v1.3.1 -16..+6 dB val set.
 | 2026-04-16 | `20260416_171918` | 3-channel (no ch3) | 0.1115 (orig) / 0.0999 (v1.3.1 re-eval) | OLD morse-audio (~7 dB SNR-calibration error). Re-evaluated against v1.3.1 audio in `eval_v131.json`. |
 | 2026-04-25 | `20260425_172212` | 4-channel + ch3 = 200 ms long MF | **0.0909** | Production. Wins decisively at very-low SNR. |
 | 2026-04-25 | `20260425_190314` | 4-channel + ch3 = STFT contrast | 0.1002 | Reverted. See "STFT experiment" below. |
+| 2026-04-26 | `20260426_025710` | 5-channel + ch4 = temporal cadence | 0.0927 | Reverted. See "Cadence experiment" below. |
 
 ## Multi-stream evaluation (2026-04-25)
 
@@ -115,6 +116,87 @@ This **strengthens** the earlier reservation about adding STFT for
 pileup-readiness — at the spacing humans care about (≥100 Hz), the
 bandpass already does the work. STFT becomes load-bearing only for
 sub-100 Hz separation, which is out of scope.
+
+## Cadence experiment (2026-04-26, reverted)
+
+Goal: add a 5th DSP channel that measures CW's regular dit-rate fingerprint
+in the envelope spectrum (sliding 512 ms FFT on the Hilbert envelope, ratio
+of CW dit-rate band power ~6-21 Hz to off-cadence reference band ~25-50 Hz).
+The bet: cadence is the only **temporal-structure** feature category we
+hadn't given the model — autocorrelation is a quadratic operation the
+CNN+TCN can't learn cheaply, especially at -16 dB SNR with weak gradients,
+so pre-computing it might unlock signal the BiGRU couldn't extract.
+
+Trained on RunPod with the 5-channel DSP, identical config and data
+(4090.yaml, 50k train samples, -16 dB SNR floor, 68 epochs). Same
+training time (~183 min). No OOM (memory bump was negligible as
+predicted — first conv is the only thing that scales with `in_channels`).
+
+### Result
+
+**Single-stream val (1000 samples):**
+
+| Tier | Long-MF (4ch) | Cadence (5ch) | Δ |
+|---|---|---|---|
+| **Overall CER** | **0.0909** | 0.0927 | +0.0019 |
+| ≤-10 dB | **0.382** | 0.393 | **+0.010** |
+| -10 to -4 | 0.036 | 0.032 | -0.004 |
+| -4 to 2 | 0.005 | 0.005 | ±0 |
+| > 2 | 0.003 | 0.004 | +0.001 |
+| 12-25 WPM | 0.053 | 0.057 | +0.004 |
+| 25-40 WPM | 0.089 | 0.085 | -0.004 |
+| 40-60 WPM | 0.147 | 0.155 | +0.008 |
+
+**Multi-stream val (200 samples, 440 per-stream decodes):**
+
+| n_streams | Long-MF | Cadence | Δ |
+|---|---|---|---|
+| 1 | 0.0869 | 0.0892 | +0.002 |
+| 2 | 0.0804 | 0.0785 | -0.002 |
+| 3 | 0.0769 | 0.0767 | ±0 |
+
+All multi-stream deltas are within noise. The headline single-stream
+regression is +0.0019 absolute, driven by a slight degradation in the
+dominant ≤-10 dB tier (+0.010) — the most important tier, since that's
+the gray area the model exists to cover.
+
+### Reading
+
+The "BiGRU might already be learning cadence implicitly through the
+existing 4 amplitude channels" hypothesis (raised in the
+multi-stream-design discussion) is empirically confirmed:
+
+- The cadence channel itself works as designed — pearson_r vs GT binary
+  is consistently 0.26-0.45 across SNRs; not nothing.
+- But the model's TCN (~120 ms RF) + BiGRU (200 ms backward lookahead)
+  has enough temporal context to discover this signal from the
+  amplitude channels on its own.
+- Pre-computing it provides no new information AND slightly dilutes the
+  input distribution, costing ~0.01 CER in the dominant tier.
+
+### Lessons applicable to future channel proposals
+
+1. **Channels that the model can already infer from existing channels +
+   temporal context don't help.** This includes most "structural"
+   features that follow deterministically from amplitude over a
+   ~200 ms window.
+2. **Truly orthogonal physics matters more than nominal
+   non-redundancy.** Long-MF (which IS another amplitude detector but
+   at a different time scale) helped because it provides a signal at a
+   time scale beyond the receptive field. Cadence didn't help because
+   the receptive field already covers it.
+3. **The remaining unexplored axes** that might still help: anything
+   genuinely outside the model's RF (e.g., 1-second aggregate stats),
+   or anything that captures non-amplitude information that the model
+   really can't infer (e.g., tone-frequency drift, key-click-broadband
+   energy at tone_freq harmonics).
+
+### Why we still reverted
+
+Pure CER-minimization picks the simpler (4-channel) model when the
+addition is at-best-tied and slightly negative on the most-important
+tier. The cadence channel is documented here for completeness; the
+production DSP returns to 4 channels.
 
 ## STFT experiment (2026-04-25, reverted)
 
