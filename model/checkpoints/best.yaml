@@ -1,4 +1,9 @@
 # 4090 training config — causal TCN + chunked BiGRU streaming decoder (275ms latency)
+# 4-channel DSP (Hilbert + TKEO + 48 ms MF + 200 ms MF) — synced from
+# cw-ml/cw-dsp-research/dsp.py (composite 0.8249 on v1.3.1 -16..-8 dB eval).
+# SNR floor matches eval: -16 dB. Below that the DSP is sub-2% accurate
+# (see cw-dsp-research/CURRENT.md detection-floor table) — training there
+# is mostly memorization of language priors.
 # Launch: python launch-runpod.py --config configs/4090.yaml
 name: 4090
 
@@ -8,12 +13,12 @@ paths:
   run_dir:   runs
 
 dsp:
-  channels: 3
+  channels: 4
   sample_rate: 8000
   envelope_rate: 500
 
 model:
-  in_channels: 3
+  in_channels: 4
   gru_hidden: 128
   gru_layers: 2
   tcn_channels: 128
@@ -41,7 +46,7 @@ data:
   gen_workers: 4
   dsp_workers: 12
   snr_tiers:
-    very_low: {range: [-17, -10], weight: 0.20}
+    very_low: {range: [-16, -10], weight: 0.20}
     low:      {range: [-10,  -4], weight: 0.20}
     mid:      {range: [ -4,   2], weight: 0.40}
     high:     {range: [  2,   6], weight: 0.20}
