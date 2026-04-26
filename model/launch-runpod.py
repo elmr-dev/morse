@@ -100,6 +100,9 @@ def main():
         print("[launch] --no-checkpoint: training from scratch")
     elif args.starting_checkpoint:
         starting_checkpoint = args.starting_checkpoint
+    elif Path("checkpoints/best.pt").exists():
+        starting_checkpoint = "/app/checkpoints/best.pt"
+        print(f"[launch] Auto-using checkpoint: {starting_checkpoint}")
     elif Path("checkpoints/base.pt").exists():
         starting_checkpoint = "/app/checkpoints/base.pt"
         print(f"[launch] Auto-using checkpoint: {starting_checkpoint}")

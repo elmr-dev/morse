@@ -89,6 +89,9 @@ def cmd_train(args: argparse.Namespace, cfg: dict):
 
     if args.starting_checkpoint:
         starting_ckpt = Path(args.starting_checkpoint)
+    elif Path("checkpoints/best.pt").exists():
+        starting_ckpt = Path("checkpoints/best.pt")
+        print(f"[train] Auto-loading starting checkpoint: checkpoints/best.pt")
     elif Path("checkpoints/base.pt").exists():
         starting_ckpt = Path("checkpoints/base.pt")
         print(f"[train] Auto-loading starting checkpoint: checkpoints/base.pt")
