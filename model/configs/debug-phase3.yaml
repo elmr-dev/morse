@@ -1,0 +1,58 @@
+# Debug pipeline test for Phase 3 — exercises generate → sanity → train →
+# final_eval with tone_weight > 0. Used only to validate the pipeline path
+# locally before launching the real RunPod run. NOT a real training config.
+name: debug-phase3
+
+paths:
+  train_dir: data/debug-phase3/train
+  val_dir:   data/debug-phase3/val
+  run_dir:   runs
+
+dsp:
+  channels: 4
+  sample_rate: 8000
+  envelope_rate: 500
+
+model:
+  in_channels: 4
+  gru_hidden: 32
+  gru_layers: 1
+  tcn_channels: 32
+  tcn_blocks: 2
+  dropout: 0.0
+
+training:
+  epochs: 1
+  ce_pretrain_epochs: 0
+  ce_blend_epochs: 0
+  batch_size: 8
+  lr: 0.001
+  warmup_epochs: 0
+  num_workers: 0
+  entropy_weight: 0.03
+  ce_blank_weight: 0.2
+  ce_char_weight: 3.0
+  tone_weight: 0.3
+  tone_pos_weight: 2.5
+
+data:
+  n_train: 50
+  n_val: 10
+  seed: 42
+  max_chars: 12
+  max_clip_s: 8.0
+  gen_workers: 1
+  dsp_workers: 1
+  snr_tiers:
+    mid:  {range: [-3, 6], weight: 1.0}
+  buckets:
+    mid:
+      wpm: [18, 30]
+      weight: 1.0
+      impairment: clean
+      fist:
+        jitter_pct:          [0.02, 0.08]
+        dah_bias:            [-0.03, 0.03]
+        speed_drift:         [0.0,  0.01]
+        char_gap_stretch_frac: [0.0, 0.05]
+        char_gap_stretch:    [0.9, 1.1]

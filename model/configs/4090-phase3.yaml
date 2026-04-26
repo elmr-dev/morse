@@ -35,7 +35,10 @@ training:
   epochs: 20
   ce_pretrain_epochs: 0
   ce_blend_epochs: 0
-  batch_size: 64
+  # batch_size 48 (vs prod 64) buys ~25% memory headroom for the dual-head
+  # forward + BCE intermediate. Prod 4090 sits at ~95% on bs=64; the new
+  # tensors are small (~hundreds of KB) but margin is cheap insurance.
+  batch_size: 48
   # 0.5x prod LR — we're fine-tuning a converged backbone, not training fresh.
   lr: 0.00015
   warmup_epochs: 1
