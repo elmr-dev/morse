@@ -7,7 +7,7 @@ export const NUM_CLASSES = CHARS.length + 1 // 42
 export const IDX_TO_CHAR: Record<number, string> = { 0: '' }
 CHARS.split('').forEach((c, i) => { IDX_TO_CHAR[i + 1] = c })
 
-export const IN_CHANNELS = 3
+export const IN_CHANNELS = 4
 export const ENVELOPE_SR = 500
 export const CNN_STRIDE = 2
 export const OUTPUT_SR = ENVELOPE_SR / CNN_STRIDE // 250 Hz

@@ -1,10 +1,11 @@
-// Port of cw-ml/model/data/dsp.py — 3-channel envelope extraction.
+// Port of cw-ml/cw-dsp-research/dsp.py — 4-channel envelope extraction.
 //
 // ch0: amplitude       — ±25 Hz bandpass + Hilbert + pct-norm + gentle sharpen
 // ch1: TKEO            — Teager-Kaiser energy on bandpassed signal
-// ch2: matched filter  — 48 ms coherent IQ box
+// ch2: matched filter  — 48 ms coherent IQ box (dit-scale, BW ~21 Hz)
+// ch3: long matched    — 200 ms coherent IQ box (character-scale, BW ~5 Hz)
 //
-// Input audio must be at DSP_SAMPLE_RATE. Output is (T, 3) at ENVELOPE_SR, with T = floor(len/16).
+// Input audio must be at DSP_SAMPLE_RATE. Output is (T, 4) at ENVELOPE_SR, with T = floor(len/16).
 
 import { fft, ifft, nextPow2 } from './fft'
 
@@ -15,6 +16,7 @@ export const DECIMATION = 16
 const BP_BW_HZ = 25.0
 const TKEO_SMOOTH_MS = 30.0
 const MATCHED_MS = 48.0
+const LONG_MATCHED_MS = 200.0
 const SHARPEN_GAMMA = 8.0
 
 // ---------- Biquad filter (RBJ BPF), forward-backward for ~zero phase ----------
@@ -279,13 +281,15 @@ export function extractEnvelope(
   const ch0 = ch0Amplitude(bp, nOut)
   const ch1 = tkeo(bp, sampleRate, nOut)
   const ch2 = matched(audio64, sampleRate, toneFreq, nOut, MATCHED_MS)
+  const ch3 = matched(audio64, sampleRate, toneFreq, nOut, LONG_MATCHED_MS)
 
-  // Interleave as (T, 3)
-  const out = new Float32Array(nOut * 3)
+  // Interleave as (T, 4)
+  const out = new Float32Array(nOut * 4)
   for (let i = 0; i < nOut; i++) {
-    out[i * 3 + 0] = ch0[i]
-    out[i * 3 + 1] = ch1[i]
-    out[i * 3 + 2] = ch2[i]
+    out[i * 4 + 0] = ch0[i]
+    out[i * 4 + 1] = ch1[i]
+    out[i * 4 + 2] = ch2[i]
+    out[i * 4 + 3] = ch3[i]
   }
   return out
 }
