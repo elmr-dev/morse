@@ -1,29 +1,28 @@
-# Phase 4a quick-win: relax anti-hallucination gates and reweight low-SNR.
+# Phase 4c: combine P4a's wins (gate relax + low-SNR overweight) with P4b's
+# paired clean/noisy KL distillation, train+eval at -14 dB floor (skip the
+# information-limited -16..-14 dB regime where P3/P4a/P4b were essentially
+# noise-floor-bound). 100k samples × 30 epochs warm-started from P4a.
 #
-# Phase 3 model is del-dominated at very low SNR (memory: project_failure_mode):
-#   -16..-15dB:  ins/c=0.016  del/c=0.351  sub/c=0.311  len_ratio=0.664
-#   -14..-13dB:  ins/c=0.006  del/c=0.170  sub/c=0.271  len_ratio=0.836
-# The model emits ~66% of target length at -16 dB — it's too cautious. The
-# anti-hallucination gates were tuned for the older insertion failure mode
-# that the trained model has long since solved (insertions are < 0.02/char
-# everywhere). Per the doc decision tree for deletion-dominated failure:
-# lower entropy gate, lower blank weight bias, and overweight very-low SNR.
+# Hypothesis: P4a's low-SNR feature extraction + distillation's alignment
+# transfer + 2x more data should compound. P4b's distillation showed
+# moderate-SNR gains (-8..-3 dB) but lost at -16..-14; cutting the floor at
+# -14 frees the model to specialize where copy actually matters.
 #
-# Knob deltas vs Phase 3:
-#   entropy_weight:    0.03 → 0.01   (less penalty for confident emissions)
-#   ce_blank_weight:   0.2  → 0.4    (less push toward blank)
-#   snr_tiers very_low 0.20 → 0.30   (more low-SNR training signal)
-#   snr_tiers mid      0.40 → 0.30   (rebalance — easy SNR doesn't need 40%)
-#   epochs:            20   → 15     (fine-tune; 15 is enough to see if gates
-#                                     were the bottleneck)
+# Trade-off: this run loses Phase 4a's deep-noise-floor strength (training
+# data won't include -16..-14 anymore). Keep P4a as the "deep-noise-floor"
+# reference; promote P4c only if it beats P4a on the -14-floor eval.
 #
-# Pass = -10..-4dB CER drop AND ≤-10dB CER drop AND overall CER not worse
-# than 0.0959 (prod baseline + 0.005 tolerance).
+# Cost estimate: gen ~10 min (200k paired WAVs / 12 DSP workers), train
+# ~4 hours (30 epochs × ~8 min/epoch at 100k/bs=40), final eval ~5 min.
+# Total ~4.5 hours pod time.
+#
+# Pass: -14-floor val Overall CER materially below P4a's 0.0856 AND
+# ≤-10 dB tier below P4a's 0.2404 AND no regression at -10..-4 dB.
 #
 # Launch:
-#   python launch-runpod.py --config configs/4090-phase4a.yaml
-#   (auto-detects checkpoints/best.pt = Phase 3 best at 0.0880)
-name: 4090-phase4a
+#   python launch-runpod.py --config configs/4090-phase4c.yaml
+#   (auto-detects checkpoints/best.pt = Phase 4a)
+name: 4090-phase4c
 
 paths:
   train_dir: data/train
@@ -44,21 +43,38 @@ model:
   dropout: 0.2
 
 training:
-  epochs: 15
+  epochs: 30
   ce_pretrain_epochs: 0
   ce_blend_epochs: 0
-  batch_size: 48
+  # bs=40 same as P4b — leaves headroom for the extra teacher forward.
+  batch_size: 40
+  # Same fine-tune LR as P4a/P4b. With 2x more data (more batches per
+  # epoch) and 2x more epochs, the cosine scheduler will run through
+  # roughly 6x more steps than P4a — that's enough range to settle even
+  # with a strong distillation signal pulling the model around.
   lr: 0.00015
   warmup_epochs: 1
   num_workers: 8
-  # Phase 4a: relaxed gates for the deletion-dominated regime.
-  entropy_weight: 0.01     # was 0.03
-  ce_blank_weight: 0.4     # was 0.2
+  # P4a's relaxed gates (entropy_weight is the only one that actually
+  # bites in pure-CTC fine-tune; ce_blank_weight is a no-op without CE
+  # loss but kept for consistency in case CE loss is re-introduced).
+  entropy_weight: 0.01
+  ce_blank_weight: 0.4
   ce_char_weight: 3.0
+  # P3 Phase 3 multi-head — kept on (free training-time regularizer; tone
+  # head is also the artifact a future fixed HSMM would consume).
   tone_weight: 0.3
   tone_pos_weight: 2.5
+  # P4b distillation knobs — same as the run that worked mechanically.
+  distill_weight: 0.5
+  distill_temperature: 2.0
 
 data:
+  # Was 100k; knocked back to 50k after the 100k paired run failed at TS
+  # gen with disk-full (200k WAVs × ~160KB ≈ 32GB peak before DSP cleans
+  # up, vs the pod's 12GB overlay headroom). To go larger later we'd need
+  # either a bigger ephemeral disk or a streaming generate→DSP→delete
+  # refactor in run_ts_generator.
   n_train: 50000
   n_val: 1000
   seed: 42
@@ -66,11 +82,17 @@ data:
   max_clip_s: 15.0
   gen_workers: 4
   dsp_workers: 12
-  # Phase 4a: rebalance toward very-low SNR where current model deletes most.
+  # Phase 4b paired generation — clean teacher input at +30 dB, frame-
+  # aligned with noisy student input.
+  paired_clean_snr_db: 30.0
+  # Phase 4c: SNR floor moved from -16 to -14 dB. Below -14 the -14-floor
+  # re-eval showed P3/P4a/P4b were all essentially noise-floor-bound.
+  # Keeping very_low overweighted at 0.30 — same fraction as P4a but now
+  # concentrated in the recoverable -14..-10 range.
   snr_tiers:
-    very_low: {range: [-16, -10], weight: 0.30}   # was 0.20
+    very_low: {range: [-14, -10], weight: 0.30}
     low:      {range: [-10,  -4], weight: 0.20}
-    mid:      {range: [ -4,   2], weight: 0.30}   # was 0.40
+    mid:      {range: [ -4,   2], weight: 0.30}
     high:     {range: [  2,   6], weight: 0.20}
   buckets:
     slow:
