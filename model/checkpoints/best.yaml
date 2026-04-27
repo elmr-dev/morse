@@ -1,17 +1,29 @@
-# Phase 3 fine-tune: warm-start from prod 4090_best.pt, add auxiliary tone head.
-# Skips CE pre-training and CE→CTC blend (those would re-anchor the converged
-# CTC head). Goes straight into pure CTC + entropy + tone BCE for 20 epochs to
-# let the fresh tone_head linear converge while the rest of the network is
-# barely perturbed.
+# Phase 4a quick-win: relax anti-hallucination gates and reweight low-SNR.
 #
-# Pass: greedy CTC val_cer drifts up by < 0.005 absolute from the 0.0909
-# baseline AND tone-head AUC vs tone_labels >= 0.95 at high SNR, >= 0.80
-# at <= -10 dB. (Hand-pulled from val final_eval.json after the run.)
+# Phase 3 model is del-dominated at very low SNR (memory: project_failure_mode):
+#   -16..-15dB:  ins/c=0.016  del/c=0.351  sub/c=0.311  len_ratio=0.664
+#   -14..-13dB:  ins/c=0.006  del/c=0.170  sub/c=0.271  len_ratio=0.836
+# The model emits ~66% of target length at -16 dB — it's too cautious. The
+# anti-hallucination gates were tuned for the older insertion failure mode
+# that the trained model has long since solved (insertions are < 0.02/char
+# everywhere). Per the doc decision tree for deletion-dominated failure:
+# lower entropy gate, lower blank weight bias, and overweight very-low SNR.
+#
+# Knob deltas vs Phase 3:
+#   entropy_weight:    0.03 → 0.01   (less penalty for confident emissions)
+#   ce_blank_weight:   0.2  → 0.4    (less push toward blank)
+#   snr_tiers very_low 0.20 → 0.30   (more low-SNR training signal)
+#   snr_tiers mid      0.40 → 0.30   (rebalance — easy SNR doesn't need 40%)
+#   epochs:            20   → 15     (fine-tune; 15 is enough to see if gates
+#                                     were the bottleneck)
+#
+# Pass = -10..-4dB CER drop AND ≤-10dB CER drop AND overall CER not worse
+# than 0.0959 (prod baseline + 0.005 tolerance).
 #
 # Launch:
-#   python launch-runpod.py --config configs/4090-phase3.yaml \
-#     --starting-checkpoint runs/20260425_172212/4090_best.pt
-name: 4090-phase3
+#   python launch-runpod.py --config configs/4090-phase4a.yaml
+#   (auto-detects checkpoints/best.pt = Phase 3 best at 0.0880)
+name: 4090-phase4a
 
 paths:
   train_dir: data/train
@@ -32,23 +44,17 @@ model:
   dropout: 0.2
 
 training:
-  epochs: 20
+  epochs: 15
   ce_pretrain_epochs: 0
   ce_blend_epochs: 0
-  # batch_size 48 (vs prod 64) buys ~25% memory headroom for the dual-head
-  # forward + BCE intermediate. Prod 4090 sits at ~95% on bs=64; the new
-  # tensors are small (~hundreds of KB) but margin is cheap insurance.
   batch_size: 48
-  # 0.5x prod LR — we're fine-tuning a converged backbone, not training fresh.
   lr: 0.00015
   warmup_epochs: 1
   num_workers: 8
-  entropy_weight: 0.03
-  ce_blank_weight: 0.2
+  # Phase 4a: relaxed gates for the deletion-dominated regime.
+  entropy_weight: 0.01     # was 0.03
+  ce_blank_weight: 0.4     # was 0.2
   ce_char_weight: 3.0
-  # Phase 3 dual-task knobs. tone_weight=0.3 is the plan's hypothesis —
-  # strong tone supervision without dragging CTC. Sweep candidates if it
-  # under/overshoots: 0.1, 0.3, 1.0.
   tone_weight: 0.3
   tone_pos_weight: 2.5
 
@@ -60,10 +66,11 @@ data:
   max_clip_s: 15.0
   gen_workers: 4
   dsp_workers: 12
+  # Phase 4a: rebalance toward very-low SNR where current model deletes most.
   snr_tiers:
-    very_low: {range: [-16, -10], weight: 0.20}
+    very_low: {range: [-16, -10], weight: 0.30}   # was 0.20
     low:      {range: [-10,  -4], weight: 0.20}
-    mid:      {range: [ -4,   2], weight: 0.40}
+    mid:      {range: [ -4,   2], weight: 0.30}   # was 0.40
     high:     {range: [  2,   6], weight: 0.20}
   buckets:
     slow:
