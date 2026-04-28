@@ -3,29 +3,33 @@ import { decodeDataUri, type PipelineResult } from '../inference/pipeline'
 import { cer } from '../inference/decode'
 import { loadSession } from '../inference/onnx'
 import { generateAudio } from '../inference/generate'
+import { randomCallsign, callsignRegion } from '../inference/callsign'
 
 const TONE_FREQ = 700
 const MAX_LISTENS = 2
-const CHARS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
+// Real-radio convention: callsigns are repeated. Default playback plays
+// the clip twice with a short pause between, matching how operators send
+// their own call ("CQ CQ CQ DE K1ABC K1ABC").
+const REPLAY_GAP_MS = 700
 
 type Phase = 'idle' | 'listening' | 'guessing' | 'graded'
 
 interface Round {
   text: string
+  region: 'US' | 'Canada' | 'World'
   wpm: number
   snr: number
   dataUri: string
 }
 
 function randomRound(): Round {
-  const len = 5 + Math.floor(Math.random() * 3)           // 5–7 chars
   const wpm = 25 + Math.floor(Math.random() * 11)         // 25–35 wpm
   // Training-calibrated SNR. At -8 dB the bot is ~10% CER; at -12 dB ~40%. Pick -10..-6.
   const snr = -10 + Math.floor(Math.random() * 5)
-  let text = ''
-  for (let i = 0; i < len; i++) text += CHARS[Math.floor(Math.random() * CHARS.length)]
+  const text = randomCallsign() // weighted US > Canada > world
+  const region = callsignRegion(text)
   const out = generateAudio({ text, wpm, snrDb: snr, frequency: TONE_FREQ })
-  return { text, wpm, snr, dataUri: out.dataUri }
+  return { text, region, wpm, snr, dataUri: out.dataUri }
 }
 
 export default function BeatTheBotPage() {
@@ -39,11 +43,18 @@ export default function BeatTheBotPage() {
   const [score, setScore] = useState({ wins: 0, losses: 0, ties: 0 })
 
   const audioRef = useRef<HTMLAudioElement | null>(null)
+  const replayTimerRef = useRef<number | null>(null)
+  const [isPlaying, setIsPlaying] = useState(false)
 
   useEffect(() => {
     loadSession()
       .then(() => setModelReady(true))
       .catch((e) => setError(String(e)))
+    return () => {
+      if (replayTimerRef.current !== null) {
+        window.clearTimeout(replayTimerRef.current)
+      }
+    }
   }, [])
 
   function startRound() {
@@ -51,17 +62,46 @@ export default function BeatTheBotPage() {
     setBotResult(null)
     setGuess('')
     setListens(0)
+    if (replayTimerRef.current !== null) {
+      window.clearTimeout(replayTimerRef.current)
+      replayTimerRef.current = null
+    }
+    setIsPlaying(false)
     const r = randomRound()
     setRound(r)
     setPhase('listening')
   }
 
+  // One "listen" plays the clip twice with REPLAY_GAP_MS between — mirrors
+  // real CW where callsigns are sent in pairs. The user sees one button
+  // press = two hearings.
   function playAudio() {
     if (!audioRef.current || !round) return
     if (listens >= MAX_LISTENS) return
-    audioRef.current.currentTime = 0
-    void audioRef.current.play()
+    if (isPlaying) return
+
+    const audio = audioRef.current
+    setIsPlaying(true)
     setListens((n) => n + 1)
+
+    audio.currentTime = 0
+    void audio.play()
+
+    const onFirstEnd = () => {
+      audio.removeEventListener('ended', onFirstEnd)
+      replayTimerRef.current = window.setTimeout(() => {
+        replayTimerRef.current = null
+        if (!audioRef.current) return
+        audioRef.current.currentTime = 0
+        void audioRef.current.play()
+        const onSecondEnd = () => {
+          audioRef.current?.removeEventListener('ended', onSecondEnd)
+          setIsPlaying(false)
+        }
+        audioRef.current.addEventListener('ended', onSecondEnd)
+      }, REPLAY_GAP_MS)
+    }
+    audio.addEventListener('ended', onFirstEnd)
   }
 
   async function submitGuess() {
@@ -95,7 +135,8 @@ export default function BeatTheBotPage() {
     <div>
       <h1>Beat the Bot</h1>
       <p>
-        Listen to a short morse clip (5–7 characters, 25–35 WPM, low SNR). You get up to
+        Listen to a random callsign in CW (25–35 WPM, low SNR). Each listen plays the
+        clip twice with a short pause — same as real on-air practice. You get up to
         two listens, then type your guess. We grade you against our model on character error rate.
       </p>
 
@@ -118,12 +159,17 @@ export default function BeatTheBotPage() {
         <div className="panel">
           <h3>Round</h3>
           <div className="muted">
-            {round.text.length} characters · approx {round.wpm} wpm · SNR {round.snr} dB (hidden until you submit)
+            callsign · approx {round.wpm} wpm · SNR {round.snr} dB · region hidden until you submit
           </div>
           <audio ref={audioRef} src={round.dataUri} preload="auto" />
           <div className="row" style={{ marginTop: 12 }}>
-            <button onClick={playAudio} disabled={phase !== 'listening' || listens >= MAX_LISTENS}>
-              Play ({MAX_LISTENS - listens} left)
+            <button
+              onClick={playAudio}
+              disabled={phase !== 'listening' || listens >= MAX_LISTENS || isPlaying}
+            >
+              {isPlaying
+                ? 'Playing…'
+                : `Play twice (${MAX_LISTENS - listens} left)`}
             </button>
           </div>
 
@@ -162,6 +208,7 @@ export default function BeatTheBotPage() {
             <span className="mono" style={{ fontSize: 20, color: 'var(--text-h)', letterSpacing: 2 }}>
               {round.text}
             </span>
+            <span className="muted" style={{ marginLeft: 10 }}>({round.region})</span>
           </div>
 
           <div className="grid-2">
