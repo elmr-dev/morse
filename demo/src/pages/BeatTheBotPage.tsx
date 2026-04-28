@@ -114,11 +114,9 @@ export default function BeatTheBotPage() {
     <div>
       <h1>Beat the Bot</h1>
       <p>
-        Listen to a random callsign sent in CW (25–35 WPM, low SNR). The clip plays
-        the callsign twice with a word-gap pause between — the same way operators
-        send their own call. You hear it once and guess; the bot decodes each repetition
-        independently and combines them. We grade you against the bot on character
-        error rate.
+        Listen to a random callsign sent twice in CW (25–35 WPM, low SNR), the way
+        operators repeat their own call. You and the bot both get the same clip —
+        one shot at it. Type your guess; we grade both decodes on character error rate.
       </p>
 
       <div className="panel">
