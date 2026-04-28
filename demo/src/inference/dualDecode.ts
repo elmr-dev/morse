@@ -96,15 +96,93 @@ export function splitEnvelope(
 }
 
 /**
+ * Levenshtein-align two decoded strings and merge them. For each aligned
+ * position:
+ *   - match → emit the character (definitely correct)
+ *   - gap on one side → emit the character from the other side
+ *     (the side without the char never claimed otherwise; the side with
+ *     the char is our only evidence)
+ *   - substitution → emit the character from whichever side had higher
+ *     OVERALL confidence (we don't have per-char confidences exposed,
+ *     so overall confidence is the best tiebreak available)
+ *
+ * This recovers from the "high-confidence-but-missing-letters" failure
+ * mode where mean per-char confidence inflates as length drops:
+ *   a = "K1AC" (conf 0.90, missing B)
+ *   b = "K1ABC" (conf 0.70)
+ *   align → K-1-A-{-,B}-C  → emit "K1ABC" (B from b, all else from match)
+ */
+export function alignAndMergeDecodes(a: DecodeResult, b: DecodeResult): DecodeResult {
+  const sa = a.text
+  const sb = b.text
+  if (sa === sb) return a.confidence >= b.confidence ? a : b
+  if (sa.length === 0) return b
+  if (sb.length === 0) return a
+
+  const m = sa.length
+  const n = sb.length
+  // dp[i][j] = edit distance from sa[0..i] to sb[0..j]
+  const dp: number[][] = Array.from({ length: m + 1 }, () => new Array<number>(n + 1).fill(0))
+  for (let i = 0; i <= m; i++) dp[i][0] = i
+  for (let j = 0; j <= n; j++) dp[0][j] = j
+  for (let i = 1; i <= m; i++) {
+    for (let j = 1; j <= n; j++) {
+      const cost = sa[i - 1] === sb[j - 1] ? 0 : 1
+      dp[i][j] = Math.min(
+        dp[i - 1][j] + 1,        // del from a
+        dp[i][j - 1] + 1,        // ins from b
+        dp[i - 1][j - 1] + cost, // match or sub
+      )
+    }
+  }
+
+  // Traceback. Build merged text in reverse.
+  const aPreferred = a.confidence >= b.confidence
+  const merged: string[] = []
+  let i = m
+  let j = n
+  while (i > 0 || j > 0) {
+    if (i > 0 && j > 0 && sa[i - 1] === sb[j - 1]) {
+      // match
+      merged.push(sa[i - 1])
+      i--; j--
+    } else if (i > 0 && j > 0 && dp[i][j] === dp[i - 1][j - 1] + 1) {
+      // substitution → use higher-confidence side
+      merged.push(aPreferred ? sa[i - 1] : sb[j - 1])
+      i--; j--
+    } else if (i > 0 && dp[i][j] === dp[i - 1][j] + 1) {
+      // del from a → b is missing this char; emit a's char
+      merged.push(sa[i - 1])
+      i--
+    } else {
+      // ins (j > 0) → a is missing; emit b's char
+      merged.push(sb[j - 1])
+      j--
+    }
+  }
+  merged.reverse()
+  return {
+    text: merged.join(''),
+    // Approximate the merged confidence as the average of the two
+    // halves' confidences; not strictly principled, but better than
+    // claiming the winner's higher number.
+    confidence: (a.confidence + b.confidence) / 2,
+    indices: [], // we don't reconstruct the original char-indices through merge
+  }
+}
+
+/**
  * Combine two independent decode results from the same callsign sent twice.
  *
- * Strategy (in order of preference):
- *   1. Both halves agree → use either (high confidence, return max conf).
- *   2. Disagreement → return the higher-confidence half.
+ * Strategy:
+ *   1. Both halves agree → return that text with the higher confidence.
+ *   2. Empty side → return the non-empty side.
+ *   3. Disagreement → Levenshtein-align and merge so missing characters
+ *      from one side are filled from the other (see alignAndMergeDecodes).
  *
- * A future revision will sum log-probabilities frame-by-frame for true
- * coherent integration; this simple ensemble is the fallback that already
- * helps when noise drops one half but not the other.
+ * A future upgrade is to sum per-frame log-probabilities BEFORE CTC
+ * decoding for true coherent integration (~√2 SNR gain). The post-decode
+ * merge is the simple, calibration-robust starting point.
  */
 export function combineDualDecodes(
   a: DecodeResult,
@@ -121,10 +199,9 @@ export function combineDualDecodes(
       agreement: true,
     }
   }
-  // Pick higher-confidence half. Tie-breaks favor non-empty.
   if (a.text.length === 0) return { result: b, agreement: false }
   if (b.text.length === 0) return { result: a, agreement: false }
-  return { result: a.confidence >= b.confidence ? a : b, agreement: false }
+  return { result: alignAndMergeDecodes(a, b), agreement: false }
 }
 
 /**

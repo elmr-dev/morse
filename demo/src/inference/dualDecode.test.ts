@@ -7,6 +7,7 @@ import {
   findInterCallsignSplit,
   splitEnvelope,
   combineDualDecodes,
+  alignAndMergeDecodes,
 } from './dualDecode'
 import { IN_CHANNELS } from './constants'
 
@@ -141,14 +142,6 @@ describe('combineDualDecodes', () => {
     expect(out.result.confidence).toBe(0.7)
   })
 
-  it('picks the higher-confidence half when they disagree', () => {
-    const a = make('K1ABC', 0.4)
-    const b = make('K1ABZ', 0.8)
-    const out = combineDualDecodes(a, b)
-    expect(out.agreement).toBe(false)
-    expect(out.result.text).toBe('K1ABZ')
-  })
-
   it('prefers the non-empty half when one is empty', () => {
     const a = make('', 0.0)
     const b = make('K1ABC', 0.5)
@@ -166,11 +159,84 @@ describe('combineDualDecodes', () => {
   })
 
   it('does NOT report agreement when both halves are empty', () => {
-    // Important: we want disagreement-fallback behavior on noise floor,
-    // not "both halves agree on nothing".
     const a = make('', 0.1)
     const b = make('', 0.05)
     const out = combineDualDecodes(a, b)
     expect(out.agreement).toBe(false)
+  })
+
+  it('on disagreement, fills missing characters from the longer half', () => {
+    // The exact failure the user reported: high-conf shorter decode
+    // shouldn't beat a correct-length decode missing one letter.
+    const a = make('K1AC', 0.9)     // missing B
+    const b = make('K1ABC', 0.7)
+    const out = combineDualDecodes(a, b)
+    expect(out.agreement).toBe(false)
+    expect(out.result.text).toBe('K1ABC')
+  })
+
+  it('on substitution, picks the higher-confidence side', () => {
+    // Same length, single char differs. Both give equal length → no
+    // gap-filling; substitution picks higher-conf side.
+    const a = make('K1ABZ', 0.8)
+    const b = make('K1ABC', 0.5)
+    const out = combineDualDecodes(a, b)
+    expect(out.agreement).toBe(false)
+    expect(out.result.text).toBe('K1ABZ')
+
+    // Reverse confidence
+    const out2 = combineDualDecodes(make('K1ABZ', 0.5), make('K1ABC', 0.8))
+    expect(out2.result.text).toBe('K1ABC')
+  })
+})
+
+describe('alignAndMergeDecodes', () => {
+  const make = (text: string, conf: number) => ({
+    text,
+    confidence: conf,
+    indices: [],
+  })
+
+  it('returns either when texts are equal', () => {
+    const out = alignAndMergeDecodes(make('K1ABC', 0.5), make('K1ABC', 0.7))
+    expect(out.text).toBe('K1ABC')
+  })
+
+  it('returns the non-empty side when one is empty', () => {
+    expect(alignAndMergeDecodes(make('', 0), make('K1ABC', 0.5)).text).toBe('K1ABC')
+    expect(alignAndMergeDecodes(make('K1ABC', 0.5), make('', 0)).text).toBe('K1ABC')
+  })
+
+  it('fills a missing letter in the middle from the other half', () => {
+    const out = alignAndMergeDecodes(make('K1AC', 0.9), make('K1ABC', 0.7))
+    expect(out.text).toBe('K1ABC')
+  })
+
+  it('fills a missing letter at the end from the other half', () => {
+    const out = alignAndMergeDecodes(make('K1AB', 0.9), make('K1ABC', 0.7))
+    expect(out.text).toBe('K1ABC')
+  })
+
+  it('fills a missing letter at the start from the other half', () => {
+    const out = alignAndMergeDecodes(make('1ABC', 0.9), make('K1ABC', 0.7))
+    expect(out.text).toBe('K1ABC')
+  })
+
+  it('union-merges when each side is missing a different letter (different lengths)', () => {
+    // For union to fire, the alignment has to prefer indels over substitutions,
+    // which only happens when the strings have different lengths. Same-length
+    // strings differing by one letter are scored as one substitution (cheaper)
+    // and fall through to confidence-based pick.
+    const out = alignAndMergeDecodes(make('KABC', 0.8), make('K1AB', 0.7))
+    // align (Levenshtein cost 2):
+    //   K - A B C
+    //   K 1 A B -
+    // Merged: K1ABC (1 from b, C from a)
+    expect(out.text).toBe('K1ABC')
+  })
+
+  it('on substitution, picks the side with higher overall confidence', () => {
+    expect(alignAndMergeDecodes(make('K1ABZ', 0.8), make('K1ABC', 0.5)).text).toBe('K1ABZ')
+    expect(alignAndMergeDecodes(make('K1ABZ', 0.5), make('K1ABC', 0.8)).text).toBe('K1ABC')
   })
 })
