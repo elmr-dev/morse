@@ -19,7 +19,11 @@ interface Round {
 }
 
 function randomRound(): Round {
-  const wpm = 25 + Math.floor(Math.random() * 11)         // 25–35 wpm
+  // 20..30 WPM (inclusive). The model's CER climbs with WPM (final_eval
+  // shows 12-25: ~0.04, 25-40: ~0.08, 40-60: ~0.15), so keeping the upper
+  // bound at 30 matches a regime where dual-look + alignment-merge actually
+  // helps and the bot stays beatable.
+  const wpm = 20 + Math.floor(Math.random() * 11)         // 20..30 inclusive
   // Beat-the-Bot range: -14..-8 dB (inclusive, 7 integer values).
   // At -8 dB the bot is ~3% CER (easy); at -14 dB it's ~40% (hard).
   // The dual-look split-and-merge is meant to keep the bot honest in
@@ -117,7 +121,7 @@ export default function BeatTheBotPage() {
     <div>
       <h1>Beat the Bot</h1>
       <p>
-        Listen to a random callsign sent twice in CW (25–35 WPM, low SNR), the way
+        Listen to a random callsign sent twice in CW (20–30 WPM, low SNR), the way
         operators repeat their own call. You and the bot both get the same clip —
         one shot at it. Type your guess; we grade both decodes on character error rate.
       </p>
