@@ -139,10 +139,12 @@ export async function decodeDualCallsignFromEnvelope(
   const splitFrame = findInterCallsignSplit(envelope, channels)
   const { first, second } = splitEnvelope(envelope, splitFrame, channels)
 
-  const [logProbsA, logProbsB] = await Promise.all([
-    runInference(first),
-    runInference(second),
-  ])
+  // onnxruntime-web's InferenceSession.run() is NOT reentrant — calling
+  // it twice concurrently on the same session throws "Session already
+  // started". Run sequentially. (Two-second-ish back-to-back inferences
+  // is fine for the BeatTheBot UI.)
+  const logProbsA = await runInference(first)
+  const logProbsB = await runInference(second)
   const Ta = logProbsA.length / NUM_CLASSES
   const Tb = logProbsB.length / NUM_CLASSES
   const decA = greedyDecode(logProbsA, Ta)
