@@ -20,8 +20,11 @@ interface Round {
 
 function randomRound(): Round {
   const wpm = 25 + Math.floor(Math.random() * 11)         // 25–35 wpm
-  // Training-calibrated SNR. At -8 dB the bot is ~10% CER; at -12 dB ~40%. Pick -10..-6.
-  const snr = -10 + Math.floor(Math.random() * 5)
+  // Beat-the-Bot range: -14..-8 dB (inclusive, 7 integer values).
+  // At -8 dB the bot is ~3% CER (easy); at -14 dB it's ~40% (hard).
+  // The dual-look split-and-merge is meant to keep the bot honest in
+  // the harder half of this range.
+  const snr = -14 + Math.floor(Math.random() * 7)
   const text = randomCallsign() // weighted US > Canada > world
   const region = callsignRegion(text)
   // Generate one audio with the callsign sent twice. The space tells morse-
