@@ -31,6 +31,7 @@ model/data/val/
 model/data/debug/
 cw-dsp-research/testdata/
 cw-dsp-research/evaldata/
+cw-dsp-research/human_baseline_audio/
 cw-dsp-research/results.tsv
 
 # Model weights (whitelist the stable best below)
