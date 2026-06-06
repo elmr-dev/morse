@@ -1,0 +1,112 @@
+# Phase 5a: 4060-sized confidence/reliability fine-tune.
+#
+# Purpose: improve calibrated confidence and reduce high-confidence wrong
+# characters without chasing unrecoverable SNR. Warm-start from checkpoints/best.pt
+# or an explicit --starting-checkpoint.
+#
+# Run:
+#   CW_QUIET=1 uv run python main.py pipeline \
+#     --config configs/4060-phase5a.yaml \
+#     --starting-checkpoint checkpoints/best.pt
+#
+# Post-run checks:
+#   uv run python main.py evaluate \
+#     --config configs/4060-phase5a.yaml \
+#     --checkpoint runs/<RUN_ID>/4060-phase5a_best.pt \
+#     --data-dir data/val \
+#     --out-json /tmp/phase5a_eval.json
+#
+#   uv run python -m eval.calibrate_confidence \
+#     --config configs/4060-phase5a.yaml \
+#     --checkpoint runs/<RUN_ID>/4060-phase5a_best.pt \
+#     --data-dir data/val_snr14 \
+#     --limit 1000 \
+#     --beam-width 50 \
+#     --out-json /tmp/phase5a_confidence.json
+name: 4060-phase5a
+
+paths:
+  train_dir: data/train
+  val_dir:   data/val
+  run_dir:   runs
+
+dsp:
+  channels: 4
+  sample_rate: 8000
+  envelope_rate: 500
+
+model:
+  in_channels: 4
+  gru_hidden: 128
+  gru_layers: 2
+  tcn_channels: 128
+  tcn_blocks: 5
+  dropout: 0.2
+
+training:
+  epochs: 20
+  ce_pretrain_epochs: 0
+  ce_blend_epochs: 0
+  # Fits a 4060-class GPU more safely than the 4090 phase configs. If you have
+  # a 16GB 4060 Ti, try 24 after a successful smoke run.
+  batch_size: 16
+  lr: 0.00012
+  warmup_epochs: 1
+  num_workers: 4
+  entropy_weight: 0.01
+  ce_blank_weight: 0.4
+  ce_char_weight: 3.0
+  tone_weight: 0.3
+  tone_pos_weight: 2.5
+  # Keep clean/noisy teacher signal, but reduce weight from Phase 4c's 0.5 so
+  # confidence does not simply inherit the clean teacher's over-certainty.
+  distill_weight: 0.35
+  distill_temperature: 2.0
+
+data:
+  n_train: 25000
+  n_val: 1000
+  seed: 52
+  max_chars: 20
+  max_clip_s: 15.0
+  gen_workers: 2
+  dsp_workers: 6
+  paired_clean_snr_db: 30.0
+  # Focus on the recoverable edge identified by the human baseline and prior
+  # evals. Below -14 dB is mostly noise-floor-bound for this setup.
+  snr_tiers:
+    very_low: {range: [-14, -10], weight: 0.35}
+    low:      {range: [-10,  -4], weight: 0.25}
+    mid:      {range: [ -4,   2], weight: 0.25}
+    high:     {range: [  2,   6], weight: 0.15}
+  buckets:
+    slow:
+      wpm: [12, 25]
+      weight: 0.35
+      impairment: {clean: 0.7, qsb: 0.3}
+      fist:
+        jitter_pct:          [0.01, 0.15]
+        dah_bias:            [-0.05, 0.05]
+        speed_drift:         [0.0,  0.02]
+        char_gap_stretch_frac: [0.0, 0.10]
+        char_gap_stretch:    [0.8, 1.2]
+    mid:
+      wpm: [25, 40]
+      weight: 0.40
+      impairment: {clean: 0.6, qsb: 0.4}
+      fist:
+        jitter_pct:          [0.02, 0.20]
+        dah_bias:            [-0.07, 0.07]
+        speed_drift:         [0.0,  0.03]
+        char_gap_stretch_frac: [0.0, 0.15]
+        char_gap_stretch:    [0.7, 1.3]
+    fast:
+      wpm: [40, 60]
+      weight: 0.25
+      impairment: {clean: 0.6, qsb: 0.4}
+      fist:
+        jitter_pct:          [0.01, 0.10]
+        dah_bias:            [-0.03, 0.03]
+        speed_drift:         [0.0,  0.02]
+        char_gap_stretch_frac: [0.0, 0.05]
+        char_gap_stretch:    [0.9, 1.1]

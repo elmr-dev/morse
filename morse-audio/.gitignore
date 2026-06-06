@@ -1,8 +1,6 @@
 node_modules/
 dist/
-.env
-**/dist/
-**/.vite/
+demo/dist/
 packages/*/dist/
 *.log
 .DS_Store
@@ -15,8 +13,8 @@ package-lock.json
 *.flac
 *.wav
 samples/
-__pycache__/
-.venv/
-cw-decode/runs/
-cw-decode/validation/
-cw-decode/data/
+__pycache__
+.venv
+cw-decode/runs
+cw-decode/validation
+cw-decode/data
