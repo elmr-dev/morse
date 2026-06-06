@@ -4,6 +4,7 @@ import { cer } from '../inference/decode'
 import { loadSession } from '../inference/onnx'
 import { generateAudio } from '../inference/generate'
 import { Button } from '@/components/ui/button'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 
 const TONE_FREQ = 700
 
@@ -64,75 +65,87 @@ export default function DecodePage() {
         Model: <code>CWNet</code> (808k params, 3.1 MB ONNX) running in your browser via onnxruntime-web.
       </p>
 
-      <div className="panel">
-        <h3>Generate</h3>
-        <div className="row">
-          <label htmlFor="text">Text</label>
-          <input
-            id="text"
-            type="text"
-            value={text}
-            onChange={(e) => setText(e.target.value.toUpperCase())}
-            style={{ flex: 1, fontFamily: 'var(--mono)' }}
-            maxLength={40}
-          />
-          <Button variant="secondary" onClick={() => setText(randomText(8))} type="button">Random</Button>
-        </div>
-        <div className="row">
-          <label>WPM</label>
-          <input type="range" min={12} max={50} value={wpm} onChange={(e) => setWpm(+e.target.value)} />
-          <span className="value">{wpm}</span>
-        </div>
-        <div className="row">
-          <label>SNR (dB)</label>
-          <input type="range" min={-15} max={20} value={snr} onChange={(e) => setSnr(+e.target.value)} />
-          <span className="value">{snr}</span>
-        </div>
-        <div className="row">
-          <label>QSB (fading)</label>
-          <input type="checkbox" checked={qsb} onChange={(e) => setQsb(e.target.checked)} />
-          <span className="muted">Moderate signal fading, 0.2 Hz rate</span>
-        </div>
-        <div className="row">
-          <Button variant="default" disabled={busy || !modelReady || !text.trim()} onClick={onGenerate}>
-            {busy ? (
-              <>
-                <span className="spinner" /> Decoding…
-              </>
-            ) : (
-              'Generate & decode'
-            )}
-          </Button>
-          {!modelReady && <span className="loading"><span className="spinner" /> Loading model…</span>}
-          {error && <span className="bad mono">{error}</span>}
-        </div>
-      </div>
+      <Card className="mb-4">
+        <CardHeader>
+          <CardTitle>Generate</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="row">
+            <label htmlFor="text">Text</label>
+            <input
+              id="text"
+              type="text"
+              value={text}
+              onChange={(e) => setText(e.target.value.toUpperCase())}
+              style={{ flex: 1, fontFamily: 'var(--mono)' }}
+              maxLength={40}
+            />
+            <Button variant="secondary" onClick={() => setText(randomText(8))} type="button">Random</Button>
+          </div>
+          <div className="row">
+            <label>WPM</label>
+            <input type="range" min={12} max={50} value={wpm} onChange={(e) => setWpm(+e.target.value)} />
+            <span className="value">{wpm}</span>
+          </div>
+          <div className="row">
+            <label>SNR (dB)</label>
+            <input type="range" min={-15} max={20} value={snr} onChange={(e) => setSnr(+e.target.value)} />
+            <span className="value">{snr}</span>
+          </div>
+          <div className="row">
+            <label>QSB (fading)</label>
+            <input type="checkbox" checked={qsb} onChange={(e) => setQsb(e.target.checked)} />
+            <span className="muted">Moderate signal fading, 0.2 Hz rate</span>
+          </div>
+          <div className="row">
+            <Button variant="default" disabled={busy || !modelReady || !text.trim()} onClick={onGenerate}>
+              {busy ? (
+                <>
+                  <span className="spinner" /> Decoding…
+                </>
+              ) : (
+                'Generate & decode'
+              )}
+            </Button>
+            {!modelReady && <span className="loading"><span className="spinner" /> Loading model…</span>}
+            {error && <span className="bad mono">{error}</span>}
+          </div>
+        </CardContent>
+      </Card>
 
       {dataUri && (
-        <div className="panel">
-          <h3>Audio</h3>
-          <audio ref={audioRef} src={dataUri} controls style={{ width: '100%' }} />
-        </div>
+        <Card className="mb-4">
+          <CardHeader>
+            <CardTitle>Audio</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <audio ref={audioRef} src={dataUri} controls style={{ width: '100%' }} />
+          </CardContent>
+        </Card>
       )}
 
       {result && (
-        <div className="panel">
-          <h3>Model output</h3>
-          <div className="result-text">{result.text || <span className="muted">(no output)</span>}</div>
-          <div className="stats">
-            <Stat label="CER" value={(cer(text, result.text) * 100).toFixed(1) + '%'} />
-            <Stat label="Confidence" value={(result.confidence * 100).toFixed(0) + '%'} />
-            <Stat label="Inference" value={result.timing.modelMs.toFixed(0) + ' ms'} />
-            <Stat label="Total" value={result.timing.totalMs.toFixed(0) + ' ms'} />
-          </div>
-          <div className="muted" style={{ marginTop: 10 }}>
-            Audio decode {result.timing.audioMs.toFixed(0)} ms · DSP {result.timing.dspMs.toFixed(0)} ms · CTC {result.timing.decodeMs.toFixed(0)} ms
-          </div>
-          <div style={{ marginTop: 14 }}>
-            <span className="muted">Ground truth:&nbsp;</span>
-            <DiffLine ref_={text} hyp={result.text} />
-          </div>
-        </div>
+        <Card className="mb-4">
+          <CardHeader>
+            <CardTitle>Model output</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="result-text">{result.text || <span className="muted">(no output)</span>}</div>
+            <div className="stats">
+              <Stat label="CER" value={(cer(text, result.text) * 100).toFixed(1) + '%'} />
+              <Stat label="Confidence" value={(result.confidence * 100).toFixed(0) + '%'} />
+              <Stat label="Inference" value={result.timing.modelMs.toFixed(0) + ' ms'} />
+              <Stat label="Total" value={result.timing.totalMs.toFixed(0) + ' ms'} />
+            </div>
+            <div className="muted" style={{ marginTop: 10 }}>
+              Audio decode {result.timing.audioMs.toFixed(0)} ms · DSP {result.timing.dspMs.toFixed(0)} ms · CTC {result.timing.decodeMs.toFixed(0)} ms
+            </div>
+            <div style={{ marginTop: 14 }}>
+              <span className="muted">Ground truth:&nbsp;</span>
+              <DiffLine ref_={text} hyp={result.text} />
+            </div>
+          </CardContent>
+        </Card>
       )}
     </div>
   )

@@ -5,6 +5,7 @@ import { generateAudio } from '../inference/generate'
 import { randomCallsign, callsignRegion } from '../inference/callsign'
 import { decodeDualCallsignDataUri, type DualDecodeResult } from '../inference/dualDecode'
 import { Button } from '@/components/ui/button'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 
 const TONE_FREQ = 700
 const MAX_LISTENS = 1   // audio already contains the callsign sent twice
@@ -127,103 +128,113 @@ export default function BeatTheBotPage() {
         one shot at it. Type your guess; we grade both decodes on character error rate.
       </p>
 
-      <div className="panel">
-        <div className="row" style={{ justifyContent: 'space-between' }}>
-          <div style={{ display: 'flex', gap: 20 }}>
-            <Stat label="You" value={score.wins.toString()} accent="good" />
-            <Stat label="Bot" value={score.losses.toString()} accent="bad" />
-            <Stat label="Ties" value={score.ties.toString()} />
+      <Card className="mb-4">
+        <CardContent>
+          <div className="row" style={{ justifyContent: 'space-between' }}>
+            <div style={{ display: 'flex', gap: 20 }}>
+              <Stat label="You" value={score.wins.toString()} accent="good" />
+              <Stat label="Bot" value={score.losses.toString()} accent="bad" />
+              <Stat label="Ties" value={score.ties.toString()} />
+            </div>
+            <Button disabled={!modelReady} onClick={startRound}>
+              {round ? 'New round' : 'Start'}
+            </Button>
           </div>
-          <Button disabled={!modelReady} onClick={startRound}>
-            {round ? 'New round' : 'Start'}
-          </Button>
-        </div>
-        {!modelReady && <div className="loading"><span className="spinner" /> Loading model…</div>}
-        {error && <div className="bad mono">{error}</div>}
-      </div>
+          {!modelReady && <div className="loading"><span className="spinner" /> Loading model…</div>}
+          {error && <div className="bad mono">{error}</div>}
+        </CardContent>
+      </Card>
 
       {round && phase !== 'idle' && (
-        <div className="panel">
-          <h3>Round</h3>
-          <div className="muted">
-            callsign · approx {round.wpm} wpm · SNR {round.snr} dB · region hidden until you submit
-          </div>
-          <audio ref={audioRef} src={round.dataUri} preload="auto" />
-          <div className="row" style={{ marginTop: 12 }}>
-            <Button
-              variant="secondary"
-              onClick={playAudio}
-              disabled={phase !== 'listening' || listens >= MAX_LISTENS || isPlaying}
-            >
-              {isPlaying ? 'Playing…' : (listens === 0 ? 'Play' : 'Played')}
-            </Button>
-          </div>
+        <Card className="mb-4">
+          <CardHeader>
+            <CardTitle>Round</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="muted">
+              callsign · approx {round.wpm} wpm · SNR {round.snr} dB · region hidden until you submit
+            </div>
+            <audio ref={audioRef} src={round.dataUri} preload="auto" />
+            <div className="row" style={{ marginTop: 12 }}>
+              <Button
+                variant="secondary"
+                onClick={playAudio}
+                disabled={phase !== 'listening' || listens >= MAX_LISTENS || isPlaying}
+              >
+                {isPlaying ? 'Playing…' : (listens === 0 ? 'Play' : 'Played')}
+              </Button>
+            </div>
 
-          <div className="row" style={{ marginTop: 12 }}>
-            <label>Your guess</label>
-            <input
-              type="text"
-              value={guess}
-              onChange={(e) => setGuess(e.target.value.toUpperCase())}
-              style={{ flex: 1, fontFamily: 'var(--mono)', fontSize: 18, letterSpacing: 2 }}
-              disabled={phase !== 'listening'}
-              maxLength={20}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' && phase === 'listening' && guess.trim()) void submitGuess()
-              }}
-            />
-            <Button
-              variant="default"
-              disabled={phase !== 'listening' || !guess.trim() || listens === 0}
-              onClick={submitGuess}
-            >
-              {phase === 'guessing' ? <><span className="spinner" /> Grading…</> : 'Submit'}
-            </Button>
-          </div>
-          {phase === 'listening' && listens === 0 && (
-            <div className="muted">Hit Play to hear the clip — it sends the callsign twice.</div>
-          )}
-        </div>
+            <div className="row" style={{ marginTop: 12 }}>
+              <label>Your guess</label>
+              <input
+                type="text"
+                value={guess}
+                onChange={(e) => setGuess(e.target.value.toUpperCase())}
+                style={{ flex: 1, fontFamily: 'var(--mono)', fontSize: 18, letterSpacing: 2 }}
+                disabled={phase !== 'listening'}
+                maxLength={20}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && phase === 'listening' && guess.trim()) void submitGuess()
+                }}
+              />
+              <Button
+                variant="default"
+                disabled={phase !== 'listening' || !guess.trim() || listens === 0}
+                onClick={submitGuess}
+              >
+                {phase === 'guessing' ? <><span className="spinner" /> Grading…</> : 'Submit'}
+              </Button>
+            </div>
+            {phase === 'listening' && listens === 0 && (
+              <div className="muted">Hit Play to hear the clip — it sends the callsign twice.</div>
+            )}
+          </CardContent>
+        </Card>
       )}
 
       {phase === 'graded' && round && botResult && (
-        <div className="panel">
-          <h3>Results</h3>
-          <div style={{ marginBottom: 14 }}>
-            <span className="muted">Ground truth:&nbsp;</span>
-            <span className="mono" style={{ fontSize: 20, color: 'var(--text-h)', letterSpacing: 2 }}>
-              {round.text}
-            </span>
-            <span className="muted" style={{ marginLeft: 10 }}>({round.region})</span>
-          </div>
+        <Card className="mb-4">
+          <CardHeader>
+            <CardTitle>Results</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div style={{ marginBottom: 14 }}>
+              <span className="muted">Ground truth:&nbsp;</span>
+              <span className="mono" style={{ fontSize: 20, color: 'var(--text-h)', letterSpacing: 2 }}>
+                {round.text}
+              </span>
+              <span className="muted" style={{ marginLeft: 10 }}>({round.region})</span>
+            </div>
 
-          <div className="grid-2">
-            <ResultCard
-              title="You"
-              guess={guess.toUpperCase().trim()}
-              truth={round.text}
-              cerPct={userCerPct!}
-            />
-            <ResultCard
-              title="Bot"
-              guess={botResult.text}
-              truth={round.text}
-              cerPct={botCerPct!}
-            />
-          </div>
+            <div className="grid-2">
+              <ResultCard
+                title="You"
+                guess={guess.toUpperCase().trim()}
+                truth={round.text}
+                cerPct={userCerPct!}
+              />
+              <ResultCard
+                title="Bot"
+                guess={botResult.text}
+                truth={round.text}
+                cerPct={botCerPct!}
+              />
+            </div>
 
-          <div className="muted mono" style={{ marginTop: 10, fontSize: 12 }}>
-            Bot two-look detail: 1st → {botResult.firstHalf.text || '(empty)'} (
-            {(botResult.firstHalf.confidence * 100).toFixed(0)}%) · 2nd →{' '}
-            {botResult.secondHalf.text || '(empty)'} (
-            {(botResult.secondHalf.confidence * 100).toFixed(0)}%) ·{' '}
-            {botResult.agreement ? 'agreement' : 'used higher-confidence half'}
-          </div>
+            <div className="muted mono" style={{ marginTop: 10, fontSize: 12 }}>
+              Bot two-look detail: 1st → {botResult.firstHalf.text || '(empty)'} (
+              {(botResult.firstHalf.confidence * 100).toFixed(0)}%) · 2nd →{' '}
+              {botResult.secondHalf.text || '(empty)'} (
+              {(botResult.secondHalf.confidence * 100).toFixed(0)}%) ·{' '}
+              {botResult.agreement ? 'agreement' : 'used higher-confidence half'}
+            </div>
 
-          <div style={{ marginTop: 16 }}>
-            <Verdict userCer={userCerPct!} botCer={botCerPct!} />
-          </div>
-        </div>
+            <div style={{ marginTop: 16 }}>
+              <Verdict userCer={userCerPct!} botCer={botCerPct!} />
+            </div>
+          </CardContent>
+        </Card>
       )}
     </div>
   )
@@ -242,11 +253,15 @@ function ResultCard({ title, guess, truth, cerPct }: { title: string; guess: str
     )
   }
   return (
-    <div className="panel" style={{ background: 'var(--bg)', margin: 0 }}>
-      <h3 style={{ margin: 0 }}>{title}</h3>
-      <div className="result-text">{chars.length ? chars : <span className="muted">(nothing)</span>}</div>
-      <div className="muted" style={{ marginTop: 6 }}>CER: <span className={cerPct === 0 ? 'good' : ''}>{cerPct.toFixed(1)}%</span></div>
-    </div>
+    <Card className="bg-background">
+      <CardHeader>
+        <CardTitle>{title}</CardTitle>
+      </CardHeader>
+      <CardContent>
+        <div className="result-text">{chars.length ? chars : <span className="muted">(nothing)</span>}</div>
+        <div className="muted" style={{ marginTop: 6 }}>CER: <span className={cerPct === 0 ? 'good' : ''}>{cerPct.toFixed(1)}%</span></div>
+      </CardContent>
+    </Card>
   )
 }
 
