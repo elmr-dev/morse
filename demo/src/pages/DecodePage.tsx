@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Slider } from '@/components/ui/slider'
 
 const TONE_FREQ = 700
 
@@ -85,13 +86,13 @@ export default function DecodePage() {
             <Button variant="secondary" onClick={() => setText(randomText(8))} type="button">Random</Button>
           </div>
           <div className="row">
-            <label>WPM</label>
-            <input type="range" min={12} max={50} value={wpm} onChange={(e) => setWpm(+e.target.value)} />
+            <Label>WPM</Label>
+            <Slider min={12} max={50} value={[wpm]} onValueChange={([n]) => setWpm(n)} />
             <span className="value">{wpm}</span>
           </div>
           <div className="row">
-            <label>SNR (dB)</label>
-            <input type="range" min={-15} max={20} value={snr} onChange={(e) => setSnr(+e.target.value)} />
+            <Label>SNR (dB)</Label>
+            <Slider min={-15} max={20} value={[snr]} onValueChange={([n]) => setSnr(n)} />
             <span className="value">{snr}</span>
           </div>
           <div className="row">
