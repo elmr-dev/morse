@@ -17,6 +17,8 @@ package-lock.json
 samples/
 __pycache__/
 .venv/
-cw-decode/runs/
-cw-decode/validation/
-cw-decode/data/
+ml/model/runs/
+ml/model/data/
+ml/cw-dsp-research/testdata/
+ml/cw-dsp-research/evaldata/
+ml/cw-dsp-research/human_baseline_audio/

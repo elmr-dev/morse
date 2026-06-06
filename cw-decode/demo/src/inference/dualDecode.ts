@@ -10,14 +10,16 @@
 // This module:
 //   1. Splits a (T, IN_CHANNELS) envelope at the inter-callsign silence,
 //   2. Runs the model on each half,
-//   3. Greedy-decodes each half with calibrated per-character confidence,
-//   4. Levenshtein-aligns the two strings and fuses character evidence.
+//   3. Greedy-decodes each half,
+//   4. Picks the higher-confidence decode (simple ensemble; future work
+//      can sum log-probs frame-by-frame for ~√2 SNR gain).
 
 import { ENVELOPE_SR, extractEnvelope, DSP_SAMPLE_RATE } from './dsp'
-import { greedyDecode, type DecodedChar, type DecodeResult } from './decode'
+import { greedyDecode, type DecodeResult } from './decode'
 import { runInference } from './onnx'
 import { IN_CHANNELS, NUM_CLASSES } from './constants'
 import { dataUriToMonoFloat32 } from './audio'
+import { envelopeToBars } from './pipeline'
 
 export interface DualDecodeResult extends DecodeResult {
   /** Decode of the first send. */
@@ -28,13 +30,8 @@ export interface DualDecodeResult extends DecodeResult {
   agreement: boolean
   /** Frame index in the envelope where the split was made (at envelope rate). */
   splitFrame: number
-  /** Per-position fusion diagnostics for the combined decode. */
-  fusion: FusedChar[]
-}
-
-export interface FusedChar extends DecodedChar {
-  source: 'first' | 'second' | 'both'
-  alternatives: Array<{ char: string; confidence: number; source: 'first' | 'second' }>
+  /** Display-channel keying envelope bars, for the post-submit reveal. */
+  envelopeBars: number[]
 }
 
 const SILENCE_THRESHOLD = 0.1   // ch0 below this is considered silence
@@ -101,96 +98,16 @@ export function splitEnvelope(
   return { first, second }
 }
 
-function clampProb(p: number): number {
-  return Math.min(0.999, Math.max(0.001, p))
-}
-
-function logit(p: number): number {
-  const q = clampProb(p)
-  return Math.log(q / (1 - q))
-}
-
-function sigmoid(x: number): number {
-  return 1 / (1 + Math.exp(-x))
-}
-
-function charAt(result: DecodeResult, pos: number): DecodedChar {
-  return result.chars[pos] ?? {
-    char: result.text[pos] ?? '',
-    index: result.indices[pos] ?? -1,
-    confidence: result.confidence,
-    rawConfidence: result.confidence,
-    frame: -1,
-  }
-}
-
-function singleSourceChar(c: DecodedChar, source: 'first' | 'second'): FusedChar {
-  const confidence = sigmoid(logit(c.confidence) - 0.65)
-  return {
-    ...c,
-    confidence,
-    source,
-    alternatives: [],
-  }
-}
-
-function fuseMatchingChars(a: DecodedChar, b: DecodedChar): FusedChar {
-  const confidence = sigmoid(logit(a.confidence) + logit(b.confidence))
-  return {
-    char: a.char,
-    index: a.index,
-    confidence,
-    rawConfidence: Math.max(a.rawConfidence, b.rawConfidence),
-    frame: Math.round((a.frame + b.frame) / 2),
-    source: 'both',
-    alternatives: [],
-  }
-}
-
-function fuseSubstitution(a: DecodedChar, b: DecodedChar): FusedChar {
-  const oddsA = Math.exp(logit(a.confidence))
-  const oddsB = Math.exp(logit(b.confidence))
-  const total = oddsA + oddsB
-  const aPosterior = oddsA / total
-  const bPosterior = oddsB / total
-  if (aPosterior >= bPosterior) {
-    return {
-      ...a,
-      confidence: aPosterior,
-      source: 'first',
-      alternatives: [{ char: b.char, confidence: bPosterior, source: 'second' }],
-    }
-  }
-  return {
-    ...b,
-    confidence: bPosterior,
-    source: 'second',
-    alternatives: [{ char: a.char, confidence: aPosterior, source: 'first' }],
-  }
-}
-
-function resultFromFusedChars(chars: FusedChar[]): DecodeResult & { fusion: FusedChar[] } {
-  const text = chars.map((c) => c.char).join('')
-  const confidence = chars.length
-    ? chars.reduce((sum, c) => sum + c.confidence, 0) / chars.length
-    : 0
-  return {
-    text,
-    confidence,
-    indices: chars.map((c) => c.index),
-    chars,
-    fusion: chars,
-  }
-}
-
 /**
  * Levenshtein-align two decoded strings and merge them. For each aligned
  * position:
  *   - match → emit the character (definitely correct)
  *   - gap on one side → emit the character from the other side
- *     with reduced confidence because the other send missed it
- *   - substitution → emit the character with stronger calibrated character
- *     evidence and keep the other as an alternative
+ *     (the side without the char never claimed otherwise; the side with
+ *     the char is our only evidence)
+ *   - substitution → emit the character from whichever side had higher
+ *     OVERALL confidence (we don't have per-char confidences exposed,
+ *     so overall confidence is the best tiebreak available)
  *
  * This recovers from the "high-confidence-but-missing-letters" failure
  * mode where mean per-char confidence inflates as length drops:
@@ -201,12 +118,9 @@ function resultFromFusedChars(chars: FusedChar[]): DecodeResult & { fusion: Fuse
 export function alignAndMergeDecodes(a: DecodeResult, b: DecodeResult): DecodeResult {
   const sa = a.text
   const sb = b.text
-  if (sa === sb) {
-    const fused = sa.split('').map((_, i) => fuseMatchingChars(charAt(a, i), charAt(b, i)))
-    return resultFromFusedChars(fused)
-  }
-  if (sa.length === 0) return resultFromFusedChars(b.chars.map((c) => singleSourceChar(c, 'second')))
-  if (sb.length === 0) return resultFromFusedChars(a.chars.map((c) => singleSourceChar(c, 'first')))
+  if (sa === sb) return a.confidence >= b.confidence ? a : b
+  if (sa.length === 0) return b
+  if (sb.length === 0) return a
 
   const m = sa.length
   const n = sb.length
@@ -225,39 +139,47 @@ export function alignAndMergeDecodes(a: DecodeResult, b: DecodeResult): DecodeRe
     }
   }
 
-  // Traceback. Build merged characters in reverse.
-  const merged: FusedChar[] = []
+  // Traceback. Build merged text in reverse.
+  const aPreferred = a.confidence >= b.confidence
+  const merged: string[] = []
   let i = m
   let j = n
   while (i > 0 || j > 0) {
     if (i > 0 && j > 0 && sa[i - 1] === sb[j - 1]) {
       // match
-      merged.push(fuseMatchingChars(charAt(a, i - 1), charAt(b, j - 1)))
+      merged.push(sa[i - 1])
       i--; j--
     } else if (i > 0 && j > 0 && dp[i][j] === dp[i - 1][j - 1] + 1) {
-      // substitution → compare calibrated character evidence, not whole-text confidence
-      merged.push(fuseSubstitution(charAt(a, i - 1), charAt(b, j - 1)))
+      // substitution → use higher-confidence side
+      merged.push(aPreferred ? sa[i - 1] : sb[j - 1])
       i--; j--
     } else if (i > 0 && dp[i][j] === dp[i - 1][j] + 1) {
-      // del from a → b is missing this char; emit a's char but reduce confidence
-      merged.push(singleSourceChar(charAt(a, i - 1), 'first'))
+      // del from a → b is missing this char; emit a's char
+      merged.push(sa[i - 1])
       i--
     } else {
-      // ins (j > 0) → a is missing; emit b's char but reduce confidence
-      merged.push(singleSourceChar(charAt(b, j - 1), 'second'))
+      // ins (j > 0) → a is missing; emit b's char
+      merged.push(sb[j - 1])
       j--
     }
   }
   merged.reverse()
-  return resultFromFusedChars(merged)
+  return {
+    text: merged.join(''),
+    // Approximate the merged confidence as the average of the two
+    // halves' confidences; not strictly principled, but better than
+    // claiming the winner's higher number.
+    confidence: (a.confidence + b.confidence) / 2,
+    indices: [], // we don't reconstruct the original char-indices through merge
+  }
 }
 
 /**
  * Combine two independent decode results from the same callsign sent twice.
  *
  * Strategy:
- *   1. Both halves agree → return that text with fused confidence.
- *   2. Empty side → return the non-empty side with reduced confidence.
+ *   1. Both halves agree → return that text with the higher confidence.
+ *   2. Empty side → return the non-empty side.
  *   3. Disagreement → Levenshtein-align and merge so missing characters
  *      from one side are filled from the other (see alignAndMergeDecodes).
  *
@@ -271,12 +193,17 @@ export function combineDualDecodes(
 ): { result: DecodeResult; agreement: boolean } {
   const agreement = a.text === b.text && a.text.length > 0
   if (agreement) {
-    const result = alignAndMergeDecodes(a, b)
     return {
-      result,
+      result: {
+        text: a.text,
+        confidence: Math.max(a.confidence, b.confidence),
+        indices: a.indices,
+      },
       agreement: true,
     }
   }
+  if (a.text.length === 0) return { result: b, agreement: false }
+  if (b.text.length === 0) return { result: a, agreement: false }
   return { result: alignAndMergeDecodes(a, b), agreement: false }
 }
 
@@ -303,17 +230,13 @@ export async function decodeDualCallsignFromEnvelope(
   const decA = greedyDecode(logProbsA, Ta)
   const decB = greedyDecode(logProbsB, Tb)
   const { result, agreement } = combineDualDecodes(decA, decB)
-  const fusionCandidate = (result as unknown as { fusion?: unknown }).fusion
-  const fusion = Array.isArray(fusionCandidate)
-    ? (fusionCandidate as FusedChar[])
-    : []
   return {
     ...result,
     firstHalf: decA,
     secondHalf: decB,
     agreement,
     splitFrame,
-    fusion,
+    envelopeBars: envelopeToBars(envelope),
   }
 }
 

@@ -44,7 +44,7 @@ Keep generated artifacts out of Git unless explicitly promoted.
 Suggested local layout:
 
 ```text
-cw-decode/model/experiments/confidence-reliability/
+ml/model/experiments/confidence-reliability/
   README.md
   beatbot-val/
     manifest.jsonl
@@ -122,7 +122,7 @@ Status: pending
 Run the existing calibrator against this slice or a matching generated validation set:
 
 ```bash
-cd cw-decode/model
+cd ml/model
 uv run python -m eval.calibrate_confidence \
   --config configs/4060-phase5a.yaml \
   --checkpoint checkpoints/best.pt \
@@ -172,7 +172,7 @@ Training intent:
 Initial command:
 
 ```bash
-cd cw-decode/model
+cd ml/model
 CW_QUIET=1 uv run python main.py pipeline \
   --config configs/4060-phase5a.yaml \
   --starting-checkpoint checkpoints/best.pt

@@ -7,15 +7,6 @@ export interface DecodeResult {
   text: string
   confidence: number
   indices: number[]
-  chars: DecodedChar[]
-}
-
-export interface DecodedChar {
-  char: string
-  index: number
-  confidence: number
-  rawConfidence: number
-  frame: number
 }
 
 export interface DecodeOptions {
@@ -62,7 +53,7 @@ export function greedyDecode(
   let nonBlank = 0
   for (let t = 0; t < T; t++) if (argmax[t] !== BLANK_IDX) nonBlank++
   if (nonBlank < 2 || nonBlank / T < 1 - blankRatioThreshold) {
-    return { text: '', confidence: 0, indices: [], chars: [] }
+    return { text: '', confidence: 0, indices: [] }
   }
 
   // Run-length filter
@@ -84,37 +75,20 @@ export function greedyDecode(
   // CTC collapse
   const indices: number[] = []
   const confs: number[] = []
-  const chars: DecodedChar[] = []
   let prev = -1
   for (let t = 0; t < T; t++) {
     const idx = filtered[t]
     if (idx !== prev) {
       if (idx !== BLANK_IDX) {
-        const rawConfidence = Math.exp(maxLp[t])
-        const confidence = calibrateCharConfidence(rawConfidence)
-        const char = IDX_TO_CHAR[idx] ?? '?'
         indices.push(idx)
-        confs.push(confidence)
-        chars.push({ char, index: idx, confidence, rawConfidence, frame: t })
+        confs.push(Math.exp(maxLp[t]))
       }
       prev = idx
     }
   }
-  const text = chars.map((c) => c.char).join('')
+  const text = indices.map((i) => IDX_TO_CHAR[i] ?? '?').join('')
   const conf = confs.length ? confs.reduce((a, b) => a + b, 0) / confs.length : 0
-  return { text, confidence: conf, indices, chars }
-}
-
-function calibrateCharConfidence(p: number): number {
-  const clamped = Math.min(0.999, Math.max(0.001, p))
-  const logit = Math.log(clamped / (1 - clamped))
-
-  // Browser-side approximation of the offline calibration result. The model's
-  // raw CTC frame posteriors are too sharp at low SNR, so shrink log-odds before
-  // any multi-look fusion. Agreement between two sends can still become highly
-  // confident because the fusion step adds independent evidence back in.
-  const calibratedLogit = 0.65 * logit - 0.15
-  return 1 / (1 + Math.exp(-calibratedLogit))
+  return { text, confidence: conf, indices }
 }
 
 // Character Error Rate — Levenshtein distance / reference length

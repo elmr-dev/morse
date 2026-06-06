@@ -4,17 +4,12 @@
 import * as ort from 'onnxruntime-web'
 import { IN_CHANNELS, NUM_CLASSES } from './constants'
 
-export function publicAssetUrl(path: string, baseUrl = import.meta.env.BASE_URL): string {
-  const base = baseUrl.endsWith('/') ? baseUrl : `${baseUrl}/`
-  return `${base}${path.replace(/^\/+/, '')}`
-}
-
 // Use an absolute URL so Vite's dev-time module resolver doesn't treat this
 // as a source import (files in /public can't be imported from source).
 ort.env.wasm.wasmPaths =
   typeof window !== 'undefined'
-    ? new URL(publicAssetUrl('ort/'), window.location.origin).toString()
-    : publicAssetUrl('ort/')
+    ? `${window.location.origin}${import.meta.env.BASE_URL}ort/`
+    : '/ort/'
 ort.env.wasm.numThreads = 1
 
 export const MAX_FRAMES = 8000  // 16 s at 500 Hz envelope rate
@@ -22,7 +17,7 @@ export const MAX_OUTPUT_FRAMES = MAX_FRAMES / 2
 
 let sessionPromise: Promise<ort.InferenceSession> | null = null
 
-export function loadSession(modelUrl = publicAssetUrl('model/cw_model_full.onnx')): Promise<ort.InferenceSession> {
+export function loadSession(modelUrl = '/model/cw_model_full.onnx'): Promise<ort.InferenceSession> {
   if (!sessionPromise) {
     sessionPromise = ort.InferenceSession.create(modelUrl, {
       executionProviders: ['wasm'],

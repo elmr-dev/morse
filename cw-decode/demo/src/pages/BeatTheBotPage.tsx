@@ -4,19 +4,18 @@ import { loadSession } from '../inference/onnx'
 import { generateAudio } from '../inference/generate'
 import { randomCallsign, callsignRegion } from '../inference/callsign'
 import { decodeDualCallsignDataUri, type DualDecodeResult } from '../inference/dualDecode'
+import { Bot, Crown, Eye, Flame, GitMerge, Headphones, Loader2, Play, RotateCcw, Send, Swords, TriangleAlert, User } from 'lucide-react'
+import { Button } from '@/components/ui/button'
+import { Card, CardContent } from '@/components/ui/card'
+import { Input } from '@/components/ui/input'
+import { fireConfetti } from '@/lib/confetti'
+import VolumeControl from '@/components/VolumeControl'
+import { usePersistedState } from '@/lib/usePersistedState'
 
 const TONE_FREQ = 700
-const MAX_LISTENS = 1   // audio already contains the callsign sent twice
-const GAME_ROUNDS = 25
-const RECEIVER_BANDWIDTHS = [
-  { label: 'Wide', hz: 1200 },
-  { label: 'Medium', hz: 700 },
-  { label: 'Narrow', hz: 400 },
-  { label: 'Tight', hz: 250 },
-] as const
+const MAX_LISTENS = 1
 
-type Phase = 'idle' | 'listening' | 'guessing' | 'graded' | 'complete'
-type ReceiverBandwidth = typeof RECEIVER_BANDWIDTHS[number]['hz']
+type Phase = 'idle' | 'listening' | 'guessing' | 'graded'
 
 interface Round {
   text: string
@@ -27,21 +26,10 @@ interface Round {
 }
 
 function randomRound(): Round {
-  // 20..30 WPM (inclusive). The model's CER climbs with WPM (final_eval
-  // shows 12-25: ~0.04, 25-40: ~0.08, 40-60: ~0.15), so keeping the upper
-  // bound at 30 matches a regime where dual-look + alignment-merge actually
-  // helps and the bot stays beatable.
-  const wpm = 20 + Math.floor(Math.random() * 11)         // 20..30 inclusive
-  // Beat-the-Bot range: -14..-8 dB (inclusive, 7 integer values).
-  // At -8 dB the bot is ~3% CER (easy); at -14 dB it's ~40% (hard).
-  // The dual-look split-and-merge is meant to keep the bot honest in
-  // the harder half of this range.
+  const wpm = 20 + Math.floor(Math.random() * 11)
   const snr = -14 + Math.floor(Math.random() * 7)
-  const text = randomCallsign() // weighted US > Canada > world
+  const text = randomCallsign()
   const region = callsignRegion(text)
-  // Generate one audio with the callsign sent twice. The space tells morse-
-  // audio to insert a 7-unit word gap between the two repetitions, giving
-  // the decoder a clear silence to split on for dual-look diversity combining.
   const sentText = `${text} ${text}`
   const out = generateAudio({ text: sentText, wpm, snrDb: snr, frequency: TONE_FREQ })
   return { text, region, wpm, snr, dataUri: out.dataUri }
@@ -55,19 +43,27 @@ export default function BeatTheBotPage() {
   const [botResult, setBotResult] = useState<DualDecodeResult | null>(null)
   const [modelReady, setModelReady] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [score, setScore] = useState({ wins: 0, losses: 0, ties: 0 })
-  const [roundNumber, setRoundNumber] = useState(0)
+  const [score, setScore] = usePersistedState('beat.score', { wins: 0, losses: 0, ties: 0 })
+  const [streak, setStreak] = usePersistedState('beat.streak', 0)
+  const [volume, setVolume] = useState(() => {
+    const stored = parseFloat(localStorage.getItem('audioVolume') ?? '')
+    return isNaN(stored) ? 1 : stored
+  })
 
   const audioRef = useRef<HTMLAudioElement | null>(null)
-  const audioContextRef = useRef<AudioContext | null>(null)
-  const sourceRef = useRef<MediaElementAudioSourceNode | null>(null)
-  const filterRef = useRef<BiquadFilterNode | null>(null)
-  const gainRef = useRef<GainNode | null>(null)
-  const botDecodeRef = useRef<Promise<DualDecodeResult> | null>(null)
-  const pendingAutoplayRef = useRef(false)
   const [isPlaying, setIsPlaying] = useState(false)
-  const [receiverVolume, setReceiverVolume] = useState(0.85)
-  const [receiverBandwidth, setReceiverBandwidth] = useState<ReceiverBandwidth>(700)
+  const roundRef = useRef<HTMLDivElement>(null)
+  const resultRef = useRef<HTMLDivElement>(null)
+
+  // Keep the audio element's volume in sync.
+  useEffect(() => {
+    if (audioRef.current) audioRef.current.volume = volume
+  }, [volume, round])
+
+  function onVolumeChange(v: number) {
+    setVolume(v)
+    localStorage.setItem('audioVolume', String(v))
+  }
 
   useEffect(() => {
     loadSession()
@@ -75,388 +71,450 @@ export default function BeatTheBotPage() {
       .catch((e) => setError(String(e)))
   }, [])
 
-  useEffect(() => {
-    configureReceiver(receiverVolume, receiverBandwidth)
-  }, [receiverVolume, receiverBandwidth])
-
-  useEffect(() => {
-    if (!round || !pendingAutoplayRef.current || phase !== 'listening') return
-    pendingAutoplayRef.current = false
-    window.setTimeout(() => void playAudio(), 0)
-  }, [round, phase])
-
-  useEffect(() => {
-    return () => {
-      void audioContextRef.current?.close()
-    }
-  }, [])
-
-  function configureReceiver(volume = receiverVolume, bandwidth = receiverBandwidth) {
-    if (filterRef.current) {
-      filterRef.current.type = 'bandpass'
-      filterRef.current.frequency.value = TONE_FREQ
-      filterRef.current.Q.value = TONE_FREQ / bandwidth
-    }
-    if (gainRef.current) {
-      gainRef.current.gain.value = volume
-    }
-    if (audioRef.current && !gainRef.current) {
-      audioRef.current.volume = volume
-    }
-  }
-
-  async function ensureReceiver() {
-    const audio = audioRef.current
-    if (!audio) return
-    if (!audioContextRef.current) {
-      const AC: typeof AudioContext = window.AudioContext || (window as any).webkitAudioContext
-      audioContextRef.current = new AC()
-    }
-    const ctx = audioContextRef.current
-    if (!sourceRef.current) {
-      const source = ctx.createMediaElementSource(audio)
-      const filter = ctx.createBiquadFilter()
-      const gain = ctx.createGain()
-      source.connect(filter)
-      filter.connect(gain)
-      gain.connect(ctx.destination)
-      sourceRef.current = source
-      filterRef.current = filter
-      gainRef.current = gain
-      audio.volume = 1
-      configureReceiver()
-    }
-    if (ctx.state === 'suspended') {
-      await ctx.resume()
-    }
-  }
-
-  function startBotDecode(r: Round) {
-    botDecodeRef.current = decodeDualCallsignDataUri(r.dataUri, TONE_FREQ)
-    botDecodeRef.current.catch((e) => {
-      setError(String(e))
-    })
-  }
-
-  function startRound(nextRoundNumber: number, autoplay = false) {
+  function startRound() {
     setError(null)
     setBotResult(null)
     setGuess('')
     setListens(0)
     setIsPlaying(false)
-    botDecodeRef.current = null
     const r = randomRound()
-    pendingAutoplayRef.current = autoplay
     setRound(r)
-    setRoundNumber(nextRoundNumber)
     setPhase('listening')
   }
 
-  function startGame() {
+  function resetScore() {
     setScore({ wins: 0, losses: 0, ties: 0 })
-    startRound(1, true)
-  }
-
-  function resetGame() {
-    audioRef.current?.pause()
-    pendingAutoplayRef.current = false
-    botDecodeRef.current = null
-    setError(null)
+    setStreak(0)
+    // Also clear any in-progress or graded round so the page returns to the
+    // clean idle scoreboard rather than leaving a round/result card behind.
+    setRound(null)
     setBotResult(null)
     setGuess('')
     setListens(0)
     setIsPlaying(false)
-    setRound(null)
-    setRoundNumber(0)
-    setScore({ wins: 0, losses: 0, ties: 0 })
+    setError(null)
     setPhase('idle')
   }
 
-  function nextRound() {
-    if (roundNumber >= GAME_ROUNDS) {
-      setPhase('complete')
-      return
-    }
-    startRound(roundNumber + 1, true)
-  }
-
-  // The audio file is already callsign+space+callsign — one playback gives
-  // the user (and the bot) two looks at the same call with independent noise.
-  async function playAudio() {
+  function playAudio() {
     if (!audioRef.current || !round) return
     if (listens >= MAX_LISTENS) return
     if (isPlaying) return
-    try {
-      await ensureReceiver()
-      setIsPlaying(true)
-      setListens((n) => n + 1)
-      startBotDecode(round)
-      const audio = audioRef.current
-      audio.currentTime = 0
-      await audio.play()
-      const onEnd = () => {
-        audio.removeEventListener('ended', onEnd)
-        setIsPlaying(false)
-      }
-      audio.addEventListener('ended', onEnd)
-    } catch (e) {
-      setError(String(e))
+    setIsPlaying(true)
+    setListens((n) => n + 1)
+    const audio = audioRef.current
+    audio.currentTime = 0
+    void audio.play()
+    const onEnd = () => {
+      audio.removeEventListener('ended', onEnd)
       setIsPlaying(false)
     }
+    audio.addEventListener('ended', onEnd)
   }
 
   async function submitGuess() {
     if (!round) return
     setPhase('guessing')
     try {
-      // Bot uses the same audio the user heard, runs inference on each half,
-      // and combines — same diversity-combining advantage the user gets from
-      // hearing the callsign twice.
-      const res = await (botDecodeRef.current ?? decodeDualCallsignDataUri(round.dataUri, TONE_FREQ))
+      const res = await decodeDualCallsignDataUri(round.dataUri, TONE_FREQ)
       setBotResult(res)
       const userCer = cer(round.text, guess.toUpperCase().trim())
       const botCer = cer(round.text, res.text)
+      const userWon = userCer < botCer
       setScore((s) => {
-        if (userCer < botCer) return { ...s, wins: s.wins + 1 }
+        if (userWon) return { ...s, wins: s.wins + 1 }
         if (userCer > botCer) return { ...s, losses: s.losses + 1 }
         return { ...s, ties: s.ties + 1 }
       })
-      setPhase(roundNumber >= GAME_ROUNDS ? 'complete' : 'graded')
+      // Streak counts consecutive wins; any non-win resets it.
+      setStreak((st) => (userWon ? st + 1 : 0))
+      setPhase('graded')
+      if (userWon) fireConfetti()
     } catch (e) {
       setError(String(e))
       setPhase('listening')
     }
   }
 
-  const userCerPct = round && (phase === 'graded' || phase === 'complete')
+  const userCerPct = round && phase === 'graded'
     ? cer(round.text, guess.toUpperCase().trim()) * 100
     : null
   const botCerPct = round && botResult
     ? cer(round.text, botResult.text) * 100
     : null
 
+  // Bring each new phase into view as it appears.
+  useEffect(() => {
+    if (typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return
+    const target = phase === 'graded' ? resultRef.current : phase === 'listening' ? roundRef.current : null
+    if (!target) return
+    const id = window.setTimeout(() => target.scrollIntoView({ behavior: 'smooth', block: 'start' }), 100)
+    return () => window.clearTimeout(id)
+  }, [phase])
+
   return (
     <div>
-      <h1>Beat the Bot</h1>
-      <p>
-        Listen to a random callsign sent twice in CW (20–30 WPM, low SNR), the way
-        operators repeat their own call. You and the bot both get the same clip —
-        one shot at it. Type your guess; we grade both decodes on character error rate.
+      <p className="text-sm text-muted-foreground mb-4">
+        The machine has out-copied humans down to -12 dB. Now it's your turn. One callsign,
+        buried in static, sent twice — one listen each. Prove an ear still beats a model.
       </p>
 
-      <div className="panel">
-        <div className="row" style={{ justifyContent: 'space-between' }}>
-          <div style={{ display: 'flex', gap: 20 }}>
-            <Stat label="You" value={score.wins.toString()} accent="good" />
-            <Stat label="Bot" value={score.losses.toString()} accent="bad" />
-            <Stat label="Ties" value={score.ties.toString()} />
-          </div>
-          <div className="row" style={{ margin: 0 }}>
-            <button className="primary" disabled={!modelReady} onClick={startGame}>
-              {round ? 'New Game' : 'Start'}
-            </button>
-            <button disabled={!round && score.wins + score.losses + score.ties === 0} onClick={resetGame}>
-              Reset
-            </button>
-          </div>
-        </div>
-        {!modelReady && <div className="loading"><span className="spinner" /> Loading model…</div>}
-        {error && <div className="bad mono">{error}</div>}
-      </div>
+      <Scoreboard score={score} streak={streak} modelReady={modelReady} hasRound={!!round} onStart={startRound} onReset={resetScore} />
 
-      {round && phase !== 'idle' && (
-        <div className="panel">
-          <h3>Round {roundNumber} of {GAME_ROUNDS}</h3>
-          <div className="muted">
-            callsign · approx {round.wpm} wpm · SNR {round.snr} dB · region hidden until you submit
-          </div>
-          <audio ref={audioRef} src={round.dataUri} preload="auto" />
-          <div className="receiver">
-            <div className="receiver-head">
-              <h3>Receiver</h3>
-              <span className="muted">center {TONE_FREQ} Hz</span>
-            </div>
-            <div className="receiver-grid">
-              <label className="control">
-                <span>Bandwidth</span>
-                <select
-                  value={receiverBandwidth}
-                  onChange={(e) => setReceiverBandwidth(Number(e.target.value) as ReceiverBandwidth)}
-                >
-                  {RECEIVER_BANDWIDTHS.map((option) => (
-                    <option key={option.hz} value={option.hz}>
-                      {option.label} · {option.hz} Hz
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="control">
-                <span>Volume</span>
-                <div className="range-row">
-                  <input
-                    type="range"
-                    min="0"
-                    max="100"
-                    value={Math.round(receiverVolume * 100)}
-                    onChange={(e) => setReceiverVolume(Number(e.target.value) / 100)}
-                  />
-                  <span className="value">{Math.round(receiverVolume * 100)}%</span>
+      {error && (
+        <div className="flex items-center gap-1.5 text-bad font-mono text-sm mb-4">
+          <TriangleAlert className="size-4" /> {error}
+        </div>
+      )}
+
+      {round && (phase === 'listening' || phase === 'guessing') && (
+        <div ref={roundRef} className="scroll-mt-4">
+          <Card className="mb-4">
+            <CardContent>
+              <div className="flex items-center justify-between gap-2 mb-4">
+                <div className="text-[12px] text-muted-foreground font-mono">
+                  ~{round.wpm} wpm
+                  <span className="text-muted-foreground/40 mx-1.5">·</span>
+                  SNR {round.snr} dB
+                  <span className="text-muted-foreground/40 mx-1.5">·</span>
+                  sent twice
                 </div>
-              </label>
-            </div>
-          </div>
-          <div className="row" style={{ marginTop: 12 }}>
-            <button
-              onClick={() => void playAudio()}
-              disabled={phase !== 'listening' || listens >= MAX_LISTENS || isPlaying}
-            >
-              {isPlaying ? 'Playing…' : (listens === 0 ? 'Play' : 'Played')}
-            </button>
-          </div>
+                <div className="shrink-0">
+                  <VolumeControl value={volume} onChange={onVolumeChange} />
+                </div>
+              </div>
 
-          <div className="row" style={{ marginTop: 12 }}>
-            <label>Your guess</label>
-            <input
-              type="text"
-              value={guess}
-              onChange={(e) => setGuess(e.target.value.toUpperCase())}
-              style={{ flex: 1, fontFamily: 'var(--mono)', fontSize: 18, letterSpacing: 2 }}
-              disabled={phase !== 'listening'}
-              maxLength={20}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' && phase === 'listening' && guess.trim()) void submitGuess()
-              }}
-            />
-            <button
-              className="primary"
-              disabled={phase !== 'listening' || !guess.trim() || listens === 0}
-              onClick={submitGuess}
-            >
-              {phase === 'guessing' ? <><span className="spinner" /> Grading…</> : 'Check'}
-            </button>
-          </div>
-          {phase === 'listening' && listens === 0 && (
-            <div className="muted">Hit Play to hear the clip — it sends the callsign twice.</div>
-          )}
-        </div>
-      )}
+              <audio ref={audioRef} src={round.dataUri} preload="auto" />
 
-      {(phase === 'graded' || phase === 'complete') && round && botResult && (
-        <div className="panel">
-          <div className="row" style={{ justifyContent: 'space-between' }}>
-            <h3 style={{ margin: 0 }}>Results</h3>
-            {phase === 'graded' && (
-              <button className="primary" onClick={nextRound}>
-                Next
-              </button>
-            )}
-          </div>
-          <div style={{ marginBottom: 14 }}>
-            <span className="muted">Ground truth:&nbsp;</span>
-            <span className="mono" style={{ fontSize: 20, color: 'var(--text-h)', letterSpacing: 2 }}>
-              {round.text}
-            </span>
-            <span className="muted" style={{ marginLeft: 10 }}>({round.region})</span>
-          </div>
-
-          <div className="grid-2">
-            <ResultCard
-              title="You"
-              guess={guess.toUpperCase().trim()}
-              truth={round.text}
-              cerPct={userCerPct!}
-            />
-            <ResultCard
-              title="Bot"
-              guess={botResult.text}
-              truth={round.text}
-              cerPct={botCerPct!}
-            />
-          </div>
-
-          <div className="muted mono" style={{ marginTop: 10, fontSize: 12 }}>
-            Bot two-look detail: 1st → {botResult.firstHalf.text || '(empty)'} (
-            {(botResult.firstHalf.confidence * 100).toFixed(0)}%) · 2nd →{' '}
-            {botResult.secondHalf.text || '(empty)'} (
-            {(botResult.secondHalf.confidence * 100).toFixed(0)}%) ·{' '}
-            {botResult.agreement ? 'agreement, fused confidence' : 'aligned and fused per character'}
-          </div>
-
-          {botResult.fusion.length > 0 && (
-            <div className="muted mono" style={{ marginTop: 8, fontSize: 12 }}>
-              Bot char confidence:{' '}
-              {botResult.fusion.map((c, i) => (
-                <span key={`${c.char}-${i}`} style={{ marginRight: 8 }}>
-                  {c.char}{Math.round(c.confidence * 100)}
-                  {c.alternatives.length > 0 && `/${c.alternatives[0].char}${Math.round(c.alternatives[0].confidence * 100)}`}
+              <div className="flex flex-col items-center gap-2.5 py-3">
+                <button
+                  type="button"
+                  onClick={playAudio}
+                  disabled={phase !== 'listening' || listens >= MAX_LISTENS || isPlaying}
+                  aria-label={listens === 0 ? 'Play once' : 'Already played'}
+                  className="size-16 rounded-full bg-primary text-primary-foreground flex items-center justify-center transition-transform enabled:hover:scale-105 enabled:active:scale-95 disabled:opacity-50"
+                >
+                  {isPlaying
+                    ? <Loader2 className="size-7 animate-spin" />
+                    : <Play className="size-7 translate-x-[2px]" fill="currentColor" />}
+                </button>
+                <span className="inline-flex items-center gap-1.5 text-[13px] text-chart-5">
+                  <Headphones className="size-3.5" />
+                  {listens === 0 ? 'One listen — make it count' : isPlaying ? 'Listen closely…' : 'That was your shot'}
                 </span>
-              ))}
-            </div>
-          )}
+              </div>
 
-          <div style={{ marginTop: 16 }}>
-            <Verdict userCer={userCerPct!} botCer={botCerPct!} />
-          </div>
-          {phase === 'complete' && (
-            <div style={{ marginTop: 16 }}>
-              <GameVerdict score={score} />
-            </div>
-          )}
+              <div className="flex gap-2 mt-2">
+                <Input
+                  id="guess"
+                  type="text"
+                  value={guess}
+                  onChange={(e) => setGuess(e.target.value.toUpperCase())}
+                  placeholder="Your copy…"
+                  aria-label="Your guess"
+                  className="flex-1 min-w-0 h-10 font-mono tracking-[1px]"
+                  disabled={phase !== 'listening'}
+                  maxLength={20}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && phase === 'listening' && guess.trim() && listens > 0) void submitGuess()
+                  }}
+                />
+                <Button
+                  variant="default"
+                  disabled={phase !== 'listening' || !guess.trim() || listens === 0}
+                  onClick={submitGuess}
+                  className="shrink-0 h-10"
+                >
+                  {phase === 'guessing'
+                    ? <><Loader2 className="animate-spin size-4" /> Grading…</>
+                    : <><Send className="size-4" />Submit</>}
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
+      {phase === 'graded' && round && botResult && userCerPct !== null && botCerPct !== null && (
+        <div ref={resultRef} className="scroll-mt-4">
+          <Card className="mb-4">
+            <CardContent>
+              <div className="flex items-center justify-center gap-2.5 mb-1">
+                <span className="text-[13px] text-muted-foreground">It was</span>
+                <span className="font-mono text-[22px] text-foreground tracking-[2px]">{round.text}</span>
+                <span className="text-[11px] bg-muted rounded-md px-2 py-0.5 text-muted-foreground">{round.region}</span>
+              </div>
+              <div className="text-center text-[11px] text-muted-foreground/70 font-mono mb-5">
+                ~{round.wpm} wpm <span className="text-muted-foreground/40">·</span> SNR {round.snr} dB
+              </div>
+
+              <div className="flex flex-col gap-3">
+                <MeterRow
+                  who="You"
+                  icon={<User className="size-3.5" />}
+                  guess={guess.toUpperCase().trim()}
+                  truth={round.text}
+                  cerPct={userCerPct}
+                  won={userCerPct < botCerPct}
+                />
+                <MeterRow
+                  who="Bot"
+                  icon={<Bot className="size-3.5" />}
+                  guess={botResult.text}
+                  truth={round.text}
+                  cerPct={botCerPct}
+                  won={botCerPct < userCerPct}
+                />
+              </div>
+
+              <Verdict userCer={userCerPct} botCer={botCerPct} streak={streak} />
+
+              <StaticEnvelope bars={botResult.envelopeBars} />
+
+              <TwoLookDetail result={botResult} />
+
+              <Button variant="default" onClick={startRound} disabled={!modelReady} className="w-full mt-5">
+                <Swords className="size-4" /> Next round
+              </Button>
+            </CardContent>
+          </Card>
         </div>
       )}
     </div>
   )
 }
 
-function ResultCard({ title, guess, truth, cerPct }: { title: string; guess: string; truth: string; cerPct: number }) {
-  const maxLen = Math.max(guess.length, truth.length)
-  const chars = []
-  for (let i = 0; i < maxLen; i++) {
-    const g = guess[i] ?? '·'
-    const t = truth[i] ?? '·'
-    chars.push(
-      <span key={i} className={`diff-char ${g === t ? 'match' : 'miss'}`} style={{ fontFamily: 'var(--mono)' }}>
-        {g}
-      </span>,
-    )
+function Scoreboard({
+  score, streak, modelReady, hasRound, onStart, onReset,
+}: {
+  score: { wins: number; losses: number; ties: number }
+  streak: number
+  modelReady: boolean
+  hasRound: boolean
+  onStart: () => void
+  onReset: () => void
+}) {
+  const lead = score.wins - score.losses
+  const played = score.wins + score.losses + score.ties
+  const standing =
+    lead > 0 ? `you're up by ${lead}` : lead < 0 ? `bot's up by ${-lead}` : score.wins + score.losses === 0 ? 'first to copy wins' : 'dead even'
+  return (
+    <Card className="mb-4">
+      <CardContent>
+        <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2">
+          <div className="flex flex-col items-center gap-1 rounded-lg py-2.5 bg-good/10">
+            <span className="inline-flex items-center gap-1.5 text-xs text-good"><User className="size-3.5" />You</span>
+            <span className="font-mono text-[34px] leading-none font-semibold text-good">{score.wins}</span>
+          </div>
+          <span className="text-xs font-medium text-muted-foreground px-1">VS</span>
+          <div className="flex flex-col items-center gap-1 rounded-lg py-2.5 bg-muted/50">
+            <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground"><Bot className="size-3.5" />Bot</span>
+            <span className="font-mono text-[34px] leading-none font-semibold text-foreground">{score.losses}</span>
+          </div>
+        </div>
+
+        <div className="flex items-center justify-center gap-2 mt-3 text-[11px] text-muted-foreground">
+          <span>{score.ties} {score.ties === 1 ? 'tie' : 'ties'}</span>
+          <span aria-hidden="true">·</span>
+          <span>{standing}</span>
+          {streak >= 2 && (
+            <>
+              <span aria-hidden="true">·</span>
+              <span className="inline-flex items-center gap-1 text-chart-5 font-medium">
+                <Flame className="size-3.5" />{streak} win streak
+              </span>
+            </>
+          )}
+          {played > 0 && (
+            <>
+              <span aria-hidden="true">·</span>
+              <button
+                type="button"
+                onClick={onReset}
+                className="inline-flex items-center gap-1 hover:text-foreground transition-colors"
+              >
+                <RotateCcw className="size-3" />reset
+              </button>
+            </>
+          )}
+        </div>
+
+        <Button disabled={!modelReady} onClick={onStart} className="w-full mt-3">
+          {!modelReady
+            ? <><Loader2 className="animate-spin size-4" /> Loading model…</>
+            : <><Swords className="size-4" />{hasRound ? 'New round' : 'Start a round'}</>}
+        </Button>
+      </CardContent>
+    </Card>
+  )
+}
+
+// Levenshtein-align guess against truth and return display cells. Matched
+// characters render green; substituted/inserted characters render red; a
+// truth char the guess missed renders as a faint gap so lengths read honestly.
+function alignChars(guess: string, truth: string): { ch: string; kind: 'match' | 'wrong' | 'gap' }[] {
+  const m = guess.length
+  const n = truth.length
+  if (m === 0 && n === 0) return []
+  const dp: number[][] = Array.from({ length: m + 1 }, () => new Array<number>(n + 1).fill(0))
+  for (let i = 0; i <= m; i++) dp[i][0] = i
+  for (let j = 0; j <= n; j++) dp[0][j] = j
+  for (let i = 1; i <= m; i++) {
+    for (let j = 1; j <= n; j++) {
+      const cost = guess[i - 1] === truth[j - 1] ? 0 : 1
+      dp[i][j] = Math.min(dp[i - 1][j] + 1, dp[i][j - 1] + 1, dp[i - 1][j - 1] + cost)
+    }
   }
-  return (
-    <div className="panel" style={{ background: 'var(--bg)', margin: 0 }}>
-      <h3 style={{ margin: 0 }}>{title}</h3>
-      <div className="result-text">{chars.length ? chars : <span className="muted">(nothing)</span>}</div>
-      <div className="muted" style={{ marginTop: 6 }}>CER: <span className={cerPct === 0 ? 'good' : ''}>{cerPct.toFixed(1)}%</span></div>
-    </div>
-  )
+  const cells: { ch: string; kind: 'match' | 'wrong' | 'gap' }[] = []
+  let i = m
+  let j = n
+  while (i > 0 || j > 0) {
+    if (i > 0 && j > 0 && guess[i - 1] === truth[j - 1]) {
+      cells.push({ ch: guess[i - 1], kind: 'match' }); i--; j--
+    } else if (i > 0 && j > 0 && dp[i][j] === dp[i - 1][j - 1] + 1) {
+      cells.push({ ch: guess[i - 1], kind: 'wrong' }); i--; j--   // substitution
+    } else if (i > 0 && dp[i][j] === dp[i - 1][j] + 1) {
+      cells.push({ ch: guess[i - 1], kind: 'wrong' }); i--        // extra char in guess
+    } else {
+      cells.push({ ch: '·', kind: 'gap' }); j--                    // missed a truth char
+    }
+  }
+  cells.reverse()
+  return cells
 }
 
-function Verdict({ userCer, botCer }: { userCer: number; botCer: number }) {
-  if (userCer < botCer) return <span className="good" style={{ fontSize: 18, fontWeight: 600 }}>You win this round.</span>
-  if (userCer > botCer) return <span className="bad" style={{ fontSize: 18, fontWeight: 600 }}>Bot wins this round.</span>
-  return <span style={{ fontSize: 18, fontWeight: 600 }}>Tie.</span>
-}
-
-function GameVerdict({ score }: { score: { wins: number; losses: number; ties: number } }) {
-  const message = score.wins > score.losses
-    ? 'You win the game.'
-    : score.wins < score.losses
-      ? 'Bot wins the game.'
-      : 'Game tied.'
-  const className = score.wins > score.losses ? 'good' : score.wins < score.losses ? 'bad' : ''
-  return (
-    <div className="game-verdict">
-      <div className={`mono ${className}`}>{message}</div>
-      <div className="muted">
-        Final score after {GAME_ROUNDS} rounds: You {score.wins}, Bot {score.losses}, Ties {score.ties}.
-      </div>
-    </div>
-  )
-}
-
-function Stat({ label, value, accent }: { label: string; value: string; accent?: 'good' | 'bad' }) {
+function MeterRow({
+  who, icon, guess, truth, cerPct, won,
+}: {
+  who: string
+  icon: React.ReactNode
+  guess: string
+  truth: string
+  cerPct: number
+  won: boolean
+}) {
+  const cells = alignChars(guess, truth)
+  const pct = Math.min(100, cerPct)
   return (
     <div>
-      <div className="muted" style={{ fontSize: 12 }}>{label}</div>
-      <div className={`mono ${accent ?? ''}`} style={{ fontSize: 22, fontWeight: 600, color: accent ? undefined : 'var(--text-h)' }}>{value}</div>
+      <div className="flex items-baseline justify-between gap-3 mb-1.5">
+        <span className="inline-flex items-center gap-1.5 text-[13px] text-foreground">
+          {icon}{who}
+          {won && <Crown className="size-3.5 text-good" />}
+        </span>
+        <span className="font-mono text-[17px] tracking-[1px] break-all text-right">
+          {cells.length
+            ? cells.map((c, idx) => (
+                <span key={idx} className={c.kind === 'match' ? 'text-good' : c.kind === 'gap' ? 'text-muted-foreground/40' : 'text-bad'}>
+                  {c.ch}
+                </span>
+              ))
+            : <span className="text-muted-foreground text-[13px] tracking-normal">(nothing)</span>}
+        </span>
+      </div>
+      <div className="flex items-center gap-2.5">
+        <div className="flex-1 h-1.5 rounded-full bg-muted overflow-hidden">
+          <div
+            className={`h-full rounded-full ${won ? 'bg-good' : 'bg-bad'}`}
+            style={{ width: `${Math.max(2, pct)}%` }}
+          />
+        </div>
+        <span className={`font-mono text-[12px] tabular-nums w-12 text-right ${cerPct === 0 ? 'text-good' : won ? 'text-foreground' : 'text-bad'}`}>
+          {cerPct.toFixed(0)}%
+        </span>
+      </div>
+    </div>
+  )
+}
+
+function Verdict({ userCer, botCer, streak }: { userCer: number; botCer: number; streak: number }) {
+  if (userCer < botCer) return (
+    <div className="flex items-center justify-center gap-2 mt-5 text-[18px] font-semibold text-good">
+      <Crown className="size-5" />
+      {streak >= 3 ? `You out-copied the machine — ${streak} in a row` : 'You out-copied the machine'}
+    </div>
+  )
+  if (userCer > botCer) return (
+    <div className="flex items-center justify-center gap-2 mt-5 text-[18px] font-semibold text-bad">
+      <Bot className="size-5" />The bot copied it cleaner
+    </div>
+  )
+  return (
+    <div className="flex items-center justify-center gap-2 mt-5 text-[18px] font-semibold text-foreground">
+      Dead heat — same error rate
+    </div>
+  )
+}
+
+function TwoLookDetail({ result }: { result: DualDecodeResult }) {
+  const ref = useRef<HTMLDetailsElement>(null)
+  const looks = [
+    { n: 1, text: result.firstHalf.text, conf: result.firstHalf.confidence },
+    { n: 2, text: result.secondHalf.text, conf: result.secondHalf.confidence },
+  ]
+  function onToggle(e: React.SyntheticEvent<HTMLDetailsElement>) {
+    if (!e.currentTarget.open) return
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return
+    window.setTimeout(() => ref.current?.scrollIntoView({ behavior: 'smooth', block: 'end' }), 60)
+  }
+  return (
+    <details ref={ref} onToggle={onToggle} className="mt-4 group">
+      <summary className="flex items-center gap-1.5 text-xs text-muted-foreground cursor-pointer select-none list-none">
+        <GitMerge className="size-3.5" />
+        How the bot got two looks
+        <span className="text-muted-foreground/50 group-open:rotate-90 transition-transform">›</span>
+      </summary>
+      <div className="mt-2.5 rounded-lg border border-border bg-background/40 p-3">
+        <p className="text-[12px] text-muted-foreground leading-relaxed mb-3">
+          The call is sent twice, so the bot decodes each send separately — two independent
+          shots at the same noise — then combines them. Same trick as asking “again?” on the air.
+        </p>
+        <div className="flex flex-col gap-2">
+          {looks.map((l) => (
+            <div key={l.n} className="flex items-center gap-2.5">
+              <span className="inline-flex items-center gap-1.5 text-[11px] text-muted-foreground w-14 shrink-0">
+                <Eye className="size-3.5" />look {l.n}
+              </span>
+              <span className="font-mono text-[13px] text-foreground flex-1 tracking-[1px] break-all">
+                {l.text || <span className="text-muted-foreground/50">—</span>}
+              </span>
+              <span className="font-mono text-[11px] text-muted-foreground tabular-nums shrink-0">
+                {(l.conf * 100).toFixed(0)}%
+              </span>
+            </div>
+          ))}
+          <div className="flex items-center gap-2.5 border-t border-border pt-2 mt-0.5">
+            <span className="inline-flex items-center gap-1.5 text-[11px] text-foreground w-14 shrink-0">
+              <GitMerge className="size-3.5" />final
+            </span>
+            <span className="font-mono text-[13px] text-foreground flex-1 tracking-[1px] break-all">{result.text || '—'}</span>
+            <span className="text-[11px] text-muted-foreground shrink-0">
+              {result.agreement ? 'both agreed' : 'merged'}
+            </span>
+          </div>
+        </div>
+      </div>
+    </details>
+  )
+}
+
+function StaticEnvelope({ bars }: { bars: number[] }) {
+  if (!bars || bars.length === 0) return null
+  const max = Math.max(...bars, 0.0001)
+  return (
+    <div className="mt-5">
+      <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground mb-1.5">
+        <Headphones className="size-3.5" />what you were up against
+      </div>
+      <div className="flex items-end gap-[2px] h-9 bg-background rounded-md px-2 py-1.5">
+        {bars.map((v, i) => (
+          <div
+            key={i}
+            className="flex-1 rounded-[1px] bg-primary/70"
+            style={{ height: `${Math.max(6, (v / max) * 100)}%` }}
+          />
+        ))}
+      </div>
     </div>
   )
 }

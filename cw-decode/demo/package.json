@@ -1,7 +1,7 @@
 {
   "name": "cw-decode-demo",
   "private": true,
-  "version": "0.0.0",
+  "version": "2026.6.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -12,14 +12,23 @@
     "test:watch": "vitest"
   },
   "dependencies": {
-    "morse-audio": "^1.2.0",
-    "onnxruntime-web": "1.24.3",
+    "@tailwindcss/vite": "^4.3.0",
+    "canvas-confetti": "^1.9.4",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
+    "lucide-react": "^1.17.0",
+    "morse-audio": "workspace:*",
+    "onnxruntime-web": "^1.24.3",
+    "radix-ui": "^1.4.3",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
-    "react-router-dom": "^7.14.1"
+    "react-router-dom": "^7.14.1",
+    "tailwind-merge": "^3.6.0",
+    "tailwindcss": "^4.3.0"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.4",
+    "@types/canvas-confetti": "^1.9.0",
     "@types/node": "^24.12.2",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
@@ -30,7 +39,7 @@
     "eslint-plugin-react-refresh": "^0.5.2",
     "globals": "^17.4.0",
     "happy-dom": "^20.9.0",
-    "onnxruntime-node": "1.24.3",
+    "onnxruntime-node": "^1.24.3",
     "tsx": "^4.21.0",
     "typescript": "~6.0.2",
     "typescript-eslint": "^8.58.0",

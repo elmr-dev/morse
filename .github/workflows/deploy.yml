@@ -47,6 +47,10 @@ jobs:
           mkdir -p ./deploy/cw-decode
           cp -r ./morse-audio/apps/demo/dist/* ./deploy/morse-audio/demo/
           cp -r ./cw-decode/demo/dist/* ./deploy/cw-decode/
+          mkdir -p ./deploy/cw-decode/decode ./deploy/cw-decode/beat ./deploy/cw-decode/beat-the-bot
+          cp ./deploy/cw-decode/index.html ./deploy/cw-decode/decode/index.html
+          cp ./deploy/cw-decode/index.html ./deploy/cw-decode/beat/index.html
+          cp ./deploy/cw-decode/index.html ./deploy/cw-decode/beat-the-bot/index.html
 
       - name: Setup Pages
         uses: actions/configure-pages@v5

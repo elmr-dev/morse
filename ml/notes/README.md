@@ -10,7 +10,7 @@ the browser via `onnxruntime-web`.
 | ------------------- | ---------------------------------------------------------- |
 | `cw-dsp-research/`  | Autoresearch loop that tunes the DSP envelope (numpy/scipy). Composite score 0.87 on the held-out test set. |
 | `model/`            | PyTorch training (CWNet), ONNX export, eval harness. Run on RunPod 4090 or local M-series. |
-| `demo/`             | React + Vite frontend that runs the model client-side. Two pages: live decode + a "beat the bot" head-to-head. |
+| `../cw-decode/demo/` | React + Vite frontend that runs the model client-side. Two pages: live decode + a "beat the bot" head-to-head. |
 
 The DSP code is synced from `cw-dsp-research/dsp.py` to `model/data/dsp.py` —
 the research repo finds the envelope, the training repo trains the decoder on
@@ -30,7 +30,7 @@ pnpm install
 pnpm dev      # http://localhost:5173
 ```
 
-The bundled model lives at `demo/public/model/cw_model_full.onnx` (3.8 MB).
+The bundled model lives at `../cw-decode/demo/public/model/cw_model_full.onnx` (3.8 MB).
 
 ### Train
 
@@ -53,7 +53,7 @@ uv run python scripts/export_full_onnx.py \
     --checkpoint checkpoints/best.pt \
     --config     checkpoints/best.yaml \
     --out        checkpoints/cw_model_full.onnx
-cp checkpoints/cw_model_full.onnx ../demo/public/model/cw_model_full.onnx
+cp checkpoints/cw_model_full.onnx ../../cw-decode/demo/public/model/cw_model_full.onnx
 ```
 
 ### DSP research loop
@@ -97,4 +97,4 @@ caches, node_modules, virtualenvs, and all `*.pt` / `*.onnx` files **except**
 the whitelisted stable model artifacts:
 
 - `model/checkpoints/best.pt` + `best.yaml`
-- `demo/public/model/cw_model_full.onnx`
+- `../cw-decode/demo/public/model/cw_model_full.onnx`

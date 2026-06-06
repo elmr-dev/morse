@@ -11,7 +11,7 @@ import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import * as ort from 'onnxruntime-node'
 import { IN_CHANNELS, NUM_CLASSES } from './constants'
-import { MAX_FRAMES, MAX_OUTPUT_FRAMES, publicAssetUrl } from './onnx'
+import { MAX_FRAMES, MAX_OUTPUT_FRAMES } from './onnx'
 
 const MODEL_PATH = resolve(__dirname, '../../public/model/cw_model_full.onnx')
 
@@ -28,15 +28,6 @@ async function getSession() {
 }
 
 describe('ONNX model file', () => {
-  it('resolves public assets under the deployed Pages basename', () => {
-    expect(publicAssetUrl('model/cw_model_full.onnx', '/morse/cw-decode/beat-the-bot/')).toBe(
-      '/morse/cw-decode/beat-the-bot/model/cw_model_full.onnx',
-    )
-    expect(publicAssetUrl('/ort/', '/morse/cw-decode/beat-the-bot/')).toBe(
-      '/morse/cw-decode/beat-the-bot/ort/',
-    )
-  })
-
   it('loads', async () => {
     const s = await getSession()
     expect(s).toBeDefined()

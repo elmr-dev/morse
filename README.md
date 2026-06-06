@@ -5,9 +5,10 @@ This monorepo collects the Morse and CW projects under one release and demo surf
 ## Projects
 
 - `morse-audio/` contains the TypeScript audio generation libraries, React package, and browser demos.
-- `cw-decode/` contains the former `cw-ml` decoder research, training code, and Beat the Bot demo. Its Git history is preserved through the directory move.
+- `cw-decode/` contains the browser CW decoder demo app from `origin/main`, including Decode and Beat the Bot.
+- `ml/` contains the former `cw-ml` decoder research, DSP research loop, training code, and experiment notes. Its Git history is preserved through directory moves.
 
-The old standalone `cw-decode` tree was intentionally removed during the migration.
+The branch-only waterfall, contest helper, and single decoder app experiments are intentionally not active in this Phase 1 cleanup. They can be reintroduced into `cw-decode` in Phase 2.
 
 ## Common Commands
 
@@ -21,14 +22,14 @@ Run local demos:
 
 ```sh
 pnpm run dev:morse-audio-demo
-pnpm run dev:beat-the-bot
+pnpm run dev:cw-decode
 ```
 
 Build deployable demos:
 
 ```sh
 pnpm run build:morse-audio-demo
-pnpm run build:beat-the-bot
+pnpm run build:cw-decode
 ```
 
 ## Deployment
@@ -36,7 +37,8 @@ pnpm run build:beat-the-bot
 GitHub Pages is built by `.github/workflows/deploy.yml`.
 
 - Morse Audio demo: `https://mdp.github.io/morse/morse-audio/demo/`
-- Beat the Bot: `https://mdp.github.io/morse/cw-decode/beat-the-bot/`
+- CW Decode: `https://mdp.github.io/morse/cw-decode/decode`
+- Beat the Bot: `https://mdp.github.io/morse/cw-decode/beat-the-bot`
 
 ## npm Releases
 
