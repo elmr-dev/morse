@@ -5,6 +5,8 @@ import { loadSession } from '../inference/onnx'
 import { generateAudio } from '../inference/generate'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
 
 const TONE_FREQ = 700
 
@@ -71,13 +73,13 @@ export default function DecodePage() {
         </CardHeader>
         <CardContent>
           <div className="row">
-            <label htmlFor="text">Text</label>
-            <input
+            <Label htmlFor="text">Text</Label>
+            <Input
               id="text"
               type="text"
               value={text}
               onChange={(e) => setText(e.target.value.toUpperCase())}
-              style={{ flex: 1, fontFamily: 'var(--mono)' }}
+              className="flex-1 [font-family:var(--mono)]"
               maxLength={40}
             />
             <Button variant="secondary" onClick={() => setText(randomText(8))} type="button">Random</Button>

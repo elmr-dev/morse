@@ -6,6 +6,8 @@ import { randomCallsign, callsignRegion } from '../inference/callsign'
 import { decodeDualCallsignDataUri, type DualDecodeResult } from '../inference/dualDecode'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
 
 const TONE_FREQ = 700
 const MAX_LISTENS = 1   // audio already contains the callsign sent twice
@@ -166,12 +168,13 @@ export default function BeatTheBotPage() {
             </div>
 
             <div className="row" style={{ marginTop: 12 }}>
-              <label>Your guess</label>
-              <input
+              <Label htmlFor="guess">Your guess</Label>
+              <Input
+                id="guess"
                 type="text"
                 value={guess}
                 onChange={(e) => setGuess(e.target.value.toUpperCase())}
-                style={{ flex: 1, fontFamily: 'var(--mono)', fontSize: 18, letterSpacing: 2 }}
+                className="flex-1 [font-family:var(--mono)] text-[18px] [letter-spacing:2px]"
                 disabled={phase !== 'listening'}
                 maxLength={20}
                 onKeyDown={(e) => {
