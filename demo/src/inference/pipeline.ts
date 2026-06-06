@@ -4,7 +4,7 @@ import { dataUriToMonoFloat32 } from './audio'
 import { DSP_SAMPLE_RATE, extractEnvelope } from './dsp'
 import { greedyDecode } from './decode'
 import { runInference } from './onnx'
-import { NUM_CLASSES } from './constants'
+import { NUM_CLASSES, IN_CHANNELS, PLAYER_ENVELOPE_BARS } from './constants'
 
 export interface DecodeTiming {
   audioMs: number
@@ -18,6 +18,38 @@ export interface PipelineResult {
   text: string
   confidence: number
   timing: DecodeTiming
+  /** Keying envelope (display channel) downsampled to PLAYER_ENVELOPE_BARS peaks, for the audio scrubber. */
+  envelopeBars: number[]
+}
+
+// Channel rendered in the scrubber. ch3 = 200ms long matched filter (~5 Hz BW):
+// character-scale and heavily noise-rejecting, so it reads as clean keying at low
+// SNR where ch0 (raw amplitude) looks like noise. Slightly rounds fast dit edges.
+const DISPLAY_CHANNEL = 3
+
+/**
+ * Reduce an interleaved (T, IN_CHANNELS) envelope to a fixed number of
+ * display bars by taking the PEAK of the display channel per bucket.
+ * Peak (not mean) preserves short dit edges at high WPM.
+ */
+export function envelopeToBars(
+  envelope: Float32Array,
+  bars: number = PLAYER_ENVELOPE_BARS,
+): number[] {
+  const T = envelope.length / IN_CHANNELS
+  const out = new Array<number>(bars).fill(0)
+  if (T === 0) return out
+  for (let b = 0; b < bars; b++) {
+    const lo = Math.floor((b * T) / bars)
+    const hi = Math.max(lo + 1, Math.floor(((b + 1) * T) / bars))
+    let peak = 0
+    for (let i = lo; i < hi && i < T; i++) {
+      const v = envelope[i * IN_CHANNELS + DISPLAY_CHANNEL]
+      if (v > peak) peak = v
+    }
+    out[b] = peak
+  }
+  return out
 }
 
 export async function decodeDataUri(
@@ -44,5 +76,6 @@ export async function decodeDataUri(
       decodeMs: t4 - t3,
       totalMs: t4 - t0,
     },
+    envelopeBars: envelopeToBars(envelope),
   }
 }

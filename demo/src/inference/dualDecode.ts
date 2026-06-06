@@ -19,6 +19,7 @@ import { greedyDecode, type DecodeResult } from './decode'
 import { runInference } from './onnx'
 import { IN_CHANNELS, NUM_CLASSES } from './constants'
 import { dataUriToMonoFloat32 } from './audio'
+import { envelopeToBars } from './pipeline'
 
 export interface DualDecodeResult extends DecodeResult {
   /** Decode of the first send. */
@@ -29,6 +30,8 @@ export interface DualDecodeResult extends DecodeResult {
   agreement: boolean
   /** Frame index in the envelope where the split was made (at envelope rate). */
   splitFrame: number
+  /** Display-channel keying envelope bars, for the post-submit reveal. */
+  envelopeBars: number[]
 }
 
 const SILENCE_THRESHOLD = 0.1   // ch0 below this is considered silence
@@ -233,6 +236,7 @@ export async function decodeDualCallsignFromEnvelope(
     secondHalf: decB,
     agreement,
     splitFrame,
+    envelopeBars: envelopeToBars(envelope),
   }
 }
 

@@ -21,3 +21,5 @@ export const GRU_LAYERS = 2
 export const GRU_HIDDEN = 128
 
 export const LOG_NUM_CLASSES = Math.log(NUM_CLASSES)
+
+export const PLAYER_ENVELOPE_BARS = 120 // ch0 buckets rendered in the audio scrubber
