@@ -85,6 +85,15 @@ export default function BeatTheBotPage() {
   function resetScore() {
     setScore({ wins: 0, losses: 0, ties: 0 })
     setStreak(0)
+    // Also clear any in-progress or graded round so the page returns to the
+    // clean idle scoreboard rather than leaving a round/result card behind.
+    setRound(null)
+    setBotResult(null)
+    setGuess('')
+    setListens(0)
+    setIsPlaying(false)
+    setError(null)
+    setPhase('idle')
   }
 
   function playAudio() {
