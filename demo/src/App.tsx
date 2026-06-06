@@ -1,19 +1,24 @@
-import { NavLink, Navigate, Route, Routes } from 'react-router-dom'
+import { Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import DecodePage from './pages/DecodePage'
 import BeatTheBotPage from './pages/BeatTheBotPage'
 
 export default function App() {
+  const location = useLocation()
+  const navigate = useNavigate()
+  const tabValue = location.pathname === '/beat' ? 'beat' : 'decode'
+
   return (
     <>
-      <nav className="nav">
+      <div className="nav">
         <div className="title">CW Decoder Demo</div>
-        <NavLink to="/decode" className={({ isActive }) => (isActive ? 'active' : '')}>
-          Decode Demo
-        </NavLink>
-        <NavLink to="/beat" className={({ isActive }) => (isActive ? 'active' : '')}>
-          Beat the Bot
-        </NavLink>
-      </nav>
+        <Tabs value={tabValue} onValueChange={(v) => navigate(`/${v}`)}>
+          <TabsList>
+            <TabsTrigger value="decode">Decode Demo</TabsTrigger>
+            <TabsTrigger value="beat">Beat the Bot</TabsTrigger>
+          </TabsList>
+        </Tabs>
+      </div>
       <Routes>
         <Route path="/" element={<Navigate to="/decode" replace />} />
         <Route path="/decode" element={<DecodePage />} />
