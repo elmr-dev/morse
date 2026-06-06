@@ -146,16 +146,6 @@ export default function BeatTheBotPage() {
 
       <Scoreboard score={score} streak={streak} modelReady={modelReady} hasRound={!!round} onStart={startRound} />
 
-      {import.meta.env.DEV && (
-        <button
-          type="button"
-          onClick={() => fireConfetti()}
-          className="mb-4 text-[11px] text-muted-foreground/60 underline underline-offset-2"
-        >
-          dev: test confetti
-        </button>
-      )}
-
       {error && (
         <div className="flex items-center gap-1.5 text-bad font-mono text-sm mb-4">
           <TriangleAlert className="size-4" /> {error}
