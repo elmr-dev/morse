@@ -149,6 +149,9 @@ useEffect(() => {
               type="text"
               value={text}
               onChange={(e) => changeText(e.target.value.toUpperCase())}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && modelReady && !busy && text.trim()) void onGenerate()
+              }}
               placeholder="Type text to send, or hit Random"
               className="flex-1 h-10 font-mono min-w-0"
               maxLength={40}
@@ -158,6 +161,12 @@ useEffect(() => {
               <Shuffle className="size-4" /><span className="hidden sm:inline">Random</span>
             </Button>
           </div>
+
+          {text.includes(' ') && (
+            <div className="mt-1.5 text-[11px] text-muted-foreground">
+              Spaces are keyed as word breaks. The model copies letters only, so they don't count against it.
+            </div>
+          )}
 
           <div className="mt-4 rounded-lg border border-border bg-background/40 p-3">
             <div className="flex items-center justify-between mb-3">
@@ -240,10 +249,19 @@ useEffect(() => {
       )}
 
       {result && (() => {
-        const cerPct = cer(text, result.text) * 100
-        const diff = diffChars(text, result.text)
+        // The model's charset has no space, so it never emits word gaps. Grade
+        // against the input with spaces removed — otherwise a perfectly copied
+        // multi-word phrase shows one "error" per space. Word breaks are a
+        // human reading-aid, not something CWNet is trained to output.
+        const refText = text.replace(/\s+/g, '')
+        const cerPct = cer(refText, result.text) * 100
+        const diff = diffChars(refText, result.text)
         const errors = diff.filter((d) => !d.match).length
         const perfect = errors === 0 && result.text.length > 0
+        // Indices (into the space-stripped reference) where a new word begins,
+        // derived from where the user put spaces in the original input. Used to
+        // re-insert visible word breaks into the spaceless output for reading.
+        const wordStarts = wordStartIndices(text)
         return (
           <Card className="mb-4">
             <CardHeader className="[&]:flex [&]:flex-row [&]:items-center [&]:gap-2">
@@ -270,11 +288,23 @@ useEffect(() => {
                   <>
                     {perfect && <CircleCheck className="size-5 text-good shrink-0" />}
                     <span>
-                      {diff.map((d, i) => (
-                        <span key={i} className={d.match ? (perfect ? 'text-good' : 'text-foreground') : 'text-bad'}>
-                          {d.hyp}
-                        </span>
-                      ))}
+                      {(() => {
+                        let refSeen = 0
+                        return diff.map((d, i) => {
+                          // Insert a word break before this cell if the ref char
+                          // it consumes starts a new word in the original input.
+                          const gap = d.ref !== '·' && wordStarts.has(refSeen)
+                          if (d.ref !== '·') refSeen++
+                          return (
+                            <span key={i}>
+                              {gap && <span className="inline-block w-[0.6em]" />}
+                              <span className={d.match ? (perfect ? 'text-good' : 'text-foreground') : 'text-bad'}>
+                                {d.hyp}
+                              </span>
+                            </span>
+                          )
+                        })
+                      })()}
                     </span>
                   </>
                 ) : (
@@ -366,4 +396,23 @@ function diffChars(ref: string, hyp: string): { ref: string; hyp: string; match:
   }
   out.reverse()
   return out
+}
+
+// Given the original spaced input, return the set of indices (into the
+// space-stripped string) where a new word begins, excluding the first word.
+// Used to re-insert visible word breaks into the model's spaceless output.
+function wordStartIndices(text: string): Set<number> {
+  const starts = new Set<number>()
+  let stripped = 0
+  let prevWasSpace = false
+  for (let k = 0; k < text.length; k++) {
+    if (/\s/.test(text[k])) {
+      prevWasSpace = true
+      continue
+    }
+    if (prevWasSpace && stripped > 0) starts.add(stripped)
+    prevWasSpace = false
+    stripped++
+  }
+  return starts
 }
