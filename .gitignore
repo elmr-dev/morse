@@ -1,55 +1,24 @@
-# macOS
-.DS_Store
-
-# Node
 node_modules/
 dist/
-dist-ssr/
-*.local
-*.log
-npm-debug.log*
-yarn-debug.log*
-pnpm-debug.log*
-
-# Python
-__pycache__/
-*.pyc
-*.pyo
-*.egg-info/
-.venv/
 .env
-.pytest_cache/
-.ruff_cache/
-.mypy_cache/
-
-# Training data / artifacts
+**/dist/
+**/.vite/
+packages/*/dist/
+*.log
+.DS_Store
+.claude/
+*.tsbuildinfo
+package-lock.json
+*.gz
+*.jsonl
+*.npy
+*.flac
 *.wav
-*.npz
-runs/
-model/data/train/
-model/data/val/
-model/data/debug/
-cw-dsp-research/testdata/
-cw-dsp-research/evaldata/
-cw-dsp-research/results.tsv
-
-# Model weights (whitelist the stable best below)
-*.pt
-*.onnx
-!model/checkpoints/best.pt
-!model/checkpoints/best.yaml
-!model/checkpoints/cw_model_full.onnx
-!demo/public/model/cw_model_full.onnx
-
-# Claude Code
-.claude/settings.local.json
-
-# Editor / IDE
-.vscode/*
-!.vscode/extensions.json
-.idea/
-*.suo
-*.ntvs*
-*.njsproj
-*.sln
-*.sw?
+samples/
+__pycache__/
+.venv/
+ml/model/runs/
+ml/model/data/
+ml/cw-dsp-research/testdata/
+ml/cw-dsp-research/evaldata/
+ml/cw-dsp-research/human_baseline_audio/

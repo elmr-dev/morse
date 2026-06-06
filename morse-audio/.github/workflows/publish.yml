@@ -1,0 +1,151 @@
+name: Publish to npm
+
+on:
+  # Manual trigger with version bump selection
+  workflow_dispatch:
+    inputs:
+      package:
+        description: 'Package to publish'
+        required: true
+        type: choice
+        options:
+          - morse-audio
+          - react-morse-audio
+          - both
+      version:
+        description: 'Version bump type'
+        required: true
+        type: choice
+        options:
+          - patch
+          - minor
+          - major
+
+permissions:
+  contents: write    # For version commit and tag
+  id-token: write    # Required for npm OIDC trusted publishing
+
+jobs:
+  publish-morse-audio:
+    if: inputs.package == 'morse-audio' || inputs.package == 'both'
+    runs-on: ubuntu-latest
+    environment: npm  # Optional: use GitHub environment for additional protection
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Run tests
+        run: pnpm test
+
+      - name: Bump version
+        working-directory: packages/morse-audio
+        run: npm version ${{ inputs.version }} --no-git-tag-version
+
+      - name: Build
+        working-directory: packages/morse-audio
+        run: pnpm run build
+
+      - name: Publish to npm
+        working-directory: packages/morse-audio
+        run: npm publish --provenance --access public
+
+      - name: Get new version
+        id: version
+        working-directory: packages/morse-audio
+        run: echo "version=$(node -p "require('./package.json').version")" >> $GITHUB_OUTPUT
+
+      - name: Commit and tag
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add packages/morse-audio/package.json
+          git commit -m "chore: release morse-audio v${{ steps.version.outputs.version }}"
+          git tag "morse-audio-v${{ steps.version.outputs.version }}"
+          git push origin main --tags
+
+  publish-react-morse-audio:
+    if: inputs.package == 'react-morse-audio' || inputs.package == 'both'
+    runs-on: ubuntu-latest
+    environment: npm
+    needs: [publish-morse-audio]
+    # Run after morse-audio if publishing both, otherwise run immediately
+    # The 'if' on needs works because skipped jobs are considered successful
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          # Get latest commit if morse-audio was just published
+          ref: main
+
+      - name: Pull latest changes
+        if: inputs.package == 'both'
+        run: git pull origin main
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Run tests
+        run: pnpm test
+
+      - name: Update morse-audio dependency
+        if: inputs.package == 'both'
+        working-directory: packages/react-morse-audio
+        run: |
+          # Get the just-published morse-audio version
+          MORSE_VERSION=$(node -p "require('../morse-audio/package.json').version")
+          npm pkg set "dependencies.morse-audio=^$MORSE_VERSION"
+
+      - name: Bump version
+        working-directory: packages/react-morse-audio
+        run: npm version ${{ inputs.version }} --no-git-tag-version
+
+      - name: Build morse-audio first
+        working-directory: packages/morse-audio
+        run: pnpm run build
+
+      - name: Build react-morse-audio
+        working-directory: packages/react-morse-audio
+        run: pnpm run build
+
+      - name: Publish to npm
+        working-directory: packages/react-morse-audio
+        run: npm publish --provenance --access public
+
+      - name: Get new version
+        id: version
+        working-directory: packages/react-morse-audio
+        run: echo "version=$(node -p "require('./package.json').version")" >> $GITHUB_OUTPUT
+
+      - name: Commit and tag
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add packages/react-morse-audio/package.json
+          git commit -m "chore: release react-morse-audio v${{ steps.version.outputs.version }}"
+          git tag "react-morse-audio-v${{ steps.version.outputs.version }}"
+          git push origin main --tags

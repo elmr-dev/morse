@@ -1,0 +1,44 @@
+# ── Version control ───────────────────────────────────────────────────────────
+.git
+.github
+
+# ── Node ──────────────────────────────────────────────────────────────────────
+node_modules
+**/node_modules
+dist
+**/dist
+
+# ── Apps (not needed in training image) ───────────────────────────────────────
+apps
+
+# ── Packages not needed (only morse-audio/src is needed) ──────────────────────
+packages/react-morse-audio
+
+# ── Python venvs and caches ───────────────────────────────────────────────────
+**/.venv
+**/__pycache__
+**/*.pyc
+**/*.pyo
+
+# ── cw-decode: generated data and runs (go on /workspace at runtime) ──────────
+cw-decode/runs
+
+# ── cw-decode: eval samples, kaggle data, script outputs (large, not needed) ──
+cw-decode/cw_eval/samples
+cw-decode/cw_eval/results
+cw-decode/kaggle
+cw-decode/scripts/dsp_sanity_output
+cw-decode/scripts/dsp_verify_output
+cw-decode/scripts/*.png
+
+# ── Old ml/ directory ─────────────────────────────────────────────────────────
+ml/
+
+# ── Misc ──────────────────────────────────────────────────────────────────────
+.env
+*.onnx
+*.pt
+*.mp3
+*.wav
+*.DS_Store
+morse-deep-learning*

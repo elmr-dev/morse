@@ -1,0 +1,37 @@
+{
+  "name": "morse-audio-monorepo",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "build": "npm run build -ws --if-present",
+    "build:demo": "npm run build -w demo",
+    "build:contest": "npm run build -w contest-runner",
+    "build:rufzjs": "npm run build -w rufzjs",
+    "build:apps": "npm run build:demo && npm run build:contest && npm run build:rufzjs",
+    "dev": "npm run dev -w demo",
+    "dev:decoder": "npm run dev -w decoder-demo",
+    "dev:contest": "npm run dev -w contest-runner",
+    "dev:rufzjs": "npm run dev -w rufzjs",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "generate:ml": "tsx packages/morse-audio/src/ml-training/generate-cli.ts"
+  },
+  "devDependencies": {
+    "@testing-library/react": "^14.0.0",
+    "@types/react": "^18.2.0",
+    "@types/react-dom": "^18.2.0",
+    "@vitejs/plugin-react": "^4.2.0",
+    "jsdom": "^23.0.0",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "tsup": "^8.0.0",
+    "tsx": "^4.21.0",
+    "typescript": "^5.3.0",
+    "vite": "^5.0.0",
+    "vitest": "^1.0.0"
+  }
+}

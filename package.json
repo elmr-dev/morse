@@ -1,0 +1,37 @@
+{
+  "name": "morse-monorepo",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "morse-audio/packages/*",
+    "morse-audio/apps/*",
+    "cw-decode/demo"
+  ],
+  "scripts": {
+    "build": "pnpm run build:packages && pnpm run build:apps",
+    "build:packages": "pnpm --filter morse-audio --filter react-morse-audio build",
+    "build:morse-audio-demo": "pnpm --filter morse-audio-demo build",
+    "build:cw-decode": "pnpm --filter cw-decode-demo build",
+    "build:beat-the-bot": "pnpm run build:cw-decode",
+    "build:apps": "pnpm run build:morse-audio-demo && pnpm run build:cw-decode",
+    "dev:morse-audio-demo": "pnpm --filter morse-audio-demo dev",
+    "dev:cw-decode": "pnpm --filter cw-decode-demo dev",
+    "dev:beat-the-bot": "pnpm run dev:cw-decode",
+    "test": "pnpm -C morse-audio test && pnpm --filter cw-decode-demo test",
+    "publish:packages": "pnpm --filter morse-audio --filter react-morse-audio publish --access public"
+  },
+  "devDependencies": {
+    "@testing-library/react": "^14.0.0",
+    "@types/react": "^18.2.0",
+    "@types/react-dom": "^18.2.0",
+    "@vitejs/plugin-react": "^4.2.0",
+    "jsdom": "^23.0.0",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "tsup": "^8.0.0",
+    "tsx": "^4.21.0",
+    "typescript": "^5.3.0",
+    "vite": "^5.0.0",
+    "vitest": "^1.0.0"
+  }
+}
