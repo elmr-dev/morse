@@ -166,6 +166,12 @@
   * {
     @apply border-border;
   }
+  html {
+    /* Always reserve the vertical scrollbar gutter so the layout width doesn't
+       shift (and the page doesn't "jump") when content grows past the viewport
+       and the scrollbar appears — e.g. when a tall result card renders. */
+    scrollbar-gutter: stable;
+  }
   body {
     @apply bg-background text-foreground;
     font-family: var(--font-sans);

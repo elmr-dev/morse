@@ -43,15 +43,22 @@ export default function DecodePage() {
   })
   const [playTime, setPlayTime] = useState({ current: 0, duration: 0 })
   const resultsRef = useRef<HTMLDivElement>(null)
+  // True once we've auto-scrolled results into view; prevents re-scrolling (and
+  // the resulting page jump) on every Regenerate while results are already shown.
+  const didScrollRef = useRef(false)
 
   const onTime = useCallback((current: number, duration: number) => {
     setPlayTime({ current, duration })
   }, [])
 
-  // After a decode completes, gently bring the results into view.
+  // The first time a decode completes, gently bring the results into view.
+  // Subsequent regenerates don't re-scroll (the results are already on screen,
+  // and re-scrolling causes a visible jump, worse with tall/long output).
   useEffect(() => {
     if (!result) return
+    if (didScrollRef.current) return
     if (typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return
+    didScrollRef.current = true
     const id = window.setTimeout(() => {
       resultsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
     }, 100)
@@ -65,6 +72,7 @@ export default function DecodePage() {
     setResult(null)
     setError(null)
     setPlayTime({ current: 0, duration: 0 })
+    didScrollRef.current = false
   }
 
   function changeText(v: string) {
@@ -165,15 +173,16 @@ useEffect(() => {
             </Button>
           </div>
 
-          {text.includes(' ') && (
-            <div className="mt-1.5 text-[11px] text-muted-foreground">
-              Spaces are keyed as word breaks. The model copies letters only, so they don't count against it.
-            </div>
-          )}
-
-          {text.length >= 30 && (
-            <div className="mt-1.5 text-right text-[11px] font-mono text-muted-foreground">
-              <span className={text.length >= 40 ? 'text-bad' : undefined}>{text.length}</span>/40
+          {(text.includes(' ') || text.length >= 30) && (
+            <div className="mt-1.5 flex items-start gap-3 text-[11px] text-muted-foreground">
+              <span className="flex-1">
+                {text.includes(' ') && 'Spaces are keyed as word breaks. The model copies letters only, so they don’t count against it.'}
+              </span>
+              {text.length >= 30 && (
+                <span className="shrink-0 font-mono">
+                  <span className={text.length >= 40 ? 'text-bad' : undefined}>{text.length}</span>/40
+                </span>
+              )}
             </div>
           )}
 
