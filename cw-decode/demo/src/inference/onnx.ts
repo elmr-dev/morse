@@ -17,7 +17,9 @@ export const MAX_OUTPUT_FRAMES = MAX_FRAMES / 2
 
 let sessionPromise: Promise<ort.InferenceSession> | null = null
 
-export function loadSession(modelUrl = '/model/cw_model_full.onnx'): Promise<ort.InferenceSession> {
+const DEFAULT_MODEL_URL = `${import.meta.env.BASE_URL}model/cw_model_full.onnx`
+
+export function loadSession(modelUrl = DEFAULT_MODEL_URL): Promise<ort.InferenceSession> {
   if (!sessionPromise) {
     sessionPromise = ort.InferenceSession.create(modelUrl, {
       executionProviders: ['wasm'],
