@@ -69,7 +69,10 @@ export default function DecodePage() {
 
   function changeText(v: string) {
     setText(v)
-    clearOutput()
+    // Only clear stale output if there actually is any; avoids firing several
+    // state updates on every keystroke (which can make fast typing feel laggy
+    // or drop characters).
+    if (dataUri || result || error) clearOutput()
   }
   function changeWpm(v: number) {
     setWpm(v)
@@ -109,7 +112,7 @@ useEffect(() => {
     setResult(null)
     setBusy(true)
     try {
-      const out = generateAudio({ text, wpm, snrDb: snr, frequency: TONE_FREQ, qsb })
+      const out = generateAudio({ text: text.toUpperCase(), wpm, snrDb: snr, frequency: TONE_FREQ, qsb })
       setDataUri(out.dataUri)
       const decoded = await decodeDataUri(out.dataUri, TONE_FREQ)
       setResult(decoded)
@@ -148,12 +151,12 @@ useEffect(() => {
               id="text"
               type="text"
               value={text}
-              onChange={(e) => changeText(e.target.value.toUpperCase())}
+              onChange={(e) => changeText(e.target.value)}
               onKeyDown={(e) => {
                 if (e.key === 'Enter' && modelReady && !busy && text.trim()) void onGenerate()
               }}
               placeholder="Type text to send, or hit Random"
-              className="flex-1 h-10 font-mono min-w-0"
+              className="flex-1 h-10 font-mono uppercase min-w-0"
               maxLength={40}
               disabled={!modelReady}
             />
@@ -165,6 +168,12 @@ useEffect(() => {
           {text.includes(' ') && (
             <div className="mt-1.5 text-[11px] text-muted-foreground">
               Spaces are keyed as word breaks. The model copies letters only, so they don't count against it.
+            </div>
+          )}
+
+          {text.length >= 30 && (
+            <div className="mt-1.5 text-right text-[11px] font-mono text-muted-foreground">
+              <span className={text.length >= 40 ? 'text-bad' : undefined}>{text.length}</span>/40
             </div>
           )}
 
@@ -253,7 +262,7 @@ useEffect(() => {
         // against the input with spaces removed — otherwise a perfectly copied
         // multi-word phrase shows one "error" per space. Word breaks are a
         // human reading-aid, not something CWNet is trained to output.
-        const refText = text.replace(/\s+/g, '')
+        const refText = text.toUpperCase().replace(/\s+/g, '')
         const cerPct = cer(refText, result.text) * 100
         const diff = diffChars(refText, result.text)
         const errors = diff.filter((d) => !d.match).length
@@ -261,7 +270,7 @@ useEffect(() => {
         // Indices (into the space-stripped reference) where a new word begins,
         // derived from where the user put spaces in the original input. Used to
         // re-insert visible word breaks into the spaceless output for reading.
-        const wordStarts = wordStartIndices(text)
+        const wordStarts = wordStartIndices(text.toUpperCase())
         return (
           <Card className="mb-4">
             <CardHeader className="[&]:flex [&]:flex-row [&]:items-center [&]:gap-2">
@@ -297,7 +306,7 @@ useEffect(() => {
                           if (d.ref !== '·') refSeen++
                           return (
                             <span key={i}>
-                              {gap && <span className="inline-block w-[0.6em]" />}
+                              {gap && <span className="text-muted-foreground/40 mx-0.5">·</span>}
                               <span className={d.match ? (perfect ? 'text-good' : 'text-foreground') : 'text-bad'}>
                                 {d.hyp}
                               </span>
