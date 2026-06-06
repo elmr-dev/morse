@@ -1,15 +1,15 @@
-import { type ReactNode, useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { cer } from '../inference/decode'
 import { loadSession } from '../inference/onnx'
 import { generateAudio } from '../inference/generate'
 import { randomCallsign, callsignRegion } from '../inference/callsign'
 import { decodeDualCallsignDataUri, type DualDecodeResult } from '../inference/dualDecode'
-import { Bot, Equal, Loader2, Play, Send, Swords, Target, TriangleAlert, Trophy, X } from 'lucide-react'
-import { Badge } from '@/components/ui/badge'
+import { Bot, Crown, Eye, Flame, GitMerge, Headphones, Loader2, Play, Send, TriangleAlert, User } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
+import { fireConfetti } from '@/lib/confetti'
+import VolumeControl from '@/components/VolumeControl'
 
 const TONE_FREQ = 700
 const MAX_LISTENS = 1
@@ -43,9 +43,26 @@ export default function BeatTheBotPage() {
   const [modelReady, setModelReady] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [score, setScore] = useState({ wins: 0, losses: 0, ties: 0 })
+  const [streak, setStreak] = useState(0)
+  const [volume, setVolume] = useState(() => {
+    const stored = parseFloat(localStorage.getItem('audioVolume') ?? '')
+    return isNaN(stored) ? 1 : stored
+  })
 
   const audioRef = useRef<HTMLAudioElement | null>(null)
   const [isPlaying, setIsPlaying] = useState(false)
+  const roundRef = useRef<HTMLDivElement>(null)
+  const resultRef = useRef<HTMLDivElement>(null)
+
+  // Keep the audio element's volume in sync.
+  useEffect(() => {
+    if (audioRef.current) audioRef.current.volume = volume
+  }, [volume, round])
+
+  function onVolumeChange(v: number) {
+    setVolume(v)
+    localStorage.setItem('audioVolume', String(v))
+  }
 
   useEffect(() => {
     loadSession()
@@ -88,12 +105,16 @@ export default function BeatTheBotPage() {
       setBotResult(res)
       const userCer = cer(round.text, guess.toUpperCase().trim())
       const botCer = cer(round.text, res.text)
+      const userWon = userCer < botCer
       setScore((s) => {
-        if (userCer < botCer) return { ...s, wins: s.wins + 1 }
+        if (userWon) return { ...s, wins: s.wins + 1 }
         if (userCer > botCer) return { ...s, losses: s.losses + 1 }
         return { ...s, ties: s.ties + 1 }
       })
+      // Streak counts consecutive wins; any non-win resets it.
+      setStreak((st) => (userWon ? st + 1 : 0))
       setPhase('graded')
+      if (userWon) fireConfetti()
     } catch (e) {
       setError(String(e))
       setPhase('listening')
@@ -107,184 +128,379 @@ export default function BeatTheBotPage() {
     ? cer(round.text, botResult.text) * 100
     : null
 
+  // Bring each new phase into view as it appears.
+  useEffect(() => {
+    if (typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return
+    const target = phase === 'graded' ? resultRef.current : phase === 'listening' ? roundRef.current : null
+    if (!target) return
+    const id = window.setTimeout(() => target.scrollIntoView({ behavior: 'smooth', block: 'start' }), 100)
+    return () => window.clearTimeout(id)
+  }, [phase])
+
   return (
     <div>
-      <div className="flex items-center gap-2 mb-3">
-        <Swords className="size-6" />
-        <h1 className="text-[28px] font-semibold text-foreground tracking-[-0.4px] m-0">Beat the Bot</h1>
-      </div>
-      <p className="mb-3">
-        Listen to a random callsign sent twice in CW (20–30 WPM, low SNR), the way
-        operators repeat their own call. You and the bot both get the same clip —
-        one shot at it. Type your guess; we grade both decodes on character error rate.
+      <p className="text-sm text-muted-foreground mb-4">
+        The machine has out-copied humans down to -12 dB. Now it's your turn. One callsign,
+        buried in static, sent twice — one listen each. Prove an ear still beats a model.
       </p>
 
-      <Card className="mb-4">
-        <CardContent>
-          <div className="flex items-center mb-[10px] flex-wrap justify-between">
-            <div className="flex gap-5">
-              <Stat label="You" value={score.wins.toString()} accent="good" icon={<Trophy className="size-4 text-muted-foreground" />} />
-              <Stat label="Bot" value={score.losses.toString()} accent="bad" icon={<Bot className="size-4 text-muted-foreground" />} />
-              <Stat label="Ties" value={score.ties.toString()} icon={<Equal className="size-4 text-muted-foreground" />} />
-            </div>
-            <Button disabled={!modelReady} onClick={startRound}>
-              {round ? 'New round' : 'Start'}
-            </Button>
-          </div>
-          {!modelReady && (
-            <div className="flex items-center gap-1 text-muted-foreground text-sm">
-              <Loader2 className="animate-spin size-4" /> Loading model…
-            </div>
-          )}
-          {error && (
-            <div className="flex items-center gap-1 text-bad font-mono">
-              <TriangleAlert className="size-4" /> {error}
-            </div>
-          )}
-        </CardContent>
-      </Card>
+      <Scoreboard score={score} streak={streak} modelReady={modelReady} hasRound={!!round} onStart={startRound} />
 
-      {round && phase !== 'idle' && (
-        <Card className="mb-4">
-          <CardHeader>
-            <CardTitle>Round</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-muted-foreground text-[13px]">
-              callsign · approx {round.wpm} wpm · SNR {round.snr} dB · region hidden until you submit
-            </div>
-            <audio ref={audioRef} src={round.dataUri} preload="auto" />
-            <div className="flex gap-4 items-center mb-[10px] flex-wrap mt-3">
-              <Button
-                variant="secondary"
-                onClick={playAudio}
-                disabled={phase !== 'listening' || listens >= MAX_LISTENS || isPlaying}
-              >
-                {isPlaying ? 'Playing…' : listens === 0 ? <><Play className="size-4" />Play</> : 'Played'}
-              </Button>
-            </div>
-            <div className="flex gap-4 items-center mb-[10px] flex-wrap mt-3">
-              <Label htmlFor="guess" className="min-w-[90px]">Your guess</Label>
-              <Input
-                id="guess"
-                type="text"
-                value={guess}
-                onChange={(e) => setGuess(e.target.value.toUpperCase())}
-                className="flex-1 font-mono text-[18px] tracking-[2px]"
-                disabled={phase !== 'listening'}
-                maxLength={20}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' && phase === 'listening' && guess.trim()) void submitGuess()
-                }}
-              />
-              <Button
-                variant="default"
-                disabled={phase !== 'listening' || !guess.trim() || listens === 0}
-                onClick={submitGuess}
-              >
-                {phase === 'guessing'
-                  ? <><Loader2 className="animate-spin size-4" /> Grading…</>
-                  : <><Send className="size-4" />Submit</>}
-              </Button>
-            </div>
-            {phase === 'listening' && listens === 0 && (
-              <div className="text-muted-foreground text-[13px]">
-                Hit Play to hear the clip — it sends the callsign twice.
-              </div>
-            )}
-          </CardContent>
-        </Card>
+      {import.meta.env.DEV && (
+        <button
+          type="button"
+          onClick={() => fireConfetti()}
+          className="mb-4 text-[11px] text-muted-foreground/60 underline underline-offset-2"
+        >
+          dev: test confetti
+        </button>
       )}
 
-      {phase === 'graded' && round && botResult && (
-        <Card className="mb-4">
-          <CardHeader>
-            <CardTitle>Results</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="flex items-center gap-2 mb-[14px]">
-              <Target className="size-4" />
-              <span className="text-muted-foreground text-[13px]">Ground truth:</span>
-              <span className="font-mono text-[20px] text-foreground tracking-[2px]">{round.text}</span>
-              <Badge variant="secondary">{round.region}</Badge>
-            </div>
+      {error && (
+        <div className="flex items-center gap-1.5 text-bad font-mono text-sm mb-4">
+          <TriangleAlert className="size-4" /> {error}
+        </div>
+      )}
 
-            <div className="grid grid-cols-2 gap-4 max-sm:grid-cols-1">
-              <ResultCard title="You" guess={guess.toUpperCase().trim()} truth={round.text} cerPct={userCerPct!} />
-              <ResultCard title="Bot" guess={botResult.text} truth={round.text} cerPct={botCerPct!} />
-            </div>
+      {round && (phase === 'listening' || phase === 'guessing') && (
+        <div ref={roundRef} className="scroll-mt-4">
+          <Card className="mb-4">
+            <CardContent>
+              <div className="flex items-center justify-between gap-2 mb-4">
+                <div className="text-[12px] text-muted-foreground font-mono">
+                  ~{round.wpm} wpm
+                  <span className="text-muted-foreground/40 mx-1.5">·</span>
+                  SNR {round.snr} dB
+                  <span className="text-muted-foreground/40 mx-1.5">·</span>
+                  sent twice
+                </div>
+                {phase !== 'graded' && (
+                  <div className="shrink-0">
+                    <VolumeControl value={volume} onChange={onVolumeChange} />
+                  </div>
+                )}
+              </div>
 
-            <div className="font-mono text-muted-foreground text-xs mt-[10px]">
-              Bot two-look detail: 1st → {botResult.firstHalf.text || '(empty)'} (
-              {(botResult.firstHalf.confidence * 100).toFixed(0)}%) · 2nd →{' '}
-              {botResult.secondHalf.text || '(empty)'} (
-              {(botResult.secondHalf.confidence * 100).toFixed(0)}%) ·{' '}
-              {botResult.agreement ? 'agreement' : 'used higher-confidence half'}
-            </div>
+              <audio ref={audioRef} src={round.dataUri} preload="auto" />
 
-            <div className="mt-4">
-              <Verdict userCer={userCerPct!} botCer={botCerPct!} />
-            </div>
-          </CardContent>
-        </Card>
+              {phase !== 'graded' && (
+                <div className="flex flex-col items-center gap-2.5 py-3">
+                  <button
+                    type="button"
+                    onClick={playAudio}
+                    disabled={phase !== 'listening' || listens >= MAX_LISTENS || isPlaying}
+                    aria-label={listens === 0 ? 'Play once' : 'Already played'}
+                    className="size-16 rounded-full bg-primary text-primary-foreground flex items-center justify-center transition-transform enabled:hover:scale-105 enabled:active:scale-95 disabled:opacity-50"
+                  >
+                    {isPlaying
+                      ? <Loader2 className="size-7 animate-spin" />
+                      : <Play className="size-7 translate-x-[2px]" fill="currentColor" />}
+                  </button>
+                  <span className="inline-flex items-center gap-1.5 text-[13px] text-chart-5">
+                    <Headphones className="size-3.5" />
+                    {listens === 0 ? 'One listen — make it count' : isPlaying ? 'Listen closely…' : 'That was your shot'}
+                  </span>
+                </div>
+              )}
+
+              {phase !== 'graded' && (
+                <div className="flex gap-2 mt-2">
+                  <Input
+                    id="guess"
+                    type="text"
+                    value={guess}
+                    onChange={(e) => setGuess(e.target.value.toUpperCase())}
+                    placeholder="Your copy…"
+                    aria-label="Your guess"
+                    className="flex-1 min-w-0 h-10 font-mono tracking-[1px]"
+                    disabled={phase !== 'listening'}
+                    maxLength={20}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && phase === 'listening' && guess.trim() && listens > 0) void submitGuess()
+                    }}
+                  />
+                  <Button
+                    variant="default"
+                    disabled={phase !== 'listening' || !guess.trim() || listens === 0}
+                    onClick={submitGuess}
+                    className="shrink-0 h-10"
+                  >
+                    {phase === 'guessing'
+                      ? <><Loader2 className="animate-spin size-4" /> Grading…</>
+                      : <><Send className="size-4" />Submit</>}
+                  </Button>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
+      {phase === 'graded' && round && botResult && userCerPct !== null && botCerPct !== null && (
+        <div ref={resultRef} className="scroll-mt-4">
+          <Card className="mb-4">
+            <CardContent>
+              <div className="flex items-center justify-center gap-2.5 mb-1">
+                <span className="text-[13px] text-muted-foreground">It was</span>
+                <span className="font-mono text-[22px] text-foreground tracking-[2px]">{round.text}</span>
+                <span className="text-[11px] bg-muted rounded-md px-2 py-0.5 text-muted-foreground">{round.region}</span>
+              </div>
+              <div className="text-center text-[11px] text-muted-foreground/70 font-mono mb-5">
+                ~{round.wpm} wpm <span className="text-muted-foreground/40">·</span> SNR {round.snr} dB
+              </div>
+
+              <div className="flex flex-col gap-3">
+                <MeterRow
+                  who="You"
+                  icon={<User className="size-3.5" />}
+                  guess={guess.toUpperCase().trim()}
+                  truth={round.text}
+                  cerPct={userCerPct}
+                  won={userCerPct < botCerPct}
+                />
+                <MeterRow
+                  who="Bot"
+                  icon={<Bot className="size-3.5" />}
+                  guess={botResult.text}
+                  truth={round.text}
+                  cerPct={botCerPct}
+                  won={botCerPct < userCerPct}
+                />
+              </div>
+
+              <Verdict userCer={userCerPct} botCer={botCerPct} streak={streak} />
+
+              <StaticEnvelope bars={botResult.envelopeBars} />
+
+              <TwoLookDetail result={botResult} />
+
+              <Button variant="default" onClick={startRound} disabled={!modelReady} className="w-full mt-5">
+                <Play className="size-4" /> Next round
+              </Button>
+            </CardContent>
+          </Card>
+        </div>
       )}
     </div>
   )
 }
 
-function ResultCard({ title, guess, truth, cerPct }: { title: string; guess: string; truth: string; cerPct: number }) {
-  const maxLen = Math.max(guess.length, truth.length)
-  const chars = []
-  for (let i = 0; i < maxLen; i++) {
-    const g = guess[i] ?? '·'
-    const t = truth[i] ?? '·'
-    chars.push(
-      <span key={i} className={`font-mono ${g === t ? 'text-good' : 'text-bad font-bold'}`}>
-        {g}
-      </span>,
-    )
-  }
+function Scoreboard({
+  score, streak, modelReady, hasRound, onStart,
+}: {
+  score: { wins: number; losses: number; ties: number }
+  streak: number
+  modelReady: boolean
+  hasRound: boolean
+  onStart: () => void
+}) {
+  const lead = score.wins - score.losses
+  const standing =
+    lead > 0 ? `you're up by ${lead}` : lead < 0 ? `bot's up by ${-lead}` : score.wins + score.losses === 0 ? 'first to copy wins' : 'dead even'
   return (
-    <Card className="bg-background">
-      <CardHeader>
-        <CardTitle>{title}</CardTitle>
-      </CardHeader>
+    <Card className="mb-4">
       <CardContent>
-        <div className="font-mono text-[22px] text-foreground px-4 py-3 bg-[var(--code-bg)] rounded-md tracking-[2px] break-all min-h-[52px]">
-          {chars.length ? chars : <span className="text-muted-foreground text-[13px]">(nothing)</span>}
+        <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2">
+          <div className="flex flex-col items-center gap-1 rounded-lg py-2.5 bg-good/10">
+            <span className="inline-flex items-center gap-1.5 text-xs text-good"><User className="size-3.5" />You</span>
+            <span className="font-mono text-[34px] leading-none font-semibold text-good">{score.wins}</span>
+          </div>
+          <span className="text-xs font-medium text-muted-foreground px-1">VS</span>
+          <div className="flex flex-col items-center gap-1 rounded-lg py-2.5 bg-muted/50">
+            <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground"><Bot className="size-3.5" />Bot</span>
+            <span className="font-mono text-[34px] leading-none font-semibold text-foreground">{score.losses}</span>
+          </div>
         </div>
-        <div className="text-muted-foreground text-[13px] mt-[6px]">
-          CER: <span className={cerPct === 0 ? 'text-good' : ''}>{cerPct.toFixed(1)}%</span>
+
+        <div className="flex items-center justify-center gap-2 mt-3 text-[11px] text-muted-foreground">
+          <span>{score.ties} {score.ties === 1 ? 'tie' : 'ties'}</span>
+          <span aria-hidden="true">·</span>
+          <span>{standing}</span>
+          {streak >= 2 && (
+            <>
+              <span aria-hidden="true">·</span>
+              <span className="inline-flex items-center gap-1 text-chart-5 font-medium">
+                <Flame className="size-3.5" />{streak} win streak
+              </span>
+            </>
+          )}
         </div>
+
+        <Button disabled={!modelReady} onClick={onStart} className="w-full mt-3">
+          {!modelReady
+            ? <><Loader2 className="animate-spin size-4" /> Loading model…</>
+            : <><Play className="size-4" />{hasRound ? 'New round' : 'Start a round'}</>}
+        </Button>
       </CardContent>
     </Card>
   )
 }
 
-function Verdict({ userCer, botCer }: { userCer: number; botCer: number }) {
-  if (userCer < botCer) return (
-    <span className="text-good flex items-center gap-2 text-[18px] font-semibold">
-      <Trophy className="size-5" />You win this round.
-    </span>
-  )
-  if (userCer > botCer) return (
-    <span className="text-bad flex items-center gap-2 text-[18px] font-semibold">
-      <X className="size-5" />Bot wins this round.
-    </span>
-  )
+// Levenshtein-align guess against truth and return display cells. Matched
+// characters render green; substituted/inserted characters render red; a
+// truth char the guess missed renders as a faint gap so lengths read honestly.
+function alignChars(guess: string, truth: string): { ch: string; kind: 'match' | 'wrong' | 'gap' }[] {
+  const m = guess.length
+  const n = truth.length
+  if (m === 0 && n === 0) return []
+  const dp: number[][] = Array.from({ length: m + 1 }, () => new Array<number>(n + 1).fill(0))
+  for (let i = 0; i <= m; i++) dp[i][0] = i
+  for (let j = 0; j <= n; j++) dp[0][j] = j
+  for (let i = 1; i <= m; i++) {
+    for (let j = 1; j <= n; j++) {
+      const cost = guess[i - 1] === truth[j - 1] ? 0 : 1
+      dp[i][j] = Math.min(dp[i - 1][j] + 1, dp[i][j - 1] + 1, dp[i - 1][j - 1] + cost)
+    }
+  }
+  const cells: { ch: string; kind: 'match' | 'wrong' | 'gap' }[] = []
+  let i = m
+  let j = n
+  while (i > 0 || j > 0) {
+    if (i > 0 && j > 0 && guess[i - 1] === truth[j - 1]) {
+      cells.push({ ch: guess[i - 1], kind: 'match' }); i--; j--
+    } else if (i > 0 && j > 0 && dp[i][j] === dp[i - 1][j - 1] + 1) {
+      cells.push({ ch: guess[i - 1], kind: 'wrong' }); i--; j--   // substitution
+    } else if (i > 0 && dp[i][j] === dp[i - 1][j] + 1) {
+      cells.push({ ch: guess[i - 1], kind: 'wrong' }); i--        // extra char in guess
+    } else {
+      cells.push({ ch: '·', kind: 'gap' }); j--                    // missed a truth char
+    }
+  }
+  cells.reverse()
+  return cells
+}
+
+function MeterRow({
+  who, icon, guess, truth, cerPct, won,
+}: {
+  who: string
+  icon: React.ReactNode
+  guess: string
+  truth: string
+  cerPct: number
+  won: boolean
+}) {
+  const cells = alignChars(guess, truth)
+  const pct = Math.min(100, cerPct)
   return (
-    <span className="text-foreground flex items-center gap-2 text-[18px] font-semibold">
-      <Equal className="size-5" />Tie.
-    </span>
+    <div>
+      <div className="flex items-baseline justify-between gap-3 mb-1.5">
+        <span className="inline-flex items-center gap-1.5 text-[13px] text-foreground">
+          {icon}{who}
+          {won && <Crown className="size-3.5 text-good" />}
+        </span>
+        <span className="font-mono text-[17px] tracking-[1px] break-all text-right">
+          {cells.length
+            ? cells.map((c, idx) => (
+                <span key={idx} className={c.kind === 'match' ? 'text-good' : c.kind === 'gap' ? 'text-muted-foreground/40' : 'text-bad'}>
+                  {c.ch}
+                </span>
+              ))
+            : <span className="text-muted-foreground text-[13px] tracking-normal">(nothing)</span>}
+        </span>
+      </div>
+      <div className="flex items-center gap-2.5">
+        <div className="flex-1 h-1.5 rounded-full bg-muted overflow-hidden">
+          <div
+            className={`h-full rounded-full ${won ? 'bg-good' : 'bg-bad'}`}
+            style={{ width: `${Math.max(2, pct)}%` }}
+          />
+        </div>
+        <span className={`font-mono text-[12px] tabular-nums w-12 text-right ${cerPct === 0 ? 'text-good' : won ? 'text-foreground' : 'text-bad'}`}>
+          {cerPct.toFixed(0)}%
+        </span>
+      </div>
+    </div>
   )
 }
 
-function Stat({ label, value, accent, icon }: { label: string; value: string; accent?: 'good' | 'bad'; icon?: ReactNode }) {
+function Verdict({ userCer, botCer, streak }: { userCer: number; botCer: number; streak: number }) {
+  if (userCer < botCer) return (
+    <div className="flex items-center justify-center gap-2 mt-5 text-[18px] font-semibold text-good">
+      <Crown className="size-5" />
+      {streak >= 3 ? `You out-copied the machine — ${streak} in a row` : 'You out-copied the machine'}
+    </div>
+  )
+  if (userCer > botCer) return (
+    <div className="flex items-center justify-center gap-2 mt-5 text-[18px] font-semibold text-bad">
+      <Bot className="size-5" />The bot copied it cleaner
+    </div>
+  )
   return (
-    <div>
-      <div className="flex items-center gap-1 text-muted-foreground text-xs">{icon}{label}</div>
-      <div className={`font-mono text-[22px] font-semibold ${accent === 'good' ? 'text-good' : accent === 'bad' ? 'text-bad' : 'text-foreground'}`}>
-        {value}
+    <div className="flex items-center justify-center gap-2 mt-5 text-[18px] font-semibold text-foreground">
+      Dead heat — same error rate
+    </div>
+  )
+}
+
+function TwoLookDetail({ result }: { result: DualDecodeResult }) {
+  const ref = useRef<HTMLDetailsElement>(null)
+  const looks = [
+    { n: 1, text: result.firstHalf.text, conf: result.firstHalf.confidence },
+    { n: 2, text: result.secondHalf.text, conf: result.secondHalf.confidence },
+  ]
+  function onToggle(e: React.SyntheticEvent<HTMLDetailsElement>) {
+    if (!e.currentTarget.open) return
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return
+    window.setTimeout(() => ref.current?.scrollIntoView({ behavior: 'smooth', block: 'end' }), 60)
+  }
+  return (
+    <details ref={ref} onToggle={onToggle} className="mt-4 group">
+      <summary className="flex items-center gap-1.5 text-xs text-muted-foreground cursor-pointer select-none list-none">
+        <GitMerge className="size-3.5" />
+        How the bot got two looks
+        <span className="text-muted-foreground/50 group-open:rotate-90 transition-transform">›</span>
+      </summary>
+      <div className="mt-2.5 rounded-lg border border-border bg-background/40 p-3">
+        <p className="text-[12px] text-muted-foreground leading-relaxed mb-3">
+          The call is sent twice, so the bot decodes each send separately — two independent
+          shots at the same noise — then combines them. Same trick as asking “again?” on the air.
+        </p>
+        <div className="flex flex-col gap-2">
+          {looks.map((l) => (
+            <div key={l.n} className="flex items-center gap-2.5">
+              <span className="inline-flex items-center gap-1.5 text-[11px] text-muted-foreground w-14 shrink-0">
+                <Eye className="size-3.5" />look {l.n}
+              </span>
+              <span className="font-mono text-[13px] text-foreground flex-1 tracking-[1px] break-all">
+                {l.text || <span className="text-muted-foreground/50">—</span>}
+              </span>
+              <span className="font-mono text-[11px] text-muted-foreground tabular-nums shrink-0">
+                {(l.conf * 100).toFixed(0)}%
+              </span>
+            </div>
+          ))}
+          <div className="flex items-center gap-2.5 border-t border-border pt-2 mt-0.5">
+            <span className="inline-flex items-center gap-1.5 text-[11px] text-foreground w-14 shrink-0">
+              <GitMerge className="size-3.5" />final
+            </span>
+            <span className="font-mono text-[13px] text-foreground flex-1 tracking-[1px] break-all">{result.text || '—'}</span>
+            <span className="text-[11px] text-muted-foreground shrink-0">
+              {result.agreement ? 'both agreed' : 'merged'}
+            </span>
+          </div>
+        </div>
+      </div>
+    </details>
+  )
+}
+
+function StaticEnvelope({ bars }: { bars: number[] }) {
+  if (!bars || bars.length === 0) return null
+  const max = Math.max(...bars, 0.0001)
+  return (
+    <div className="mt-5">
+      <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground mb-1.5">
+        <Headphones className="size-3.5" />what you were up against
+      </div>
+      <div className="flex items-end gap-[2px] h-9 bg-background rounded-md px-2 py-1.5">
+        {bars.map((v, i) => (
+          <div
+            key={i}
+            className="flex-1 rounded-[1px] bg-primary/70"
+            style={{ height: `${Math.max(6, (v / max) * 100)}%` }}
+          />
+        ))}
       </div>
     </div>
   )

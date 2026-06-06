@@ -41,6 +41,9 @@ cw-dsp-research/results.tsv
 !model/checkpoints/cw_model_full.onnx
 !demo/public/model/cw_model_full.onnx
 
+# Claude Code
+.claude/settings.local.json
+
 # Editor / IDE
 .vscode/*
 !.vscode/extensions.json

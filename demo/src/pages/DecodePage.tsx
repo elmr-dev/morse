@@ -1,11 +1,13 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { decodeDataUri, type PipelineResult } from '../inference/pipeline'
 import { cer } from '../inference/decode'
 import { loadSession } from '../inference/onnx'
 import { generateAudio } from '../inference/generate'
-import { Activity, AudioLines, Cpu, Gauge, Loader2, Play, Radio, Shuffle, TriangleAlert, Waves } from 'lucide-react'
+import { Activity, AudioLines, CircleCheck, Clock, Cpu, Gauge, Loader2, MonitorSmartphone, Shuffle, SlidersHorizontal, Sparkles, TriangleAlert, Waves } from 'lucide-react'
+import AudioPlayer, { fmt } from '@/components/AudioPlayer'
+import VolumeControl from '@/components/VolumeControl'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardAction, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Slider } from '@/components/ui/slider'
@@ -31,10 +33,59 @@ export default function DecodePage() {
   const [busy, setBusy] = useState(false)
   const [modelReady, setModelReady] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [volume, setVolume] = useState(() => {
+    const stored = parseFloat(localStorage.getItem('audioVolume') ?? '')
+    return isNaN(stored) ? 1 : stored
+  })
+  const [playTime, setPlayTime] = useState({ current: 0, duration: 0 })
+  const resultsRef = useRef<HTMLDivElement>(null)
 
-  const audioRef = useRef<HTMLAudioElement | null>(null)
+  const onTime = useCallback((current: number, duration: number) => {
+    setPlayTime({ current, duration })
+  }, [])
 
+  // After a decode completes, gently bring the results into view.
   useEffect(() => {
+    if (!result) return
+    if (typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return
+    const id = window.setTimeout(() => {
+      resultsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    }, 100)
+    return () => window.clearTimeout(id)
+  }, [result])
+
+  // Any input change invalidates the current clip + decode; clear them so the
+  // stale Audio / Model output cards don't outlive the inputs they came from.
+  function clearOutput() {
+    setDataUri(null)
+    setResult(null)
+    setError(null)
+    setPlayTime({ current: 0, duration: 0 })
+  }
+
+  function changeText(v: string) {
+    setText(v)
+    clearOutput()
+  }
+  function changeWpm(v: number) {
+    setWpm(v)
+    clearOutput()
+  }
+  function changeSnr(v: number) {
+    setSnr(v)
+    clearOutput()
+  }
+  function changeQsb(v: boolean) {
+    setQsb(v)
+    clearOutput()
+  }
+
+  function onVolumeChange(v: number) {
+    setVolume(v)
+    localStorage.setItem('audioVolume', String(v))
+  }
+
+useEffect(() => {
     loadSession()
       .then(() => setModelReady(true))
       .catch((e) => setError(String(e)))
@@ -58,134 +109,213 @@ export default function DecodePage() {
 
   return (
     <div>
-      <div className="flex items-center gap-2 mb-3">
-        <Radio className="size-6" />
-        <h1 className="text-[28px] font-semibold text-foreground tracking-[-0.4px] m-0">Decode Demo</h1>
-      </div>
-      <p className="mb-3">
-        Generate a morse code clip at any speed and SNR, listen to it, and see what the model decodes.
-        Model:{' '}
-        <code className="text-sm px-1.5 py-0.5 rounded-sm bg-[var(--code-bg)] text-foreground font-mono">CWNet</code>
-        {' '}(808k params, 3.1 MB ONNX) running in your browser via onnxruntime-web.
+      <p className="text-sm text-muted-foreground mb-3">
+        Generate a Morse clip at any speed and SNR, then watch the model copy it — entirely in your browser.
       </p>
+      <div className="flex flex-wrap gap-2 mb-4">
+        <span className="inline-flex items-center gap-1.5 text-xs bg-muted rounded-full px-3 py-1">
+          <Cpu className="size-3.5 text-primary" />
+          <span className="font-medium text-foreground">CWNet</span>
+          <span className="text-muted-foreground font-mono">&middot; 808k &middot; 3.1 MB</span>
+        </span>
+        <span className="inline-flex items-center gap-1.5 text-xs bg-muted rounded-full px-3 py-1 text-muted-foreground">
+          <MonitorSmartphone className="size-3.5" />
+          runs in-browser
+        </span>
+      </div>
 
       <Card className="mb-4">
         <CardHeader>
-          <CardTitle>Generate</CardTitle>
+          <CardTitle><SlidersHorizontal className="size-5 text-primary" />Generate</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="flex gap-4 items-center mb-[10px] flex-wrap">
-            <Label htmlFor="text" className="min-w-[90px]">Text</Label>
+          <div className="flex gap-2 items-center">
+            <Label htmlFor="text" className="sr-only">Text</Label>
             <Input
               id="text"
               type="text"
               value={text}
-              onChange={(e) => setText(e.target.value.toUpperCase())}
-              className="flex-1 font-mono"
+              onChange={(e) => changeText(e.target.value.toUpperCase())}
+              className="flex-1 font-mono min-w-0"
               maxLength={40}
+              disabled={!modelReady}
             />
-            <Button variant="secondary" onClick={() => setText(randomText(8))} type="button">
-              <Shuffle className="size-4" />Random
+            <Button variant="secondary" onClick={() => changeText(randomText(8))} type="button" disabled={!modelReady} className="shrink-0">
+              <Shuffle className="size-4" /><span className="hidden sm:inline">Random</span>
             </Button>
           </div>
-          <div className="flex gap-4 items-center mb-[10px] flex-wrap">
-            <Gauge className="size-4" />
-            <Label className="min-w-[90px]">WPM</Label>
-            <Slider min={12} max={50} value={[wpm]} onValueChange={([n]) => setWpm(n)} className="flex-1" />
-            <span className="font-mono text-foreground min-w-[60px] text-right">{wpm}</span>
+
+          <div className="mt-4 rounded-lg border border-border bg-background/40 p-3">
+            <div className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground mb-3">Signal</div>
+            <div className="grid grid-cols-[18px_auto_1fr_auto] items-center gap-x-3 gap-y-4">
+              <Gauge className="size-4 text-muted-foreground" />
+              <Label className="text-[13px]">WPM</Label>
+              <Slider min={12} max={50} value={[wpm]} onValueChange={([n]) => changeWpm(n)} disabled={!modelReady} />
+              <span className="justify-self-end font-mono text-[13px] font-medium text-foreground bg-muted rounded-md px-2 py-0.5 min-w-[40px] text-center">{wpm}</span>
+
+              <Activity className="size-4 text-muted-foreground" />
+              <Label className="text-[13px]">SNR (dB)</Label>
+              <Slider min={-15} max={20} value={[snr]} onValueChange={([n]) => changeSnr(n)} disabled={!modelReady} />
+              <span className="justify-self-end font-mono text-[13px] font-medium text-foreground bg-muted rounded-md px-2 py-0.5 min-w-[40px] text-center">{snr}</span>
+
+              <Waves className="size-4 text-muted-foreground self-start mt-0.5" />
+              <div className="col-span-2">
+                <Label htmlFor="qsb" className="text-[13px]">QSB (fading)</Label>
+                <div className="text-[11px] text-muted-foreground mt-0.5">Moderate fading, 0.2 Hz rate</div>
+              </div>
+              <Switch id="qsb" checked={qsb} onCheckedChange={changeQsb} disabled={!modelReady} className="justify-self-end self-start mt-0.5" />
+            </div>
           </div>
-          <div className="flex gap-4 items-center mb-[10px] flex-wrap">
-            <Activity className="size-4" />
-            <Label className="min-w-[90px]">SNR (dB)</Label>
-            <Slider min={-15} max={20} value={[snr]} onValueChange={([n]) => setSnr(n)} className="flex-1" />
-            <span className="font-mono text-foreground min-w-[60px] text-right">{snr}</span>
-          </div>
-          <div className="flex gap-4 items-center mb-[10px] flex-wrap">
-            <Waves className="size-4" />
-            <Label htmlFor="qsb" className="min-w-[90px]">QSB (fading)</Label>
-            <Switch id="qsb" checked={qsb} onCheckedChange={setQsb} />
-            <span className="text-muted-foreground text-[13px]">Moderate signal fading, 0.2 Hz rate</span>
-          </div>
-          <div className="flex gap-4 items-center mb-[10px] flex-wrap">
-            <Button variant="default" disabled={busy || !modelReady || !text.trim()} onClick={onGenerate}>
-              {busy
-                ? <><Loader2 className="animate-spin size-4" /> Decoding…</>
-                : <><Play className="size-4" />Generate &amp; decode</>}
+
+          <div className="mt-4">
+            <Button
+              variant="default"
+              disabled={busy || !modelReady || !text.trim()}
+              onClick={onGenerate}
+              className="w-full"
+            >
+              {!modelReady ? (
+                <><Loader2 className="animate-spin size-4" /> Loading model…</>
+              ) : busy ? (
+                <><Loader2 className="animate-spin size-4" /> Decoding…</>
+              ) : result || dataUri ? (
+                <><Shuffle className="size-4" /> Regenerate</>
+              ) : (
+                <><Sparkles className="size-4" /> Generate &amp; decode</>
+              )}
             </Button>
-            {!modelReady && (
-              <span className="inline-flex items-center gap-1 text-muted-foreground text-sm">
-                <Loader2 className="animate-spin size-4" /> Loading model…
-              </span>
-            )}
             {error && (
-              <span className="inline-flex items-center gap-1 text-bad font-mono">
-                <TriangleAlert className="size-4" /> {error}
-              </span>
+              <div className="mt-2 inline-flex items-center gap-1.5 text-[13px] text-bad font-mono">
+                <TriangleAlert className="size-4 shrink-0" /> {error}
+              </div>
             )}
           </div>
         </CardContent>
       </Card>
 
+      {(dataUri || result) && (
+        <div ref={resultsRef} className="scroll-mt-4">
       {dataUri && (
         <Card className="mb-4">
-          <CardHeader>
-            <CardTitle><AudioLines className="size-5" />Audio</CardTitle>
+          <CardHeader className="[&]:flex [&]:flex-row [&]:items-center [&]:gap-3">
+            <CardTitle className="flex-1"><AudioLines className="size-5 text-chart-5" />Audio</CardTitle>
+            <div className="shrink-0">
+              <VolumeControl value={volume} onChange={onVolumeChange} />
+            </div>
+            <span className="shrink-0 inline-flex items-center gap-1.5 text-xs text-muted-foreground font-mono tabular-nums">
+              <Clock className="size-3.5" />
+              {fmt(playTime.current)} / {fmt(playTime.duration)}
+            </span>
           </CardHeader>
           <CardContent>
-            <audio ref={audioRef} src={dataUri} controls className="w-full" />
+            <AudioPlayer src={dataUri} bars={result?.envelopeBars} volume={volume} onTime={onTime} />
           </CardContent>
         </Card>
       )}
 
-      {result && (
-        <Card className="mb-4">
-          <CardHeader>
-            <CardTitle><Cpu className="size-5" />Model output</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="font-mono text-[22px] text-foreground px-4 py-3 bg-[var(--code-bg)] rounded-md tracking-[2px] break-all min-h-[52px]">
-              {result.text || <span className="text-muted-foreground text-[13px]">(no output)</span>}
-            </div>
-            <div className="grid grid-cols-4 gap-3 mt-3 text-[13px]">
-              <Stat label="CER" value={(cer(text, result.text) * 100).toFixed(1) + '%'} />
-              <Stat label="Confidence" value={(result.confidence * 100).toFixed(0) + '%'} />
-              <Stat label="Inference" value={result.timing.modelMs.toFixed(0) + ' ms'} />
-              <Stat label="Total" value={result.timing.totalMs.toFixed(0) + ' ms'} />
-            </div>
-            <div className="text-muted-foreground text-[13px] mt-[10px]">
-              Audio decode {result.timing.audioMs.toFixed(0)} ms · DSP {result.timing.dspMs.toFixed(0)} ms · CTC {result.timing.decodeMs.toFixed(0)} ms
-            </div>
-            <div className="mt-[14px]">
-              <span className="text-muted-foreground text-[13px]">Ground truth:&nbsp;</span>
-              <DiffLine ref_={text} hyp={result.text} />
-            </div>
-          </CardContent>
-        </Card>
+      {result && (() => {
+        const cerPct = cer(text, result.text) * 100
+        const diff = diffChars(text, result.text)
+        const errors = diff.filter((d) => !d.match).length
+        const perfect = errors === 0 && result.text.length > 0
+        return (
+          <Card className="mb-4">
+            <CardHeader className="[&]:flex [&]:flex-row [&]:items-center [&]:gap-2">
+              <CardTitle className="flex-1"><Cpu className={`size-5 ${perfect ? 'text-good' : result.text.length > 0 ? 'text-bad' : 'text-primary'}`} />Model output</CardTitle>
+              {result.text.length > 0 && (
+                perfect ? (
+                  <span className="shrink-0 inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-full bg-good/15 text-good">
+                    <CircleCheck className="size-3.5" />Perfect copy
+                  </span>
+                ) : (
+                  <span className="shrink-0 inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-full bg-bad/15 text-bad">
+                    <TriangleAlert className="size-3.5" />{errors} {errors === 1 ? 'error' : 'errors'}
+                  </span>
+                )
+              )}
+            </CardHeader>
+            <CardContent>
+              <div
+                className={`font-mono text-[22px] px-4 py-3 rounded-md tracking-[2px] break-all min-h-[52px] flex items-center gap-3 ${
+                  perfect ? 'bg-good/10' : 'bg-muted'
+                }`}
+              >
+                {result.text ? (
+                  <>
+                    {perfect && <CircleCheck className="size-5 text-good shrink-0" />}
+                    <span>
+                      {diff.map((d, i) => (
+                        <span key={i} className={d.match ? (perfect ? 'text-good' : 'text-foreground') : 'text-bad'}>
+                          {d.hyp}
+                        </span>
+                      ))}
+                    </span>
+                  </>
+                ) : (
+                  <span className="text-muted-foreground text-[13px]">(no output)</span>
+                )}
+              </div>
+
+              {!perfect && result.text.length > 0 && (
+                <div className="mt-3 p-3 bg-background border border-border rounded-md">
+                  <div className="text-muted-foreground text-xs mb-1.5">vs. ground truth</div>
+                  <div className="font-mono text-[20px] tracking-[3px] break-all">
+                    {diff.map((d, i) => (
+                      <span key={i} className={d.match ? 'text-good' : 'text-bad font-bold'}>
+                        {d.ref}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              <div className="grid grid-cols-2 gap-3 mt-3">
+                <div className="bg-background border border-border rounded-md px-3 py-2">
+                  <div className="text-muted-foreground text-xs">Character error</div>
+                  <div className={`font-mono text-[22px] font-medium ${perfect ? 'text-good' : 'text-bad'}`}>
+                    {cerPct.toFixed(1)}%
+                  </div>
+                </div>
+                <div className="bg-background border border-border rounded-md px-3 py-2">
+                  <div className="text-muted-foreground text-xs">Confidence</div>
+                  <div className="font-mono text-[22px] font-medium text-foreground">
+                    {(result.confidence * 100).toFixed(0)}%
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2 mt-3">
+                <TimingStat label="Inference" ms={result.timing.modelMs} />
+                <TimingStat label="Total" ms={result.timing.totalMs} />
+                <TimingStat label="DSP" ms={result.timing.dspMs} />
+                <TimingStat label="CTC" ms={result.timing.decodeMs} />
+              </div>
+            </CardContent>
+          </Card>
+        )
+      })()}
+        </div>
       )}
     </div>
   )
 }
 
-function Stat({ label, value }: { label: string; value: string }) {
+function TimingStat({ label, ms }: { label: string; ms: number }) {
   return (
-    <div className="bg-background border border-border rounded-md px-[10px] py-2">
-      <div className="text-muted-foreground text-xs">{label}</div>
-      <div className="text-foreground font-mono text-[15px]">{value}</div>
+    <div className="bg-background/50 rounded-md px-3 py-1.5 flex items-baseline justify-between gap-2">
+      <span className="text-muted-foreground text-xs">{label}</span>
+      <span className="text-muted-foreground font-mono text-[13px] tabular-nums">{ms.toFixed(0)} ms</span>
     </div>
   )
 }
 
-function DiffLine({ ref_, hyp }: { ref_: string; hyp: string }) {
-  const maxLen = Math.max(ref_.length, hyp.length)
-  const chars = []
+function diffChars(ref: string, hyp: string): { ref: string; hyp: string; match: boolean }[] {
+  const maxLen = Math.max(ref.length, hyp.length)
+  const out: { ref: string; hyp: string; match: boolean }[] = []
   for (let i = 0; i < maxLen; i++) {
-    const r = ref_[i] ?? '·'
+    const r = ref[i] ?? '·'
     const h = hyp[i] ?? '·'
-    chars.push(
-      <span key={i} className={`font-mono ${r === h ? 'text-good' : 'text-bad font-bold'}`}>
-        {r}
-      </span>,
-    )
+    out.push({ ref: r, hyp: h, match: r === h })
   }
-  return <span>{chars}</span>
+  return out
 }

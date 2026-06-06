@@ -1,2 +1,6 @@
+allowBuilds:
+  esbuild: true
+  onnxruntime-node: true
+  protobufjs: true
 onlyBuiltDependencies:
   - onnxruntime-node
