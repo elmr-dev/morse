@@ -8,6 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Slider } from '@/components/ui/slider'
+import { Switch } from '@/components/ui/switch'
 
 const TONE_FREQ = 700
 
@@ -96,8 +97,8 @@ export default function DecodePage() {
             <span className="value">{snr}</span>
           </div>
           <div className="row">
-            <label>QSB (fading)</label>
-            <input type="checkbox" checked={qsb} onChange={(e) => setQsb(e.target.checked)} />
+            <Label htmlFor="qsb">QSB (fading)</Label>
+            <Switch id="qsb" checked={qsb} onCheckedChange={setQsb} />
             <span className="muted">Moderate signal fading, 0.2 Hz rate</span>
           </div>
           <div className="row">
