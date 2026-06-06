@@ -27,16 +27,24 @@
     </script>
   </head>
   <body>
-    <div id="root">
-      <div id="app-loader" style="position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:20px;">
-        <div style="display:flex;align-items:center;gap:10px;">
-          <img src="/favicon.svg" alt="" style="width:28px;height:28px;" />
-          <span style="font-family:'JetBrains Mono',monospace;font-weight:700;font-size:18px;letter-spacing:-0.01em;color:var(--loader-fg);">CW <span style="font-weight:400;opacity:0.55;">Decoder</span></span>
-        </div>
-        <div style="width:24px;height:24px;border:3px solid #7162e8;border-right-color:transparent;border-radius:50%;opacity:0.7;animation:app-spin 0.7s linear infinite;"></div>
+    <div id="root"></div>
+    <div id="app-loader" style="position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:20px;opacity:0;transition:opacity 0.2s ease;">
+      <div style="display:flex;align-items:center;gap:10px;">
+        <img src="/favicon.svg" alt="" style="width:28px;height:28px;" />
+        <span style="font-family:'JetBrains Mono',monospace;font-weight:700;font-size:18px;letter-spacing:-0.01em;color:var(--loader-fg);">CW <span style="font-weight:400;opacity:0.55;">Decoder</span></span>
       </div>
+      <div style="width:24px;height:24px;border:3px solid #7162e8;border-right-color:transparent;border-radius:50%;opacity:0.7;animation:app-spin 0.7s linear infinite;"></div>
     </div>
     <style>@keyframes app-spin{to{transform:rotate(360deg)}}</style>
+    <script>
+      // Only reveal the loader if the app hasn't mounted quickly (cold load).
+      // On warm/cached reloads React mounts first and removes it, so it never
+      // flashes.
+      window.__loaderTimer = setTimeout(function () {
+        var el = document.getElementById('app-loader');
+        if (el) el.style.opacity = '1';
+      }, 250);
+    </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
