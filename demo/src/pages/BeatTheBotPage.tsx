@@ -4,6 +4,7 @@ import { loadSession } from '../inference/onnx'
 import { generateAudio } from '../inference/generate'
 import { randomCallsign, callsignRegion } from '../inference/callsign'
 import { decodeDualCallsignDataUri, type DualDecodeResult } from '../inference/dualDecode'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -207,7 +208,7 @@ export default function BeatTheBotPage() {
               <span className="mono" style={{ fontSize: 20, color: 'var(--text-h)', letterSpacing: 2 }}>
                 {round.text}
               </span>
-              <span className="muted" style={{ marginLeft: 10 }}>({round.region})</span>
+              <Badge variant="secondary" className="ml-2">{round.region}</Badge>
             </div>
 
             <div className="grid-2">
