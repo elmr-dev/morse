@@ -1,0 +1,16 @@
+# Netlify deploy for the morse-web app (apps/web).
+#
+# Connected via the Netlify GitHub App (Git integration): auto-builds on push to
+# main, deploy previews on PRs. No GitHub secrets required.
+#
+# Build runs from the repo root so the Bun workspace resolves and Turbo builds
+# morse-audio (a workspace dependency of morse-web) before morse-web. COOP/COEP
+# headers and the SPA fallback come from apps/web/public/{_headers,_redirects},
+# which are copied into the publish dir on build. base stays "/" (root-served).
+
+[build]
+  command = "bun install --frozen-lockfile && bunx turbo build --filter=morse-web"
+  publish = "apps/web/dist"
+
+[build.environment]
+  BUN_VERSION = "1.3.14"
