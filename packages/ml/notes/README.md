@@ -1,4 +1,4 @@
-# cw-ml
+# morse
 
 Streaming Morse code (CW) decoder: 4-channel DSP envelope → causal CNN + TCN +
 BiGRU + CTC → live text. ~880k params, 3.8 MB ONNX. Runs in the browser via

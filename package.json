@@ -1,5 +1,5 @@
 {
-  "name": "cw-ml",
+  "name": "morse",
   "private": true,
   "type": "module",
   "packageManager": "bun@1.3.14",

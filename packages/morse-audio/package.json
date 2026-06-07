@@ -72,7 +72,7 @@
     "url": "git+https://github.com/mdp/morse.git",
     "directory": "packages/morse-audio"
   },
-  "homepage": "https://github.com/mdp/morse/tree/main/morse-audio/packages/morse-audio#readme",
+  "homepage": "https://github.com/mdp/morse/tree/main/packages/morse-audio#readme",
   "bugs": {
     "url": "https://github.com/mdp/morse/issues"
   },

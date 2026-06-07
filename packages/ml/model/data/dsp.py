@@ -1,7 +1,7 @@
 """
 CW DSP envelope extraction — 4-channel orthogonal physics.
 
-Synced from cw-ml/cw-dsp-research/dsp.py (autoresearch composite 0.8249,
+Synced from packages/ml/cw-dsp-research/dsp.py (autoresearch composite 0.8249,
 v1.3.1 morse-audio AGC-calibrated SNR, eval -16 to -8 dB).
 
 ch0: amplitude       — ±25 Hz bandpass + Hilbert + pct-norm + double sharpen

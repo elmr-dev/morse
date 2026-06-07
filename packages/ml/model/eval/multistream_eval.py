@@ -31,7 +31,7 @@ from pathlib import Path
 import numpy as np
 import torch
 
-# Make `model.cwnet`, `data.dsp`, etc. importable when run from cw-ml/model/
+# Make `model.cwnet`, `data.dsp`, etc. importable when run from packages/ml/model/
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from data.dsp import extract_envelope                   # 4-channel DSP

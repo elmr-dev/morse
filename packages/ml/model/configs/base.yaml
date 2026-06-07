@@ -7,7 +7,7 @@ paths:
   run_dir:   runs
 
 dsp:
-  channels: 1          # Single IQ magnitude channel (cw-ml/cw-dsp-research validated)
+  channels: 1          # Single IQ magnitude channel (packages/ml/cw-dsp-research validated)
   sample_rate: 8000
   envelope_rate: 500
 

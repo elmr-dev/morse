@@ -58,7 +58,7 @@
     "url": "git+https://github.com/mdp/morse.git",
     "directory": "packages/react-morse-audio"
   },
-  "homepage": "https://github.com/mdp/morse/tree/main/morse-audio/packages/react-morse-audio#readme",
+  "homepage": "https://github.com/mdp/morse/tree/main/packages/react-morse-audio#readme",
   "bugs": {
     "url": "https://github.com/mdp/morse/issues"
   },

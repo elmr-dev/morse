@@ -621,7 +621,7 @@ that should run before committing to a retrain.
 ## How to verify the production model
 
 ```bash
-cd cw-ml/model
+cd packages/ml/model
 # Production checkpoint at runs/20260425_172212/4090_best.pt (synced from
 # /tmp/cw-runs/long-mf/, the local mirror of
 # s3://$S3_BUCKET/cw-model/runs/20260425_172212/).

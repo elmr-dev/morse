@@ -1,6 +1,6 @@
 # 4090 training config — causal TCN + chunked BiGRU streaming decoder (275ms latency)
 # 4-channel DSP (Hilbert + TKEO + 48 ms MF + 200 ms MF) — synced from
-# cw-ml/cw-dsp-research/dsp.py (composite 0.8249 on v1.3.1 -16..-8 dB eval).
+# packages/ml/cw-dsp-research/dsp.py (composite 0.8249 on v1.3.1 -16..-8 dB eval).
 # SNR floor matches eval: -16 dB. Below that the DSP is sub-2% accurate
 # (see cw-dsp-research/CURRENT.md detection-floor table) — training there
 # is mostly memorization of language priors.

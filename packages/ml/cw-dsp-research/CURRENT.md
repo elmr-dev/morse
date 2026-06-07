@@ -309,7 +309,7 @@ seeds are baked into the audio.
 
 ## Pick-Up Commands
 
-From `cw-ml/cw-dsp-research/`:
+From `packages/ml/cw-dsp-research/`:
 
 ```bash
 # First time setup

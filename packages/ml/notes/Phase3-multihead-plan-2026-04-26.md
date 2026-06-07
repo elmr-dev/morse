@@ -124,7 +124,7 @@ If the new greedy CTC drifts up by more than ~0.005 absolute, lower `tone_w` (ce
 ## How to start in a fresh session
 
 ```
-cd /Users/mdp/Sync/src/mdp/morse/cw-ml
+cd /Users/mdp/Sync/src/mdp/morse
 # Plan mode: ask Claude to read this file and implement the data labels first,
 # verify on a small generation, then move to model/training in a separate
 # milestone gate.

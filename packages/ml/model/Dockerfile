@@ -2,10 +2,10 @@
 #
 # Build context MUST be the morse/ parent directory:
 #   cd morse/
-#   docker build -f cw-ml/model/Dockerfile -t mpercival/cw-model:latest .
+#   docker build -f packages/ml/model/Dockerfile -t mpercival/cw-model:latest .
 #
 # Or use the helper script:
-#   ./cw-ml/model/build-docker.sh [--smoke] [--push TAG]
+#   ./packages/ml/model/build-docker.sh [--smoke] [--push TAG]
 #
 # Smoke test (CPU):
 #   docker run --rm -e RUN_CMD="pipeline --config configs/debug.yaml" mpercival/cw-model:latest
@@ -64,7 +64,7 @@ RUN uv pip install --system awscli
 
 # ── Copy cw-model source ──────────────────────────────────────────────────────
 WORKDIR /app
-COPY cw-ml/model/ .
+COPY packages/ml/model/ .
 
 # ── Wire in morse-audio built from local source ───────────────────────────────
 COPY morse-audio/packages/morse-audio/package.json morse-audio/packages/morse-audio/package.json

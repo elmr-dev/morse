@@ -1,4 +1,4 @@
-// Port of cw-ml/cw-dsp-research/dsp.py — 4-channel envelope extraction.
+// Port of packages/ml/cw-dsp-research/dsp.py — 4-channel envelope extraction.
 //
 // ch0: amplitude       — ±25 Hz bandpass + Hilbert + pct-norm + gentle sharpen
 // ch1: TKEO            — Teager-Kaiser energy on bandpassed signal

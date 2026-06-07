@@ -30,7 +30,7 @@ def load_env():
     except ImportError:
         sys.exit("ERROR: pip install python-dotenv")
 
-    # Search: script dir, parent (cw-ml), grandparent (morse), cwd
+    # Search: script dir, parent (ml), grandparent (morse), cwd
     candidates = [
         Path(__file__).parent / ".env",
         Path(__file__).parent.parent / ".env",

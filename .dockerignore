@@ -1,6 +1,6 @@
 # Build-context-root .dockerignore — this is the ONLY one Docker reads
-# during builds. Dockerfile lives at cw-ml/model/Dockerfile but build context
-# is morse/ (set by cw-ml/model/build-docker.sh) so morse-audio/ is reachable
+# during builds. Dockerfile lives at packages/ml/model/Dockerfile but build context
+# is morse/ (set by packages/ml/model/build-docker.sh) so morse-audio/ is reachable
 # as a sibling. Don't add child .dockerignore files — Docker won't honor them
 # and they create maintenance traps.
 **/.env
@@ -14,9 +14,9 @@
 **/*.wav
 **/*.pt
 # Allow the baked-in starting-point checkpoint into the cw-model image.
-# Keep in sync with cw-ml/model/checkpoints/.gitignore allowlist.
-!cw-ml/model/checkpoints/best.pt
-!cw-ml/model/checkpoints/base.pt
-!cw-ml/model/checkpoints/best.yaml
+# Keep in sync with packages/ml/model/checkpoints/.gitignore allowlist.
+!packages/ml/model/checkpoints/best.pt
+!packages/ml/model/checkpoints/base.pt
+!packages/ml/model/checkpoints/best.yaml
 **/*.onnx
 **/.DS_Store

@@ -144,7 +144,7 @@ If pass, Phase 4b becomes the new production checkpoint.
 ## How to start in a fresh session
 
 ```
-cd /Users/mdp/Sync/src/mdp/morse/cw-ml
+cd /Users/mdp/Sync/src/mdp/morse
 # Phase 4a numbers should already be in. If those moved the needle,
 # decide whether 4b is still worth doing. If 4a was flat, 4b is the
 # next swing.

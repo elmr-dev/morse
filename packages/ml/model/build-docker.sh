@@ -2,7 +2,7 @@
 # Build the cw-model Docker image.
 #
 # Build context is the morse/ parent directory (needed for local morse-audio source).
-# Can be run from either morse/ or cw-ml/model/:
+# Can be run from either morse/ or packages/ml/model/:
 #
 #   ./build-docker.sh [--smoke] [--push REGISTRY/IMAGE:TAG]
 #

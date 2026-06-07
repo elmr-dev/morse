@@ -1,5 +1,5 @@
 // Greedy CTC decode with entropy gate + blank-ratio gate + run-length filter.
-// Mirrors cw-ml/model/eval/decode.py:greedy_decode_with_confidence.
+// Mirrors packages/ml/model/eval/decode.py:greedy_decode_with_confidence.
 
 import {
   BLANK_IDX,
