@@ -56,6 +56,48 @@
   --shadow-2xl: var(--shadow-2xl);
   --tracking-normal: var(--tracking-normal);
   --spacing: var(--spacing);
+  /* Enter: slide up, then a few decaying bounces that settle into place.
+     Exit: a small anticipatory dip, then accelerate away (back-in). */
+  --animate-slide-up: slide-up 0.42s ease-out both;
+  --animate-slide-down: slide-down 0.4s cubic-bezier(0.36, 0, 0.66, -0.56) both;
+
+  @keyframes slide-up {
+    0% {
+      opacity: 0;
+      transform: translateY(1.25rem);
+    }
+    40% {
+      opacity: 1;
+      transform: translateY(-0.5rem);
+    }
+    58% {
+      transform: translateY(0.3rem);
+    }
+    73% {
+      transform: translateY(-0.18rem);
+    }
+    86% {
+      transform: translateY(0.09rem);
+    }
+    94% {
+      transform: translateY(-0.04rem);
+    }
+    100% {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  @keyframes slide-down {
+    from {
+      opacity: 1;
+      transform: translateY(0);
+    }
+    to {
+      opacity: 0;
+      transform: translateY(1.25rem);
+    }
+  }
 }
 
 :root {
@@ -197,5 +239,11 @@
     font-family: var(--font-sans);
     letter-spacing: var(--tracking-normal);
     -webkit-font-smoothing: antialiased;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .animate-slide-up,
+    .animate-slide-down {
+      animation: none;
+    }
   }
 }

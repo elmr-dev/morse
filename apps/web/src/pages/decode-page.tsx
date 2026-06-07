@@ -14,7 +14,13 @@ import {
   TriangleAlert,
   Waves,
 } from 'lucide-react';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import {
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from 'react';
 import AudioPlayer, { fmt } from '@/components/audio-player';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -24,6 +30,7 @@ import { Slider } from '@/components/ui/slider';
 import { Switch } from '@/components/ui/switch';
 import VolumeControl from '@/components/volume-control';
 import { usePersistedState } from '@/lib/use-persisted-state';
+import { cn } from '@/lib/utils';
 import { cer } from '../inference/decode';
 import { generateAudio } from '../inference/generate';
 import { loadSession } from '../inference/onnx';
@@ -40,6 +47,70 @@ function randomText(len: number): string {
   for (let i = 0; i < len; i++)
     out += chars[Math.floor(Math.random() * chars.length)];
   return out;
+}
+
+function usePrefersReducedMotion(): boolean {
+  const [reduce, setReduce] = useState(
+    () =>
+      typeof window !== 'undefined' &&
+      window.matchMedia('(prefers-reduced-motion: reduce)').matches
+  );
+  useEffect(() => {
+    const mq = window.matchMedia('(prefers-reduced-motion: reduce)');
+    const onChange = () => setReduce(mq.matches);
+    mq.addEventListener('change', onChange);
+    return () => mq.removeEventListener('change', onChange);
+  }, []);
+  return reduce;
+}
+
+// Keeps `children` mounted through their exit animation. React would otherwise
+// unmount the moment `show` flips false, leaving no frame to animate. While
+// leaving, we render the last-shown children (frozen) so the card stays intact
+// even though the state that produced it has already been cleared, and unmount
+// only once the slide-down finishes. `delay`/`exitDelay` stagger enter vs exit.
+function Presence({
+  show,
+  delay = 0,
+  exitDelay = 0,
+  className,
+  children,
+}: {
+  show: boolean;
+  delay?: number;
+  exitDelay?: number;
+  className?: string;
+  children: ReactNode;
+}) {
+  const [mounted, setMounted] = useState(show);
+  const reduce = usePrefersReducedMotion();
+  const frozen = useRef(children);
+  if (show) frozen.current = children;
+
+  useEffect(() => {
+    if (show) setMounted(true);
+    // With motion disabled the slide-down never runs, so onAnimationEnd would
+    // never fire — unmount immediately instead of stranding the frozen card.
+    else if (reduce) setMounted(false);
+  }, [show, reduce]);
+
+  if (!mounted) return null;
+  const exiting = !show;
+  return (
+    <div
+      className={cn(
+        exiting ? 'animate-slide-down' : 'animate-slide-up',
+        className
+      )}
+      style={{ animationDelay: `${exiting ? exitDelay : delay}ms` }}
+      onAnimationEnd={(e) => {
+        // Ignore animations bubbling up from descendants (e.g. the spinner).
+        if (exiting && e.target === e.currentTarget) setMounted(false);
+      }}
+    >
+      {show ? children : frozen.current}
+    </div>
+  );
 }
 
 export default function DecodePage() {
@@ -59,8 +130,9 @@ export default function DecodePage() {
   });
   const [playTime, setPlayTime] = useState({ current: 0, duration: 0 });
   const resultsRef = useRef<HTMLDivElement>(null);
-  // True once we've auto-scrolled results into view; prevents re-scrolling (and
-  // the resulting page jump) on every Regenerate while results are already shown.
+  const modelRef = useRef<HTMLDivElement>(null);
+  // Guards the auto-scroll so it fires once per generate, not on every render
+  // (e.g. play-time ticks). Regenerate re-arms it explicitly in onGenerate.
   const didScrollRef = useRef(false);
 
   const onTime = useCallback((current: number, duration: number) => {
@@ -80,7 +152,9 @@ export default function DecodePage() {
       return;
     didScrollRef.current = true;
     const id = window.setTimeout(() => {
-      resultsRef.current?.scrollIntoView({
+      // Bring the model output into view (it's the point of a decode), falling
+      // back to the results container if its card isn't mounted yet.
+      (modelRef.current ?? resultsRef.current)?.scrollIntoView({
         behavior: 'smooth',
         block: 'start',
       });
@@ -143,6 +217,9 @@ export default function DecodePage() {
     setError(null);
     setResult(null);
     setBusy(true);
+    // Regenerate is an explicit user action, so bring the freshly-animated
+    // results back into view (the scroll effect is otherwise one-shot).
+    didScrollRef.current = false;
     try {
       const out = generateAudio({
         text: text.toUpperCase(),
@@ -333,8 +410,8 @@ export default function DecodePage() {
         </CardContent>
       </Card>
 
-      {(dataUri || result) && (
-        <div ref={resultsRef} className="scroll-mt-4">
+      <div ref={resultsRef} className="scroll-mt-4">
+        <Presence show={!!dataUri}>
           {dataUri && (
             <Card className="mb-4">
               <CardHeader className="[&]:flex [&]:flex-row [&]:items-center [&]:gap-3">
@@ -360,7 +437,9 @@ export default function DecodePage() {
               </CardContent>
             </Card>
           )}
+        </Presence>
 
+        <Presence show={!!result} delay={90}>
           {result &&
             (() => {
               // The model's charset has no space, so it never emits word gaps. Grade
@@ -377,7 +456,7 @@ export default function DecodePage() {
               // re-insert visible word breaks into the spaceless output for reading.
               const wordStarts = wordStartIndices(text.toUpperCase());
               return (
-                <Card className="mb-4">
+                <Card ref={modelRef} className="mb-4">
                   <CardHeader className="[&]:flex [&]:flex-row [&]:items-center [&]:gap-2">
                     <CardTitle className="flex-1">
                       <Cpu
@@ -505,8 +584,8 @@ export default function DecodePage() {
                 </Card>
               );
             })()}
-        </div>
-      )}
+        </Presence>
+      </div>
     </div>
   );
 }
