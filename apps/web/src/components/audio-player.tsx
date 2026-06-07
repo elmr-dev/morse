@@ -203,9 +203,9 @@ export default function AudioPlayer({
               />
             </div>
           )}
-          {/* Playhead */}
+          {/* Playhead — amber radio-dial needle with a soft backlit glow */}
           <div
-            className="absolute top-1 bottom-1 w-0.5 bg-foreground/70 rounded-full pointer-events-none"
+            className="absolute top-1 bottom-1 w-0.5 bg-dial rounded-full pointer-events-none shadow-[0_0_6px_1px] shadow-dial/60"
             style={{ left: `${progress * 100}%` }}
           />
         </div>

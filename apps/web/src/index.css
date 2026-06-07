@@ -37,6 +37,7 @@
   --color-sidebar-ring: var(--sidebar-ring);
   --color-good: var(--success);
   --color-bad: var(--destructive);
+  --color-dial: var(--dial);
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
@@ -121,6 +122,8 @@
   --input: oklch(0.9115 0.0216 285.9625);
   --ring: oklch(0.5417 0.179 288.0332);
   --success: oklch(0.55 0.17 145);
+  /* Radio-dial pointer: warm amber, like a backlit analog tuner needle. */
+  --dial: oklch(0.72 0.17 60);
   --chart-1: oklch(0.5417 0.179 288.0332);
   --chart-2: oklch(0.7042 0.1602 288.988);
   --chart-3: oklch(0.5679 0.2113 276.7065);
@@ -183,6 +186,8 @@
   --input: oklch(0.3261 0.0597 282.5832);
   --ring: oklch(0.7162 0.1597 290.3962);
   --success: oklch(0.7 0.17 145);
+  /* Brighter in dark mode so the needle reads as glowing against the bars. */
+  --dial: oklch(0.8 0.16 70);
   --chart-1: oklch(0.7162 0.1597 290.3962);
   --chart-2: oklch(0.6382 0.1047 274.9117);
   --chart-3: oklch(0.7482 0.1235 244.7492);
