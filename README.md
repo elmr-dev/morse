@@ -147,5 +147,12 @@ Publishes `morse-audio` and `react-morse-audio` to npm with public access.
 
 ## Deployment
 
-`apps/web` deploys to GitHub Pages via `.github/workflows/deploy.yml` on push to
-`main`. The app builds to `apps/web/dist` and serves at the Pages root.
+No automated web deploy is currently configured — the GitHub Pages workflow was
+retired pending a hosting decision. Pages was a poor fit anyway: it can't serve
+the COOP/COEP headers `onnxruntime-web` needs for multi-threaded WASM, nor the
+SPA fallback for `BrowserRouter` deep links. `apps/web/public/{_headers,_redirects}`
+already target a host that honors both (Netlify / Cloudflare Pages), and the
+build serves at root (`base` is `/`).
+
+To deploy, build `apps/web` (`bun run build` → `apps/web/dist`) and point a host
+at that directory. (The npm packages still publish via the workflow above.)
