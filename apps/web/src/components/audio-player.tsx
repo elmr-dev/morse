@@ -183,7 +183,10 @@ export default function AudioPlayer({
           {hasBars ? (
             <div className="flex items-end justify-between w-full h-9">
               {displayBars.map((v, i) => {
-                const played = i / displayBars.length <= progress;
+                // Flip at the bar's center (not its left edge) so the
+                // played/unplayed boundary straddles the playhead instead of
+                // running a full bar-width ahead of it.
+                const played = (i + 0.5) / displayBars.length <= progress;
                 const px = 3 + v * 33; // 3px floor (gaps) .. 36px (key-down)
                 return (
                   <div
