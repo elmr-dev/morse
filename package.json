@@ -10,6 +10,11 @@
   ],
   "scripts": {
     "prepare": "lefthook install",
+    "build": "turbo build",
+    "test": "turbo test",
+    "check": "turbo check",
+    "typecheck": "turbo typecheck",
+    "dev": "turbo dev",
     "knip": "knip",
     "setup:python": "uv sync --directory packages/ml/model && uv sync --directory packages/ml/cw-dsp-research",
     "model:export": "turbo run sync:web --filter=cw-model",
