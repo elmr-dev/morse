@@ -1,0 +1,11 @@
+{
+  "$schema": "https://unpkg.com/knip@6/schema.json",
+  "ignore": ["archive/**", "apps/web/src/components/ui/**"],
+  "ignoreBinaries": ["flac", "ffmpeg"],
+  "ignoreWorkspaces": ["packages/typescript-config"],
+  "workspaces": {
+    ".": { "project": ["**/*.{ts,tsx}"] },
+    "apps/*": { "project": ["**/*.{ts,tsx}"] },
+    "packages/*": { "project": ["**/*.{ts,tsx}"] }
+  }
+}

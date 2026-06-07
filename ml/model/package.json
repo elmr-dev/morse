@@ -1,8 +1,0 @@
-{
-  "name": "cw-model",
-  "private": true,
-  "version": "0.1.0",
-  "dependencies": {
-    "morse-audio": "workspace:*"
-  }
-}

@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="%BASE_URL%favicon.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Morse</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet" />
+    <script>
+      (() => {
+        var stored = localStorage.getItem('theme');
+        var prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+        var dark = stored === 'dark' || (stored !== 'light' && prefersDark);
+        if (dark) document.documentElement.classList.add('dark');
+        // Paint the themed background immediately so there's no white flash
+        // before the CSS bundle and React mount.
+        document.documentElement.style.backgroundColor = dark
+          ? 'oklch(0.1743 0.0227 283.7998)'
+          : 'oklch(0.9730 0.0133 286.1503)';
+        document.documentElement.style.setProperty(
+          '--loader-fg',
+          dark ? 'oklch(0.9185 0.0257 285.8834)' : 'oklch(0.3015 0.0572 282.4176)'
+        );
+      })();
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <div id="app-loader" style="position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:20px;opacity:0;transition:opacity 0.2s ease;">
+      <div style="display:flex;align-items:center;gap:10px;">
+        <img src="%BASE_URL%favicon.svg" alt="" style="width:28px;height:28px;" />
+        <span style="font-family:'JetBrains Mono',monospace;font-weight:700;font-size:18px;letter-spacing:-0.01em;color:var(--loader-fg);">Morse</span>
+      </div>
+      <div style="width:24px;height:24px;border:3px solid #7162e8;border-right-color:transparent;border-radius:50%;opacity:0.7;animation:app-spin 0.7s linear infinite;"></div>
+    </div>
+    <style>@keyframes app-spin{to{transform:rotate(360deg)}}</style>
+    <script>
+      // Only reveal the loader if the app hasn't mounted quickly (cold load).
+      // On warm/cached reloads React mounts first and removes it, so it never
+      // flashes.
+      window.__loaderTimer = setTimeout(() => {
+        var el = document.getElementById('app-loader');
+        if (el) el.style.opacity = '1';
+      }, 250);
+    </script>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

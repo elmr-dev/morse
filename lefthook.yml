@@ -1,0 +1,26 @@
+# Pre-commit gate: auto-fix lint/format, type-check, then run tests.
+# piped = run sequentially and stop at the first failure; priority sets order.
+pre-commit:
+  piped: true
+  commands:
+    check:
+      priority: 1
+      # Only engage when TS sources are staged; biome's writes are re-staged
+      # back into the commit so the committed tree matches what was linted.
+      glob: '*.{ts,tsx}'
+      run: bunx turbo check:fix
+      stage_fixed: true
+    typecheck:
+      priority: 2
+      run: bunx turbo typecheck
+    test:
+      priority: 3
+      run: bunx turbo test
+
+# Pre-push gate: full build. typecheck (pre-commit) catches type errors but not
+# bundler failures (tsup DTS, vite). Build is too heavy for every commit, so it
+# runs here — turbo's cache keeps it fast when nothing relevant changed.
+pre-push:
+  commands:
+    build:
+      run: bunx turbo build

@@ -3,6 +3,7 @@ dist/
 .env
 **/dist/
 **/.vite/
+**/.turbo/
 packages/*/dist/
 *.log
 .DS_Store

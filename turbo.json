@@ -1,0 +1,69 @@
+{
+  "$schema": "https://turbo.build/schema.json",
+  "tasks": {
+    "build": {
+      "dependsOn": ["^build"],
+      "outputs": ["dist/**"],
+      "outputLogs": "errors-only"
+    },
+    "dev": {
+      "cache": false,
+      "persistent": true
+    },
+    "test": {
+      "dependsOn": ["^build"],
+      "outputs": [],
+      "outputLogs": "errors-only"
+    },
+    "check": {
+      "outputs": [],
+      "outputLogs": "errors-only"
+    },
+    "typecheck": {
+      "dependsOn": ["^build"],
+      "outputs": [],
+      "outputLogs": "errors-only"
+    },
+    "check:fix": {
+      "cache": false,
+      "outputs": [],
+      "outputLogs": "errors-only"
+    },
+
+    // ── cw-model: pipeline producing apps/web/public/model/cw_model_full.onnx ──
+    // Synthetic training/val WAVs -> data/{train,val}. Tens of GB, gitignored,
+    // generated deliberately (fixed seed) — never cached.
+    "generate": {
+      "cache": false
+    },
+    // Train CWNet -> runs/<ts>/. GPU, hours-long, non-deterministic. best.pt is
+    // hand-promoted from a winning run and committed — not a cacheable output.
+    "train": {
+      "cache": false
+    },
+    // Full training run on a RunPod 4090 (how the committed best.pt was made).
+    // Remote + credentialed — never cached.
+    "train:runpod": {
+      "cache": false
+    },
+    // The one deterministic, cacheable build: best.pt + config -> ONNX.
+    // Re-runs only when the checkpoint, config, export script, or model changes.
+    "export:onnx": {
+      "inputs": [
+        "scripts/export_full_onnx.py",
+        "model/**",
+        "checkpoints/best.pt",
+        "checkpoints/best.yaml"
+      ],
+      "outputs": ["checkpoints/cw_model_full.onnx"]
+    },
+    // Copy the exported ONNX into apps/web/public/model/. Cross-package output,
+    // so Turbo can't cache-restore it; dependsOn gates it behind a fresh export.
+    "sync:web": {
+      "dependsOn": ["export:onnx"],
+      "inputs": ["checkpoints/cw_model_full.onnx"],
+      "cache": false
+    }
+  },
+  "ui": "stream-with-experimental-timestamps"
+}

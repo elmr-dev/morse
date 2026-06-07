@@ -1,0 +1,14 @@
+{
+  "name": "typescript-config",
+  "version": "0.0.1",
+  "private": true,
+  "license": "MIT",
+  "files": [
+    "*.json"
+  ],
+  "exports": {
+    "./base": "./base.json",
+    "./react-library": "./react-library.json",
+    "./react-app": "./react-app.json"
+  }
+}
