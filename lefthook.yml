@@ -1,3 +1,7 @@
+output:
+  - summary
+  - skips
+  - meta
 # Pre-commit gate: auto-fix lint/format, type-check, then run tests.
 # piped = run sequentially and stop at the first failure; priority sets order.
 pre-commit:
@@ -7,7 +11,7 @@ pre-commit:
       priority: 1
       # Only engage when TS sources are staged; biome's writes are re-staged
       # back into the commit so the committed tree matches what was linted.
-      glob: '*.{ts,tsx}'
+      glob: "*.{ts,tsx}"
       run: bunx turbo check:fix
       stage_fixed: true
     typecheck:
