@@ -99,6 +99,29 @@
       transform: translateY(1.25rem);
     }
   }
+
+  /* Scrim behind the standalone "More" drawer (vaul drives the panel's own
+     slide + drag motion; only the overlay needs a CSS fade). */
+  --animate-fade-in: fade-in 0.3s ease-out both;
+  --animate-fade-out: fade-out 0.22s ease-in both;
+
+  @keyframes fade-in {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+
+  @keyframes fade-out {
+    from {
+      opacity: 1;
+    }
+    to {
+      opacity: 0;
+    }
+  }
 }
 
 :root {
@@ -270,9 +293,55 @@
     position: relative;
     z-index: 1;
   }
+  /* Portrait-only guard (markup in index.html). Hidden by default; shown only
+     in standalone (the `standalone` class is set by the inline script in
+     index.html) on phone-sized landscape viewports — the max-height scopes it
+     to phones so desktop/tablet landscape is never blocked. Backs up the
+     manifest's "orientation": "portrait", which iOS ignores. A normal browser
+     tab never adds the class, so the guard never shows there. */
+  #rotate-guard {
+    display: none;
+  }
+  @media (orientation: landscape) and (max-height: 500px) {
+    html.standalone #rotate-guard {
+      position: fixed;
+      inset: 0;
+      z-index: 100;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 1rem;
+      padding: 2rem;
+      text-align: center;
+      background: var(--background);
+      color: var(--foreground);
+    }
+    html.standalone #rotate-guard svg {
+      width: 3rem;
+      height: 3rem;
+      color: var(--primary);
+      animation: rotate-hint 2.4s ease-in-out infinite;
+    }
+    html.standalone #rotate-guard p {
+      font-weight: 600;
+      font-size: 1rem;
+    }
+  }
+  @keyframes rotate-hint {
+    0%,
+    55%,
+    100% {
+      transform: rotate(0deg);
+    }
+    78% {
+      transform: rotate(-90deg);
+    }
+  }
   @media (prefers-reduced-motion: reduce) {
     .animate-slide-up,
-    .animate-slide-down {
+    .animate-slide-down,
+    #rotate-guard svg {
       animation: none;
     }
   }

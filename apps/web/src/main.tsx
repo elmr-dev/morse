@@ -6,6 +6,7 @@ import App from './app.tsx';
 import Footer from './components/footer';
 import ScrollToTop from './components/scroll-to-top';
 import { MobileTabBar } from './components/site-nav';
+import { isStandalone } from './lib/use-standalone';
 
 const rootEl = document.getElementById('root');
 if (!rootEl) throw new Error('Root element not found');
@@ -13,9 +14,17 @@ createRoot(rootEl).render(
   <StrictMode>
     <BrowserRouter basename={import.meta.env.BASE_URL}>
       <ScrollToTop />
-      {/* pb on mobile reserves room for the fixed bottom tab bar so content
-          and footer never hide behind it; cleared at sm where the bar is hidden. */}
-      <div className="min-h-screen flex flex-col pb-20 sm:pb-0">
+      {/* pb reserves room for the fixed bottom tab bar so content and footer
+          never hide behind it. In a browser the bar is mobile-only, so the
+          padding clears at sm; in standalone the bar shows at all widths, so
+          the padding must persist at all widths. */}
+      <div
+        className={
+          isStandalone()
+            ? 'min-h-screen flex flex-col pb-20'
+            : 'min-h-screen flex flex-col pb-20 sm:pb-0'
+        }
+      >
         <div className="w-full max-w-[900px] mx-auto px-5 pt-4">
           <App />
         </div>

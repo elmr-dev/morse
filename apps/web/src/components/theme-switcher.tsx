@@ -1,25 +1,7 @@
 import { Monitor, Moon, Sun } from 'lucide-react';
-import { useEffect, useState } from 'react';
 import { Button } from '@/components/ui/button';
+import { type Theme, useTheme } from '@/lib/use-theme';
 
-type Theme = 'light' | 'dark' | 'system';
-
-function getInitialTheme(): Theme {
-  const stored = localStorage.getItem('theme');
-  if (stored === 'light' || stored === 'dark' || stored === 'system')
-    return stored;
-  return 'system';
-}
-
-function applyTheme(theme: Theme) {
-  const dark =
-    theme === 'dark' ||
-    (theme === 'system' &&
-      window.matchMedia('(prefers-color-scheme: dark)').matches);
-  document.documentElement.classList.toggle('dark', dark);
-}
-
-const cycle: Theme[] = ['light', 'dark', 'system'];
 const icons: Record<Theme, React.ReactNode> = {
   light: <Sun className="size-5 sm:size-4" />,
   dark: <Moon className="size-5 sm:size-4" />,
@@ -27,30 +9,13 @@ const icons: Record<Theme, React.ReactNode> = {
 };
 
 export default function ThemeSwitcher() {
-  const [theme, setTheme] = useState<Theme>(getInitialTheme);
-
-  useEffect(() => {
-    applyTheme(theme);
-    if (theme === 'system') {
-      localStorage.removeItem('theme');
-    } else {
-      localStorage.setItem('theme', theme);
-    }
-
-    if (theme !== 'system') return;
-    const mq = window.matchMedia('(prefers-color-scheme: dark)');
-    const handler = () => applyTheme('system');
-    mq.addEventListener('change', handler);
-    return () => mq.removeEventListener('change', handler);
-  }, [theme]);
+  const { theme, cycleTheme } = useTheme();
 
   return (
     <Button
       variant="ghost"
       size="icon"
-      onClick={() =>
-        setTheme((t) => cycle[(cycle.indexOf(t) + 1) % cycle.length])
-      }
+      onClick={cycleTheme}
       aria-label={`Theme: ${theme}`}
       title={`Theme: ${theme}`}
       className="size-11 sm:size-9"

@@ -113,13 +113,21 @@ export default function DecodePage() {
     // or drop characters).
     if (dataUri || result || error) clearOutput();
   }
+  // While dragging a signal slider, update the value live (so the label and
+  // thumb track) but DON'T touch the output yet. Clearing on every intermediate
+  // value makes the cards below flicker away mid-drag — very noticeable on iOS,
+  // where moving, pausing, and moving again repeatedly tears them down. The
+  // stale clip/decode is cleared once, on commit (pointer-up / keyboard), via
+  // commitSignal below.
   function changeWpm(v: number) {
     setWpm(v);
-    clearOutput();
   }
   function changeSnr(v: number) {
     setSnr(v);
-    clearOutput();
+  }
+  // Fired by the sliders' onValueCommit — i.e. the user finished interacting.
+  function commitSignal() {
+    if (dataUri || result || error) clearOutput();
   }
   function changeQsb(v: boolean) {
     setQsb(v);
@@ -284,6 +292,7 @@ export default function DecodePage() {
               max={50}
               value={[wpm]}
               onValueChange={([n]) => changeWpm(n)}
+              onValueCommit={commitSignal}
               disabled={!modelReady}
             />
             <span className="justify-self-end font-mono text-[13px] font-medium text-foreground bg-muted rounded-md px-2 py-0.5 min-w-[40px] text-center">
@@ -297,6 +306,7 @@ export default function DecodePage() {
               max={20}
               value={[snr]}
               onValueChange={([n]) => changeSnr(n)}
+              onValueCommit={commitSignal}
               disabled={!modelReady}
             />
             <span className="justify-self-end font-mono text-[13px] font-medium text-foreground bg-muted rounded-md px-2 py-0.5 min-w-[40px] text-center">

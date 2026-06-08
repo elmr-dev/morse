@@ -36,10 +36,29 @@
           ? 'oklch(0.1743 0.0227 283.7998)'
           : 'oklch(0.93 0.006 286.15)';
       })();
+      (() => {
+        // Mark standalone (installed PWA / iOS home-screen) launches before
+        // React mounts so the portrait-only guard (index.css) never flashes in
+        // a normal browser tab.
+        var standalone =
+          window.matchMedia('(display-mode: standalone)').matches ||
+          window.navigator.standalone === true;
+        if (standalone) document.documentElement.classList.add('standalone');
+      })();
     </script>
   </head>
   <body>
     <div id="root"></div>
+    <!-- Portrait-only guard. The manifest "orientation" locks installed PWAs on
+         Chromium, but iOS ignores it, so this overlay (styled in index.css)
+         enforces portrait on phone-sized landscape viewports. -->
+    <div id="rotate-guard" role="alert">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <rect x="7" y="2" width="10" height="20" rx="2" />
+        <path d="M11 18h2" />
+      </svg>
+      <p>Rotate your device to portrait</p>
+    </div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import { useEffect } from 'react';
 import { Link } from 'react-router-dom';
+import { GITHUB_URL } from '@/components/github';
 import { Reveal } from '@/components/reveal';
 import { cn } from '@/lib/utils';
 
@@ -113,7 +114,16 @@ function Builders() {
         ))}
       </div>
       <p className="text-sm text-muted-foreground leading-relaxed">
-        The source is public on GitHub — link in the header.
+        The source is public on{' '}
+        <a
+          href={GITHUB_URL}
+          target="_blank"
+          rel="noreferrer"
+          className="text-dial-strong underline decoration-dial/40 underline-offset-2 hover:decoration-dial transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring/50 rounded-sm"
+        >
+          GitHub
+        </a>
+        .
       </p>
     </div>
   );
@@ -295,7 +305,7 @@ const SECTIONS: FaqSection[] = [
       {
         q: 'Who made this, and is it open source?',
         a: [
-          'MORSE is a two-person project — the decoder and the game were built together. Mark Percival (KC4T) started it and leads the ML and DSP; John Schult (W4GIT) leads engineering, UX, and the frontend. The source is public on GitHub — link in the header.',
+          'MORSE is a two-person project — the decoder and the game were built together. Mark Percival (KC4T) started it and leads the ML and DSP; John Schult (W4GIT) leads engineering, UX, and the frontend. The source is public on GitHub.',
         ],
         node: <Builders />,
       },
