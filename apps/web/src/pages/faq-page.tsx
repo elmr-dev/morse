@@ -1,4 +1,5 @@
 import {
+  ArrowRight,
   BookOpen,
   ChevronRight,
   Code,
@@ -10,9 +11,9 @@ import {
   Swords,
   Trophy,
 } from 'lucide-react';
+import { useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { Reveal } from '@/components/reveal';
-import { buttonVariants } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 
 interface QA {
@@ -24,6 +25,22 @@ interface QA {
   node?: React.ReactNode;
   /** Optional deeper, ham/technical expansion. */
   technical?: string[];
+  /** Stable deep-link anchor (e.g. /faq#is-it-rigged). Falls back to a slug of
+   *  the question, but set this explicitly for any question linked to from
+   *  elsewhere so the URL survives copy edits. */
+  anchor?: string;
+}
+
+/** URL-safe id for a question — its explicit anchor or a slug of the text. */
+function faqId(item: QA): string {
+  return (
+    item.anchor ??
+    item.q
+      .toLowerCase()
+      .replace(/[''“”]/g, '')
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/(^-|-$)/g, '')
+  );
 }
 
 const hamQthUrl = (call: string) =>
@@ -260,6 +277,7 @@ const SECTIONS: FaqSection[] = [
       },
       {
         q: 'Is it rigged? Does the bot get an unfair advantage?',
+        anchor: 'is-it-rigged',
         a: [
           'Here is the honest answer: you and the model work from the exact same audio. The callsign is keyed twice inside one clip, and you hear that whole clip once — both repeats included — just as the model does. Neither side gets extra plays or a cleaner signal.',
           'The model’s one edge is what it does after the audio: it decodes each of the two sends separately and merges the two copies, while you have to listen in real time and commit to a single copy on the spot. That is a processing advantage, not an access advantage — and combining two noisy copies of the same signal is a genuine low-SNR technique, the machine equivalent of a human catching on the second repeat what they missed on the first. The interesting question is not “can a machine beat a human” but how much that merge step is worth against a trained ear — and the game shows you exactly how the model used its two looks after every round.',
@@ -293,6 +311,40 @@ const SECTIONS: FaqSection[] = [
 ];
 
 export default function FaqPage() {
+  // Deep-linking: /faq#<id> opens that question and scrolls it into view, with
+  // a brief highlight. Runs on mount and on later hash changes. (ScrollToTop
+  // bails when a hash is present so it doesn't fight this.)
+  useEffect(() => {
+    let flashTimer = 0;
+    const openFromHash = () => {
+      const id = decodeURIComponent(window.location.hash.slice(1));
+      if (!id) return;
+      const el = document.getElementById(id);
+      if (!(el instanceof HTMLDetailsElement)) return;
+      el.open = true;
+      const reduce = window.matchMedia(
+        '(prefers-reduced-motion: reduce)'
+      ).matches;
+      el.scrollIntoView({
+        behavior: reduce ? 'auto' : 'smooth',
+        block: 'start',
+      });
+      el.classList.add('faq-flash');
+      window.clearTimeout(flashTimer);
+      flashTimer = window.setTimeout(
+        () => el.classList.remove('faq-flash'),
+        1900
+      );
+    };
+    const initial = window.setTimeout(openFromHash, 0);
+    window.addEventListener('hashchange', openFromHash);
+    return () => {
+      window.clearTimeout(initial);
+      window.clearTimeout(flashTimer);
+      window.removeEventListener('hashchange', openFromHash);
+    };
+  }, []);
+
   return (
     <div className="pb-6">
       {/* hero header — matches the landing receiver tone */}
@@ -328,39 +380,57 @@ export default function FaqPage() {
               </div>
               <div className="flex flex-col rounded-lg border border-border overflow-hidden divide-y divide-border">
                 {section.items.map((item) => (
-                  <FaqRow key={item.q} item={item} />
+                  <FaqRow key={item.q} item={item} id={faqId(item)} />
                 ))}
               </div>
             </section>
           </Reveal>
         ))}
 
-        {/* Closing CTA */}
+        {/* Closing CTA — two destination tiles */}
         <Reveal>
-          <div className="rounded-lg border border-border bg-card p-5 flex flex-col sm:flex-row sm:items-center gap-4">
-            <p className="flex-1 font-mono text-sm text-foreground">
+          <div className="rounded-lg border border-border bg-card p-5">
+            <div className="flex items-center gap-1.5 font-mono text-[11px] tracking-[0.2em] uppercase text-muted-foreground">
+              <span className="inline-block size-1.5 rounded-full bg-dial shadow-[0_0_8px_2px] shadow-dial/60" />
+              Your turn on the key
+            </div>
+            <p className="mt-2 font-mono text-sm text-foreground">
               Enough reading — go pull something out of the noise.
             </p>
-            <div className="flex gap-3">
+            <div className="mt-4 grid gap-3 sm:grid-cols-2">
               <Link
                 to="/decode"
-                className={cn(
-                  buttonVariants({ variant: 'default' }),
-                  'font-mono'
-                )}
+                className="group flex items-center gap-3 rounded-lg border border-border bg-background p-3.5 transition-colors hover:border-primary/50 hover:bg-muted/40 outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
               >
-                <Radio className="size-4" />
-                Decoder
+                <span className="flex size-9 shrink-0 items-center justify-center rounded-md bg-primary/15 text-primary">
+                  <Radio className="size-4" />
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block font-mono text-sm text-foreground">
+                    Open the decoder
+                  </span>
+                  <span className="block text-[12px] leading-snug text-muted-foreground">
+                    Bury text in noise; watch CWNet copy it.
+                  </span>
+                </span>
+                <ArrowRight className="size-4 shrink-0 text-muted-foreground/40 transition-transform group-hover:translate-x-0.5" />
               </Link>
               <Link
                 to="/beat-the-bot"
-                className={cn(
-                  buttonVariants({ variant: 'secondary' }),
-                  'font-mono'
-                )}
+                className="group flex items-center gap-3 rounded-lg border border-dial/40 border-l-2 border-l-dial bg-dial/[0.06] p-3.5 transition-colors hover:border-dial/60 outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
               >
-                <Swords className="size-4" />
-                Beat the Bot
+                <span className="flex size-9 shrink-0 items-center justify-center rounded-md bg-dial/15 text-dial-strong">
+                  <Swords className="size-4" />
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block font-mono text-sm text-foreground">
+                    Beat the Bot
+                  </span>
+                  <span className="block text-[12px] leading-snug text-muted-foreground">
+                    Out-copy the model on a buried call sign.
+                  </span>
+                </span>
+                <ArrowRight className="size-4 shrink-0 text-dial-strong/50 transition-transform group-hover:translate-x-0.5" />
               </Link>
             </div>
           </div>
@@ -374,9 +444,9 @@ export default function FaqPage() {
 
 /* Single accordion row: <details> for free keyboard + a11y, styled as a
    receiver readout. The nested "technical version" is a second <details>. */
-function FaqRow({ item }: { item: QA }) {
+function FaqRow({ item, id }: { item: QA; id: string }) {
   return (
-    <details className="faq-row group bg-card">
+    <details id={id} className="faq-row group bg-card scroll-mt-20">
       <summary className="flex items-center gap-3 px-4 py-3.5 cursor-pointer select-none list-none hover:bg-muted/40 transition-colors">
         <Plus className="size-4 text-dial-strong shrink-0 transition-transform duration-200 group-open:rotate-45" />
         <span className="flex-1 font-mono text-[14px] sm:text-[15px] text-foreground leading-snug">
@@ -421,4 +491,15 @@ const FAQ_CSS = `
 /* hide the default disclosure triangle across browsers */
 .faq-row > summary::-webkit-details-marker,
 .tech > summary::-webkit-details-marker { display: none; }
+
+/* brief amber wash when a question is opened via a deep link, fading back to
+   the card colour so nothing snaps */
+@keyframes faq-flash {
+  from { background-color: color-mix(in oklch, var(--dial) 22%, var(--card)); }
+  to   { background-color: var(--card); }
+}
+.faq-flash { animation: faq-flash 1.8s ease-out; }
+@media (prefers-reduced-motion: reduce) {
+  .faq-flash { animation: none; }
+}
 `;

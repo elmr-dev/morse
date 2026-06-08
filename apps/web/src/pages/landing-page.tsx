@@ -1,6 +1,7 @@
 import {
   ArrowRight,
   Cpu,
+  HelpCircle,
   Radio,
   ShieldCheck,
   Swords,
@@ -47,7 +48,7 @@ export default function LandingPage() {
 
 function Hero() {
   return (
-    <section className="relative pt-6 text-center">
+    <section className="relative pt-0 sm:pt-6 text-center">
       <div className="relative">
         <div className="flex items-center justify-center gap-2 mb-6 font-mono text-[11px] tracking-[0.2em] uppercase text-muted-foreground">
           <span className="inline-block size-1.5 rounded-full bg-dial shadow-[0_0_8px_2px] shadow-dial/60 animate-rx-pulse" />
@@ -99,7 +100,7 @@ function Hero() {
 function HeroWaveform() {
   const snr = `−${Math.abs(HERO_SNR_DB)} dB SNR`;
   return (
-    <div className="mt-10 mx-auto max-w-2xl px-4">
+    <div className="mt-10 mx-auto max-w-2xl sm:px-4">
       {/* Both scope rows share one time axis: identical width and the faint
           vertical grid behind them tie "this mush up here" to "this clean
           keying down here at the same moment." */}
@@ -172,7 +173,7 @@ function HeroWaveform() {
           this exact clip (the bake refuses to ship unless it's letter-perfect),
           and the percentage is the model's real confidence. */}
       <div className="mt-3.5 flex items-center justify-between gap-3 rounded-lg border border-border bg-card px-4 py-3">
-        <span className="font-mono text-base sm:text-lg tracking-[0.18em] text-foreground">
+        <span className="font-mono text-sm sm:text-lg tracking-[0.1em] sm:tracking-[0.18em] text-foreground">
           {HERO_DECODED}
         </span>
         <span className="inline-flex items-center gap-1.5 font-mono text-[11px] uppercase tracking-[0.15em] text-good shrink-0">
@@ -317,14 +318,14 @@ function BeatTheBotTeaser() {
           </p>
           <div className="mt-6">
             <Link
-              to="/faq"
+              to="/faq#is-it-rigged"
               className={cn(
                 buttonVariants({ variant: 'secondary' }),
-                'font-mono'
+                'w-full sm:w-auto font-mono'
               )}
             >
+              <HelpCircle className="size-4" />
               How the matchup works
-              <ArrowRight className="size-4" />
             </Link>
           </div>
         </div>

@@ -212,6 +212,10 @@ export default function DecodePage() {
                   void onGenerate();
               }}
               placeholder="Type text to send, or hit Random"
+              autoCapitalize="characters"
+              autoComplete="off"
+              autoCorrect="off"
+              spellCheck={false}
               className="flex-1 h-10 font-mono uppercase min-w-0"
               maxLength={40}
               disabled={!modelReady}
@@ -245,7 +249,7 @@ export default function DecodePage() {
             </div>
           )}
 
-          <div className="mt-4 rounded-lg border border-border bg-background/40 p-3">
+          <div className="mt-4 rounded-lg border border-border bg-background/40 p-3 select-none">
             <div className="flex items-center justify-between mb-3">
               <div className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
                 Signal
@@ -352,7 +356,11 @@ export default function DecodePage() {
                   Audio
                 </CardTitle>
                 <div className="shrink-0">
-                  <VolumeControl value={volume} onChange={onVolumeChange} />
+                  <VolumeControl
+                    value={volume}
+                    onChange={onVolumeChange}
+                    align="center"
+                  />
                 </div>
                 <span className="shrink-0 inline-flex items-center gap-1.5 text-xs text-muted-foreground font-mono tabular-nums">
                   <Clock className="size-3.5" />

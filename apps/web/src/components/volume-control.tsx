@@ -1,18 +1,34 @@
 import { Volume2, VolumeX } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { Slider } from '@/components/ui/slider';
+import { cn } from '@/lib/utils';
+
+// iOS/iPadOS WebKit makes HTMLMediaElement.volume read-only — programmatic
+// volume is ignored (hardware buttons only), so the control would be a no-op.
+// (iPadOS reports as "MacIntel" with touch points, hence the second check.)
+const IS_IOS =
+  typeof navigator !== 'undefined' &&
+  (/iP(hone|ad|od)/.test(navigator.userAgent) ||
+    (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1));
 
 /**
  * Self-contained volume button + popover. Designed to sit in a CardAction
  * slot. Owns the popover open/close; volume value is lifted to the parent
  * via `value` / `onChange` so the audio element (in AudioPlayer) can read it.
+ *
+ * Renders nothing on iOS, where volume can't be set programmatically.
  */
 export default function VolumeControl({
   value,
   onChange,
+  align = 'end',
 }: {
   value: number;
   onChange: (v: number) => void;
+  /** Mobile popover anchor. 'center' sits under the button (only when there's
+   *  room on both sides); 'end' aligns to the button's right edge and extends
+   *  left — safe when the button is at a row's right edge. */
+  align?: 'center' | 'end';
 }) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const [open, setOpen] = useState(false);
@@ -35,6 +51,9 @@ export default function VolumeControl({
     };
   }, [open]);
 
+  // iOS ignores programmatic volume — don't show a control that does nothing.
+  if (IS_IOS) return null;
+
   return (
     <div ref={wrapRef} className="relative inline-flex">
       <button
@@ -42,22 +61,32 @@ export default function VolumeControl({
         onClick={() => setOpen((o) => !o)}
         aria-label="Volume"
         aria-expanded={open}
-        className={`flex items-center justify-center size-9 rounded-md transition-colors active:scale-[0.97] ${
+        className={`flex items-center justify-center size-11 sm:size-9 rounded-md transition-colors active:scale-[0.97] ${
           open
             ? 'bg-muted text-foreground ring-2 ring-ring/50'
             : 'text-muted-foreground hover:text-foreground hover:bg-muted'
         }`}
       >
         {muted ? (
-          <VolumeX className="size-4" />
+          <VolumeX className="size-5 sm:size-4" />
         ) : (
-          <Volume2 className="size-4" />
+          <Volume2 className="size-5 sm:size-4" />
         )}
       </button>
       {open && (
-        <div className="absolute z-20 bg-popover border rounded-lg shadow-md py-2 px-3 w-40 sm:w-48 top-full right-0 mt-2 sm:top-1/2 sm:right-full sm:left-auto sm:bottom-auto sm:mt-0 sm:mr-2 sm:-translate-y-1/2">
-          {/* caret: top edge (points up) on mobile, right edge (points right) on sm+ */}
-          <div className="absolute -top-[6px] right-3 size-3 rotate-45 bg-popover border-l border-t border-border sm:hidden" />
+        <div
+          className={cn(
+            'absolute z-20 bg-popover border rounded-lg shadow-md py-2.5 px-3 w-44 sm:w-48 top-full mt-2 sm:top-1/2 sm:left-auto sm:right-full sm:bottom-auto sm:mt-0 sm:mr-2 sm:translate-x-0 sm:-translate-y-1/2',
+            align === 'center' ? 'left-1/2 -translate-x-1/2' : 'right-0'
+          )}
+        >
+          {/* caret on mobile; right edge (points right) on sm+ */}
+          <div
+            className={cn(
+              'absolute -top-[6px] size-3 rotate-45 bg-popover border-l border-t border-border sm:hidden',
+              align === 'center' ? 'left-1/2 -translate-x-1/2' : 'right-4'
+            )}
+          />
           <div className="hidden sm:block absolute top-1/2 -right-[6px] -translate-y-1/2 size-3 rotate-45 bg-popover border-r border-t border-border" />
           <div className="flex items-center gap-2 sm:gap-3">
             <Slider

@@ -21,9 +21,9 @@ function applyTheme(theme: Theme) {
 
 const cycle: Theme[] = ['light', 'dark', 'system'];
 const icons: Record<Theme, React.ReactNode> = {
-  light: <Sun className="size-4" />,
-  dark: <Moon className="size-4" />,
-  system: <Monitor className="size-4" />,
+  light: <Sun className="size-5 sm:size-4" />,
+  dark: <Moon className="size-5 sm:size-4" />,
+  system: <Monitor className="size-5 sm:size-4" />,
 };
 
 export default function ThemeSwitcher() {
@@ -53,6 +53,7 @@ export default function ThemeSwitcher() {
       }
       aria-label={`Theme: ${theme}`}
       title={`Theme: ${theme}`}
+      className="size-11 sm:size-9"
     >
       {icons[theme]}
     </Button>

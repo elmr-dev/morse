@@ -1,6 +1,14 @@
-import { HelpCircle, type LucideIcon, Radio, Swords } from 'lucide-react';
-import { NavLink } from 'react-router-dom';
+import {
+  HelpCircle,
+  House,
+  type LucideIcon,
+  Radio,
+  Swords,
+} from 'lucide-react';
+import { NavLink, useLocation } from 'react-router-dom';
 import { cn } from '@/lib/utils';
+import Logo from './logo';
+import { scrollToTop } from './scroll-to-top';
 import ThemeSwitcher from './theme-switcher';
 
 const GITHUB_URL = 'https://github.com/mdp/morse';
@@ -23,6 +31,9 @@ interface NavItem {
   to: string;
   label: string;
   icon: LucideIcon;
+  /** Match only the exact path (needed for "/", which otherwise prefix-matches
+   *  every route and stays perpetually active). */
+  end?: boolean;
 }
 
 // Primary destinations — shown in the desktop header AND the mobile bottom bar.
@@ -32,6 +43,13 @@ const NAV_ITEMS: NavItem[] = [
   { to: '/decode', label: 'Decode', icon: Radio },
   { to: '/beat-the-bot', label: 'Beat the Bot', icon: Swords },
   { to: '/faq', label: 'FAQ', icon: HelpCircle },
+];
+
+// Mobile bottom bar leads with Home. On desktop the wordmark is the home link,
+// so Home isn't repeated in the header nav.
+const MOBILE_ITEMS: NavItem[] = [
+  { to: '/', label: 'Home', icon: House, end: true },
+  ...NAV_ITEMS,
 ];
 
 /**
@@ -45,15 +63,12 @@ export function SiteHeader() {
       <div className="flex items-center justify-between gap-3 py-1">
         <NavLink
           to="/"
+          onClick={scrollToTop}
           className="flex items-center gap-2 rounded-md outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
           aria-label="Morse — home"
         >
-          <img
-            src={`${import.meta.env.BASE_URL}logo.webp`}
-            alt=""
-            className="h-4 w-auto"
-          />
-          <span className="font-mono font-bold text-foreground text-xl tracking-tight">
+          <Logo className="h-5 w-auto" />
+          <span className="font-mono font-extrabold text-foreground text-2xl tracking-tight">
             MORSE
           </span>
         </NavLink>
@@ -64,6 +79,7 @@ export function SiteHeader() {
               <NavLink
                 key={to}
                 to={to}
+                onClick={scrollToTop}
                 className={({ isActive }) =>
                   cn(
                     'inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring/50',
@@ -85,9 +101,9 @@ export function SiteHeader() {
             rel="noreferrer"
             aria-label="View source on GitHub"
             title="View source on GitHub"
-            className="inline-flex items-center justify-center size-9 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+            className="inline-flex items-center justify-center size-11 sm:size-9 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
           >
-            <GithubIcon className="size-4" />
+            <GithubIcon className="size-5 sm:size-4" />
           </a>
           <ThemeSwitcher />
         </div>
@@ -103,19 +119,38 @@ export function SiteHeader() {
  * nothing hides behind it (see main.tsx).
  */
 export function MobileTabBar() {
+  const { pathname } = useLocation();
+  const activeIndex = MOBILE_ITEMS.findIndex((it) =>
+    it.to === '/'
+      ? pathname === '/'
+      : pathname === it.to || pathname.startsWith(`${it.to}/`)
+  );
+
   return (
     <nav
       className="sm:hidden fixed inset-x-0 bottom-0 z-40 border-t border-border bg-background/95 backdrop-blur-sm pb-[env(safe-area-inset-bottom)]"
       aria-label="Primary"
     >
+      {/* sliding purple indicator on the active tab's top edge */}
+      <span
+        aria-hidden="true"
+        className="absolute top-0 left-0 h-0.5 rounded-full bg-primary transition-[transform,opacity] duration-300 ease-out motion-reduce:transition-none"
+        style={{
+          width: `${100 / MOBILE_ITEMS.length}%`,
+          transform: `translateX(${Math.max(activeIndex, 0) * 100}%)`,
+          opacity: activeIndex < 0 ? 0 : 1,
+        }}
+      />
       <div className="flex items-stretch justify-around">
-        {NAV_ITEMS.map(({ to, label, icon: Icon }) => (
+        {MOBILE_ITEMS.map(({ to, label, icon: Icon, end }) => (
           <NavLink
             key={to}
             to={to}
+            end={end}
+            onClick={scrollToTop}
             className={({ isActive }) =>
               cn(
-                'flex flex-1 flex-col items-center justify-center gap-0.5 py-2.5 text-[11px] font-medium transition-colors outline-none',
+                'flex flex-1 flex-col items-center justify-center gap-0.5 py-2.5 text-[11px] font-medium text-center leading-tight transition-colors outline-none',
                 isActive
                   ? 'text-primary'
                   : 'text-muted-foreground hover:text-foreground'

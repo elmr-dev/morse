@@ -280,6 +280,10 @@ export default function BeatTheBotPage() {
                     onChange={(e) => setGuess(e.target.value.toUpperCase())}
                     placeholder="Your copy…"
                     aria-label="Your guess"
+                    autoCapitalize="characters"
+                    autoComplete="off"
+                    autoCorrect="off"
+                    spellCheck={false}
                     className="flex-1 min-w-0 h-10 font-mono tracking-[1px]"
                     disabled={phase !== 'listening'}
                     maxLength={20}

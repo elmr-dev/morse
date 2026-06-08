@@ -1,0 +1,54 @@
+/**
+ * MORSE mark, inlined as SVG so it paints with the initial render — no network
+ * request and no empty flash on cold/hard loads (unlike an <img src>). Colors
+ * are baked into the mark (not themed). Decorative: the adjacent "MORSE"
+ * wordmark carries the name, so this is aria-hidden.
+ */
+export default function Logo({ className }: { className?: string }) {
+  return (
+    <svg
+      viewBox="0 0 1200 332"
+      className={className}
+      aria-hidden="true"
+      xmlns="http://www.w3.org/2000/svg"
+    >
+      <g fill="none" strokeLinecap="round" strokeLinejoin="round">
+        <path
+          stroke="#9d86ff"
+          strokeWidth={117.124817}
+          d="M 770.731689 273.411774 L 1034.146362 273.411774"
+        />
+        <path
+          stroke="#9d86ff"
+          strokeWidth={117.124817}
+          d="M 341.463409 273.411774 L 604.878052 273.411774"
+        />
+        <path
+          stroke="#e0479e"
+          strokeWidth={78.083214}
+          d="M 117.073174 273.411774 C 117.073174 284.197571 125.809082 292.941162 136.585373 292.941162 C 147.361649 292.941162 156.097565 284.197571 156.097565 273.411774 C 156.097565 262.625977 147.361649 253.882355 136.585373 253.882355 C 125.809082 253.882355 117.073174 262.625977 117.073174 273.411774 Z"
+        />
+        <path
+          stroke="#e0479e"
+          strokeWidth={78.083214}
+          d="M 1121.951172 58.588226 C 1121.951172 69.374023 1130.687134 78.117645 1141.463379 78.117645 C 1152.239746 78.117645 1160.975586 69.374023 1160.975586 58.588226 C 1160.975586 47.802429 1152.239746 39.058838 1141.463379 39.058838 C 1130.687134 39.058838 1121.951172 47.802429 1121.951172 58.588226 Z"
+        />
+        <path
+          stroke="#9d86ff"
+          strokeWidth={117.124817}
+          d="M 692.682922 58.588226 L 956.097534 58.588226"
+        />
+        <path
+          stroke="#9d86ff"
+          strokeWidth={78.083214}
+          d="M 487.804871 58.588226 C 487.804871 69.374023 496.540771 78.117645 507.317078 78.117645 C 518.093384 78.117645 526.829285 69.374023 526.829285 58.588226 C 526.829285 47.802429 518.093384 39.058838 507.317078 39.058838 C 496.540771 39.058838 487.804871 47.802429 487.804871 58.588226 Z"
+        />
+        <path
+          stroke="#9d86ff"
+          strokeWidth={117.124817}
+          d="M 58.536587 58.588226 L 321.951233 58.588226"
+        />
+      </g>
+    </svg>
+  );
+}
