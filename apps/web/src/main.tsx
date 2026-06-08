@@ -4,8 +4,11 @@ import { BrowserRouter } from 'react-router-dom';
 import './index.css';
 import App from './app.tsx';
 import Footer from './components/footer';
+import { OfflineProvisioner } from './components/offline-provisioner';
+import { PwaUpdatePrompt } from './components/pwa-update-prompt';
 import ScrollToTop from './components/scroll-to-top';
 import { MobileTabBar } from './components/site-nav';
+import { Toaster } from './components/ui/sonner';
 import { isStandalone } from './lib/use-standalone';
 
 const rootEl = document.getElementById('root');
@@ -33,6 +36,9 @@ createRoot(rootEl).render(
         </div>
       </div>
       <MobileTabBar />
+      <PwaUpdatePrompt />
+      <OfflineProvisioner />
+      <Toaster />
     </BrowserRouter>
   </StrictMode>
 );

@@ -26,6 +26,7 @@ import { Slider } from '@/components/ui/slider';
 import { Switch } from '@/components/ui/switch';
 import VolumeControl from '@/components/volume-control';
 import { randomCwMessage } from '@/lib/cw-message';
+import { isOfflineModelCached } from '@/lib/use-offline-model';
 import { usePersistedState } from '@/lib/use-persisted-state';
 import { cer } from '../inference/decode';
 import { generateAudio } from '../inference/generate';
@@ -47,6 +48,7 @@ export default function DecodePage() {
   const [result, setResult] = useState<PipelineResult | null>(null);
   const [busy, setBusy] = useState(false);
   const [modelReady, setModelReady] = useState(false);
+  const [modelError, setModelError] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [volume, setVolume] = useState(() => {
     const stored = parseFloat(localStorage.getItem('audioVolume') ?? '');
@@ -150,9 +152,30 @@ export default function DecodePage() {
   }
 
   useEffect(() => {
-    loadSession()
-      .then(() => setModelReady(true))
-      .catch((e) => setError(String(e)));
+    let cancelled = false;
+    // Surface guidance over the raw runtime error. Reconnecting and reopening
+    // lets the provisioner auto-save the decoder.
+    const fail = () => {
+      if (cancelled) return;
+      setModelError(true);
+    };
+    (async () => {
+      // Offline + unprovisioned: the ORT wasm fetch can't resolve and hangs
+      // (never rejects), so the button would spin on "Loading model…" forever.
+      // Detect that dead-end up front instead of attempting the load.
+      if (typeof navigator !== 'undefined' && !navigator.onLine) {
+        if (!(await isOfflineModelCached())) return fail();
+      }
+      try {
+        await loadSession();
+        if (!cancelled) setModelReady(true);
+      } catch {
+        fail();
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   async function onGenerate() {
@@ -339,7 +362,11 @@ export default function DecodePage() {
             onClick={onGenerate}
             className="w-full"
           >
-            {!modelReady ? (
+            {modelError ? (
+              <>
+                <TriangleAlert className="size-4" /> Decoder unavailable
+              </>
+            ) : !modelReady ? (
               <>
                 <Loader2 className="animate-spin size-4" /> Loading model…
               </>
@@ -357,6 +384,16 @@ export default function DecodePage() {
               </>
             )}
           </Button>
+          {modelError && (
+            <div className="mt-2 flex items-start gap-2 text-[13px] text-muted-foreground">
+              <TriangleAlert className="mt-0.5 size-4 shrink-0 text-bad" />
+              <span>
+                You're offline and the decoder isn't saved on this device.
+                Reconnect to the internet, then reopen the app to download it
+                for offline use.
+              </span>
+            </div>
+          )}
           {error && (
             <div className="mt-2 inline-flex items-center gap-1.5 text-[13px] text-bad font-mono">
               <TriangleAlert className="size-4 shrink-0" /> {error}

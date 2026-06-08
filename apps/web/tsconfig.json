@@ -2,7 +2,7 @@
   "extends": "typescript-config/react-app",
   "compilerOptions": {
     "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.tsbuildinfo",
-    "types": ["vite/client", "node"],
+    "types": ["vite/client", "node", "vite-plugin-pwa/react"],
     "paths": {
       "@/*": ["./src/*"]
     }

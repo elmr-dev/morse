@@ -22,6 +22,7 @@ import { type Theme, useTheme } from '@/lib/use-theme';
 import { cn } from '@/lib/utils';
 import { FooterContent } from './footer';
 import { GITHUB_URL, GithubIcon } from './github';
+import { OfflineSection } from './offline-section';
 
 const THEME_OPTIONS: { value: Theme; label: string; icon: typeof Sun }[] = [
   { value: 'light', label: 'Light', icon: Sun },
@@ -149,6 +150,11 @@ export function MoreSheet({
           </div>
 
           {!standalone && <InstallSection />}
+
+          {/* Offline provisioning is the step after install: installed PWAs get
+              durable storage, so the cached 16MB survives — in a plain tab it's
+              evictable, so we don't make a promise we can't keep. */}
+          {standalone && <OfflineSection />}
 
           <div className="border-t border-border pt-1">
             <a

@@ -1,5 +1,10 @@
 @import "tailwindcss";
 
+/* Self-hosted fonts (no Google Fonts CDN): same-origin so they're COEP-safe
+   and precached by the service worker for offline use. */
+@import "@fontsource-variable/inter";
+@import "@fontsource-variable/jetbrains-mono";
+
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {
@@ -161,9 +166,9 @@
   --sidebar-accent-foreground: oklch(0.3015 0.0572 282.4176);
   --sidebar-border: oklch(0.9115 0.0216 285.9625);
   --sidebar-ring: oklch(0.5417 0.179 288.0332);
-  --font-sans: Inter, sans-serif;
+  --font-sans: "Inter Variable", Inter, sans-serif;
   --font-serif: Georgia, serif;
-  --font-mono: JetBrains Mono, monospace;
+  --font-mono: "JetBrains Mono Variable", JetBrains Mono, monospace;
   --shadow-color: hsl(240 30% 25%);
   --shadow-2xs: 0px 4px 10px 0px hsl(240 30% 25% / 0.06);
   --shadow-xs: 0px 4px 10px 0px hsl(240 30% 25% / 0.06);
@@ -225,9 +230,9 @@
   --sidebar-accent-foreground: oklch(0.9185 0.0257 285.8834);
   --sidebar-border: oklch(0.3261 0.0597 282.5832);
   --sidebar-ring: oklch(0.7162 0.1597 290.3962);
-  --font-sans: Inter, sans-serif;
+  --font-sans: "Inter Variable", Inter, sans-serif;
   --font-serif: Georgia, serif;
-  --font-mono: JetBrains Mono, monospace;
+  --font-mono: "JetBrains Mono Variable", JetBrains Mono, monospace;
   --shadow-color: hsl(240 30% 25%);
   --shadow-2xs: 0px 4px 10px 0px hsl(240 30% 25% / 0.06);
   --shadow-xs: 0px 4px 10px 0px hsl(240 30% 25% / 0.06);
