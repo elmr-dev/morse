@@ -1,0 +1,132 @@
+{
+  "base_config": "configs/hsmm-cnn-data.yaml",
+  "epochs": 6,
+  "results": [
+    {
+      "variant": "ch0_ch2",
+      "columns": [
+        0,
+        2
+      ],
+      "input_channels": 2,
+      "best_tone_auc": 0.9921345802805712,
+      "full_mean_cer": 0.1356,
+      "full_perfect": 203,
+      "full_n": 300,
+      "target_mean_cer": 0.0731,
+      "target_perfect": 116,
+      "target_n": 165,
+      "run_dir": "runs/dsp_channel_sweep_86k_20260607/ch0_ch2",
+      "eval_json": "runs/dsp_channel_sweep_86k_20260607/ch0_ch2_eval.json",
+      "target_eval_json": "runs/dsp_channel_sweep_86k_20260607/ch0_ch2_target_eval.json"
+    },
+    {
+      "variant": "ch0_ch2_ch3",
+      "columns": [
+        0,
+        2,
+        3
+      ],
+      "input_channels": 3,
+      "best_tone_auc": 0.9934730992491275,
+      "full_mean_cer": 0.1131,
+      "full_perfect": 208,
+      "full_n": 300,
+      "target_mean_cer": 0.0737,
+      "target_perfect": 115,
+      "target_n": 165,
+      "run_dir": "runs/dsp_channel_sweep_86k_20260607/ch0_ch2_ch3",
+      "eval_json": "runs/dsp_channel_sweep_86k_20260607/ch0_ch2_ch3_eval.json",
+      "target_eval_json": "runs/dsp_channel_sweep_86k_20260607/ch0_ch2_ch3_target_eval.json"
+    },
+    {
+      "variant": "ch2_mf48",
+      "columns": [
+        2
+      ],
+      "input_channels": 1,
+      "best_tone_auc": 0.9920927972804937,
+      "full_mean_cer": 0.1441,
+      "full_perfect": 199,
+      "full_n": 300,
+      "target_mean_cer": 0.0798,
+      "target_perfect": 113,
+      "target_n": 165,
+      "run_dir": "runs/dsp_channel_sweep_86k_20260607/ch2_mf48",
+      "eval_json": "runs/dsp_channel_sweep_86k_20260607/ch2_mf48_eval.json",
+      "target_eval_json": "runs/dsp_channel_sweep_86k_20260607/ch2_mf48_target_eval.json"
+    },
+    {
+      "variant": "ch2_ch3",
+      "columns": [
+        2,
+        3
+      ],
+      "input_channels": 2,
+      "best_tone_auc": 0.9930363215432898,
+      "full_mean_cer": 0.1077,
+      "full_perfect": 203,
+      "full_n": 300,
+      "target_mean_cer": 0.0821,
+      "target_perfect": 113,
+      "target_n": 165,
+      "run_dir": "runs/dsp_channel_sweep_86k_20260607/ch2_ch3",
+      "eval_json": "runs/dsp_channel_sweep_86k_20260607/ch2_ch3_eval.json",
+      "target_eval_json": "runs/dsp_channel_sweep_86k_20260607/ch2_ch3_target_eval.json"
+    },
+    {
+      "variant": "all4",
+      "columns": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "input_channels": 4,
+      "best_tone_auc": 0.9937977598555083,
+      "full_mean_cer": 0.1171,
+      "full_perfect": 202,
+      "full_n": 300,
+      "target_mean_cer": 0.0833,
+      "target_perfect": 111,
+      "target_n": 165,
+      "run_dir": "runs/dsp_channel_sweep_86k_20260607/all4",
+      "eval_json": "runs/dsp_channel_sweep_86k_20260607/all4_eval.json",
+      "target_eval_json": "runs/dsp_channel_sweep_86k_20260607/all4_target_eval.json"
+    },
+    {
+      "variant": "ch0_amp",
+      "columns": [
+        0
+      ],
+      "input_channels": 1,
+      "best_tone_auc": 0.9910348565795223,
+      "full_mean_cer": 0.1348,
+      "full_perfect": 191,
+      "full_n": 300,
+      "target_mean_cer": 0.0848,
+      "target_perfect": 110,
+      "target_n": 165,
+      "run_dir": "runs/dsp_channel_sweep_86k_20260607/ch0_amp",
+      "eval_json": "runs/dsp_channel_sweep_86k_20260607/ch0_amp_eval.json",
+      "target_eval_json": "runs/dsp_channel_sweep_86k_20260607/ch0_amp_target_eval.json"
+    },
+    {
+      "variant": "ch3_mf200",
+      "columns": [
+        3
+      ],
+      "input_channels": 1,
+      "best_tone_auc": 0.9238501516331011,
+      "full_mean_cer": 0.912,
+      "full_perfect": 0,
+      "full_n": 300,
+      "target_mean_cer": 0.8951,
+      "target_perfect": 0,
+      "target_n": 165,
+      "run_dir": "runs/dsp_channel_sweep_86k_20260607/ch3_mf200",
+      "eval_json": "runs/dsp_channel_sweep_86k_20260607/ch3_mf200_eval.json",
+      "target_eval_json": "runs/dsp_channel_sweep_86k_20260607/ch3_mf200_target_eval.json"
+    }
+  ]
+}
