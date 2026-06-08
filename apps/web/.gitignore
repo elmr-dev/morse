@@ -22,3 +22,6 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Local mkcert HTTPS certs for LAN/device PWA testing
+.certs/
