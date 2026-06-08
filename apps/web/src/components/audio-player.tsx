@@ -137,7 +137,7 @@ export default function AudioPlayer({
   }, [bars, hasBars, trackWidth]);
 
   return (
-    <div className="border rounded-lg p-3 sm:p-4">
+    <div>
       {/* biome-ignore lint/a11y/useMediaCaption: programmatically generated audio has no caption track */}
       <audio ref={audioRef} src={src} preload="metadata" />
       <div className="flex items-center gap-3">

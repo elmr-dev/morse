@@ -64,11 +64,11 @@ export function SiteHeader() {
         <NavLink
           to="/"
           onClick={scrollToTop}
-          className="flex items-center gap-2 rounded-md outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+          className="group flex items-center gap-2 rounded-md outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
           aria-label="Morse — home"
         >
-          <Logo className="h-5 w-auto" />
-          <span className="font-mono font-extrabold text-foreground text-2xl tracking-tight">
+          <Logo className="h-5 w-auto drop-shadow-[0_0_5px_rgba(157,134,255,0.45)] transition duration-300 group-hover:scale-[1.06] group-hover:drop-shadow-[0_0_12px_rgba(157,134,255,0.9)]" />
+          <span className="font-mono font-extrabold text-foreground text-2xl tracking-tight transition-[text-shadow] duration-300 group-hover:[text-shadow:0_0_16px_rgba(157,134,255,0.55)]">
             MORSE
           </span>
         </NavLink>

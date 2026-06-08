@@ -233,9 +233,7 @@ export default function BeatTheBotPage() {
                     <span className="text-muted-foreground/40 mx-1.5">·</span>
                     sent twice
                   </div>
-                  <div className="shrink-0">
-                    <VolumeControl value={volume} onChange={onVolumeChange} />
-                  </div>
+                  <VolumeControl value={volume} onChange={onVolumeChange} />
                 </div>
 
                 {/* biome-ignore lint/a11y/useMediaCaption: programmatically generated audio */}
@@ -419,12 +417,12 @@ function Scoreboard({
   const played = score.wins + score.losses + score.ties;
   const standing =
     lead > 0
-      ? `you're up by ${lead}`
+      ? `You're up by ${lead}`
       : lead < 0
-        ? `bot's up by ${-lead}`
+        ? `Bot's up by ${-lead}`
         : score.wins + score.losses === 0
-          ? 'first to copy wins'
-          : 'dead even';
+          ? 'First to copy wins'
+          : 'Dead even';
   return (
     <Card className="mb-4">
       <CardContent>
@@ -452,12 +450,12 @@ function Scoreboard({
           </div>
         </div>
 
-        <div className="flex items-center justify-center gap-2 mt-3 text-[11px] text-muted-foreground">
+        <div className="flex items-center justify-center gap-2 mt-3 text-xs text-muted-foreground">
           <span>
             {score.ties} {score.ties === 1 ? 'tie' : 'ties'}
           </span>
           <span aria-hidden="true">·</span>
-          <span>{standing}</span>
+          <span className="font-medium text-foreground">{standing}</span>
           {streak >= 2 && (
             <>
               <span aria-hidden="true">·</span>
@@ -468,17 +466,14 @@ function Scoreboard({
             </>
           )}
           {played > 0 && (
-            <>
-              <span aria-hidden="true">·</span>
-              <button
-                type="button"
-                onClick={onReset}
-                className="inline-flex items-center gap-1 hover:text-foreground transition-colors"
-              >
-                <RotateCcw className="size-3" />
-                reset
-              </button>
-            </>
+            <button
+              type="button"
+              onClick={onReset}
+              className="inline-flex items-center gap-1.5 ml-1 rounded-md border border-border px-2.5 py-1 text-foreground/80 hover:text-foreground hover:bg-muted hover:border-foreground/20 transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+            >
+              <RotateCcw className="size-3.5" />
+              Reset
+            </button>
           )}
         </div>
 

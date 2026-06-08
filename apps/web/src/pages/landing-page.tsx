@@ -75,7 +75,7 @@ function Hero() {
             to="/decode"
             className={cn(
               buttonVariants({ variant: 'default', size: 'lg' }),
-              'w-full sm:w-auto font-mono'
+              'w-full sm:w-auto font-mono transition duration-200 hover:scale-[1.04] active:scale-[0.98]'
             )}
           >
             <Radio className="size-4" />
@@ -85,7 +85,7 @@ function Hero() {
             to="/beat-the-bot"
             className={cn(
               buttonVariants({ variant: 'secondary', size: 'lg' }),
-              'w-full sm:w-auto font-mono'
+              'w-full sm:w-auto font-mono transition duration-200 hover:scale-[1.04] active:scale-[0.98]'
             )}
           >
             <Swords className="size-4" />

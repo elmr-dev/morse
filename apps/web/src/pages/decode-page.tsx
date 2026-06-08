@@ -10,10 +10,10 @@ import {
   Radio,
   RotateCcw,
   Shuffle,
-  SlidersHorizontal,
   Sparkles,
   TriangleAlert,
   Waves,
+  X,
 } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import AudioPlayer, { fmt } from '@/components/audio-player';
@@ -21,11 +21,11 @@ import PageHeader from '@/components/page-header';
 import { Presence } from '@/components/presence';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Slider } from '@/components/ui/slider';
 import { Switch } from '@/components/ui/switch';
 import VolumeControl from '@/components/volume-control';
+import { randomCwMessage } from '@/lib/cw-message';
 import { usePersistedState } from '@/lib/use-persisted-state';
 import { cer } from '../inference/decode';
 import { generateAudio } from '../inference/generate';
@@ -37,16 +37,8 @@ const DEFAULT_WPM = 25;
 const DEFAULT_SNR = 6;
 const DEFAULT_QSB = false;
 
-function randomText(len: number): string {
-  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
-  let out = '';
-  for (let i = 0; i < len; i++)
-    out += chars[Math.floor(Math.random() * chars.length)];
-  return out;
-}
-
 export default function DecodePage() {
-  const [text, setText] = useState(() => randomText(8));
+  const [text, setText] = useState(() => randomCwMessage());
   const [wpm, setWpm] = usePersistedState('decode.wpm', DEFAULT_WPM);
   const [snr, setSnr] = usePersistedState('decode.snr', DEFAULT_SNR);
   const [qsb, setQsb] = usePersistedState('decode.qsb', DEFAULT_QSB);
@@ -66,6 +58,16 @@ export default function DecodePage() {
   // Guards the auto-scroll so it fires once per generate, not on every render
   // (e.g. play-time ticks). Regenerate re-arms it explicitly in onGenerate.
   const didScrollRef = useRef(false);
+  // Auto-grow the message field so a long message wraps into view on narrow
+  // screens instead of scrolling off the right edge.
+  const textRef = useRef<HTMLTextAreaElement>(null);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: re-measure whenever the text changes.
+  useEffect(() => {
+    const ta = textRef.current;
+    if (!ta) return;
+    ta.style.height = 'auto';
+    ta.style.height = `${ta.scrollHeight}px`;
+  }, [text]);
 
   const onTime = useCallback((current: number, duration: number) => {
     setPlayTime({ current, duration });
@@ -190,178 +192,183 @@ export default function DecodePage() {
         </span>
       </div>
 
-      <Card className="mb-4">
-        <CardHeader>
-          <CardTitle>
-            <SlidersHorizontal className="size-5 text-primary" />
-            Generate
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="flex gap-2 items-stretch">
-            <Label htmlFor="text" className="sr-only">
-              Text
-            </Label>
-            <Input
+      <div className="mb-4">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-start">
+          <Label htmlFor="text" className="sr-only">
+            Text
+          </Label>
+          <div className="relative flex-1 min-w-0">
+            <textarea
               id="text"
-              type="text"
+              ref={textRef}
+              rows={1}
               value={text}
-              onChange={(e) => changeText(e.target.value)}
+              onChange={(e) => changeText(e.target.value.replace(/\n+/g, ' '))}
               onKeyDown={(e) => {
-                if (e.key === 'Enter' && modelReady && !busy && text.trim())
-                  void onGenerate();
+                if (e.key === 'Enter' && !e.shiftKey) {
+                  e.preventDefault();
+                  if (modelReady && !busy && text.trim()) void onGenerate();
+                }
               }}
-              placeholder="Type text to send, or hit Random"
+              placeholder="Type a message, or hit Random"
               autoCapitalize="characters"
               autoComplete="off"
               autoCorrect="off"
               spellCheck={false}
-              className="flex-1 h-10 font-mono uppercase min-w-0"
               maxLength={40}
               disabled={!modelReady}
+              className="w-full min-h-10 resize-none overflow-hidden rounded-md border border-input bg-card px-3 py-2 pr-10 font-mono uppercase text-base md:text-sm leading-snug shadow-xs outline-none transition-[color,box-shadow] placeholder:normal-case placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50"
             />
-            <Button
-              variant="secondary"
-              onClick={() => changeText(randomText(8))}
-              type="button"
-              disabled={!modelReady}
-              className="shrink-0 h-10"
-            >
-              <Shuffle className="size-4" />
-              <span className="hidden sm:inline">Random</span>
-            </Button>
-          </div>
-
-          {(text.includes(' ') || text.length >= 30) && (
-            <div className="mt-1.5 flex items-start gap-3 text-[11px] text-muted-foreground">
-              <span className="flex-1">
-                {text.includes(' ') &&
-                  'Spaces are keyed as word breaks. The model copies letters only, so they don’t count against it.'}
-              </span>
-              {text.length >= 30 && (
-                <span className="shrink-0 font-mono">
-                  <span className={text.length >= 40 ? 'text-bad' : undefined}>
-                    {text.length}
-                  </span>
-                  /40
-                </span>
-              )}
-            </div>
-          )}
-
-          <div className="mt-4 rounded-lg border border-border bg-background/40 p-3 select-none">
-            <div className="flex items-center justify-between mb-3">
-              <div className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-                Signal
-              </div>
-              {!signalIsDefault && (
-                <button
-                  type="button"
-                  onClick={resetSignal}
-                  disabled={!modelReady}
-                  className="inline-flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground transition-colors disabled:opacity-50"
-                >
-                  <RotateCcw className="size-3" />
-                  Reset
-                </button>
-              )}
-            </div>
-            <div className="grid grid-cols-[18px_auto_1fr_auto] items-center gap-x-3 gap-y-4">
-              <Gauge className="size-4 text-muted-foreground" />
-              <Label className="text-[13px]">WPM</Label>
-              <Slider
-                min={12}
-                max={50}
-                value={[wpm]}
-                onValueChange={([n]) => changeWpm(n)}
-                disabled={!modelReady}
-              />
-              <span className="justify-self-end font-mono text-[13px] font-medium text-foreground bg-muted rounded-md px-2 py-0.5 min-w-[40px] text-center">
-                {wpm}
-              </span>
-
-              <Activity className="size-4 text-muted-foreground" />
-              <Label className="text-[13px]">SNR (dB)</Label>
-              <Slider
-                min={-15}
-                max={20}
-                value={[snr]}
-                onValueChange={([n]) => changeSnr(n)}
-                disabled={!modelReady}
-              />
-              <span className="justify-self-end font-mono text-[13px] font-medium text-foreground bg-muted rounded-md px-2 py-0.5 min-w-[40px] text-center">
-                {snr}
-              </span>
-
-              <Waves className="size-4 text-muted-foreground self-start mt-0.5" />
-              <div className="col-span-2">
-                <Label htmlFor="qsb" className="text-[13px]">
-                  QSB (fading)
-                </Label>
-                <div className="text-[11px] text-muted-foreground mt-0.5">
-                  Moderate fading, 0.2 Hz rate
-                </div>
-              </div>
-              <Switch
-                id="qsb"
-                checked={qsb}
-                onCheckedChange={changeQsb}
-                disabled={!modelReady}
-                className="justify-self-end self-start mt-0.5"
-              />
-            </div>
-          </div>
-
-          <div className="mt-4">
-            <Button
-              variant="default"
-              disabled={busy || !modelReady || !text.trim()}
-              onClick={onGenerate}
-              className="w-full"
-            >
-              {!modelReady ? (
-                <>
-                  <Loader2 className="animate-spin size-4" /> Loading model…
-                </>
-              ) : busy ? (
-                <>
-                  <Loader2 className="animate-spin size-4" /> Decoding…
-                </>
-              ) : result || dataUri ? (
-                <>
-                  <Shuffle className="size-4" /> Regenerate
-                </>
-              ) : (
-                <>
-                  <Sparkles className="size-4" /> Generate &amp; decode
-                </>
-              )}
-            </Button>
-            {error && (
-              <div className="mt-2 inline-flex items-center gap-1.5 text-[13px] text-bad font-mono">
-                <TriangleAlert className="size-4 shrink-0" /> {error}
-              </div>
+            {text && modelReady && (
+              <button
+                type="button"
+                onClick={() => changeText('')}
+                aria-label="Clear text"
+                className="absolute right-1 top-1.5 inline-flex items-center justify-center size-8 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+              >
+                <X className="size-4" />
+              </button>
             )}
           </div>
-        </CardContent>
-      </Card>
+          <Button
+            variant="secondary"
+            onClick={() => changeText(randomCwMessage())}
+            type="button"
+            disabled={!modelReady}
+            className="shrink-0 h-10 w-full sm:w-auto"
+          >
+            <Shuffle className="size-4" />
+            Random
+          </Button>
+        </div>
+
+        {(text.includes(' ') || text.length >= 30) && (
+          <div className="mt-1.5 flex items-start gap-3 text-[11px] text-muted-foreground">
+            <span className="flex-1">
+              {text.includes(' ') &&
+                'Spaces are keyed as word breaks. The model copies letters only, so they don’t count against it.'}
+            </span>
+            {text.length >= 30 && (
+              <span className="shrink-0 font-mono">
+                <span className={text.length >= 40 ? 'text-bad' : undefined}>
+                  {text.length}
+                </span>
+                /40
+              </span>
+            )}
+          </div>
+        )}
+
+        <div className="mt-4 rounded-lg border border-border bg-card p-3 select-none">
+          <div className="flex items-center justify-between mb-3">
+            <div className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+              Signal
+            </div>
+            {!signalIsDefault && (
+              <button
+                type="button"
+                onClick={resetSignal}
+                disabled={!modelReady}
+                className="inline-flex items-center gap-1.5 -my-1.5 -mr-1.5 rounded-md px-2 py-1.5 text-[12px] text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors disabled:opacity-50 outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+              >
+                <RotateCcw className="size-3.5" />
+                Reset
+              </button>
+            )}
+          </div>
+          <div className="grid grid-cols-[18px_auto_1fr_auto] items-center gap-x-3 gap-y-4">
+            <Gauge className="size-4 text-muted-foreground" />
+            <Label className="text-[13px]">WPM</Label>
+            <Slider
+              min={12}
+              max={50}
+              value={[wpm]}
+              onValueChange={([n]) => changeWpm(n)}
+              disabled={!modelReady}
+            />
+            <span className="justify-self-end font-mono text-[13px] font-medium text-foreground bg-muted rounded-md px-2 py-0.5 min-w-[40px] text-center">
+              {wpm}
+            </span>
+
+            <Activity className="size-4 text-muted-foreground" />
+            <Label className="text-[13px]">SNR (dB)</Label>
+            <Slider
+              min={-15}
+              max={20}
+              value={[snr]}
+              onValueChange={([n]) => changeSnr(n)}
+              disabled={!modelReady}
+            />
+            <span className="justify-self-end font-mono text-[13px] font-medium text-foreground bg-muted rounded-md px-2 py-0.5 min-w-[40px] text-center">
+              {snr}
+            </span>
+
+            <Waves className="size-4 text-muted-foreground self-start mt-0.5" />
+            <div className="col-span-2">
+              <Label htmlFor="qsb" className="text-[13px]">
+                QSB (fading)
+              </Label>
+              <div className="text-[11px] text-muted-foreground mt-0.5">
+                Moderate fading, 0.2 Hz rate
+              </div>
+            </div>
+            <Switch
+              id="qsb"
+              checked={qsb}
+              onCheckedChange={changeQsb}
+              disabled={!modelReady}
+              className="justify-self-end self-start mt-0.5"
+            />
+          </div>
+        </div>
+
+        <div className="mt-4">
+          <Button
+            variant="default"
+            disabled={busy || !modelReady || !text.trim()}
+            onClick={onGenerate}
+            className="w-full"
+          >
+            {!modelReady ? (
+              <>
+                <Loader2 className="animate-spin size-4" /> Loading model…
+              </>
+            ) : busy ? (
+              <>
+                <Loader2 className="animate-spin size-4" /> Decoding…
+              </>
+            ) : result || dataUri ? (
+              <>
+                <Shuffle className="size-4" /> Regenerate
+              </>
+            ) : (
+              <>
+                <Sparkles className="size-4" /> Generate &amp; decode
+              </>
+            )}
+          </Button>
+          {error && (
+            <div className="mt-2 inline-flex items-center gap-1.5 text-[13px] text-bad font-mono">
+              <TriangleAlert className="size-4 shrink-0" /> {error}
+            </div>
+          )}
+        </div>
+      </div>
 
       <div ref={resultsRef} className="scroll-mt-4">
         <Presence show={!!dataUri}>
           {dataUri && (
-            <Card className="mb-4">
+            <Card className="mb-4 py-4 gap-3">
               <CardHeader className="[&]:flex [&]:flex-row [&]:items-center [&]:gap-3">
                 <CardTitle className="flex-1">
                   <AudioLines className="size-5 text-chart-5" />
-                  Audio
+                  Generated clip
                 </CardTitle>
-                <div className="shrink-0">
-                  <VolumeControl
-                    value={volume}
-                    onChange={onVolumeChange}
-                    align="center"
-                  />
-                </div>
+                <VolumeControl
+                  value={volume}
+                  onChange={onVolumeChange}
+                  align="center"
+                />
                 <span className="shrink-0 inline-flex items-center gap-1.5 text-xs text-muted-foreground font-mono tabular-nums">
                   <Clock className="size-3.5" />
                   {fmt(playTime.current)} / {fmt(playTime.duration)}

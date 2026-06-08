@@ -3,20 +3,14 @@ import { useEffect, useRef, useState } from 'react';
 import { Slider } from '@/components/ui/slider';
 import { cn } from '@/lib/utils';
 
-// iOS/iPadOS WebKit makes HTMLMediaElement.volume read-only — programmatic
-// volume is ignored (hardware buttons only), so the control would be a no-op.
-// (iPadOS reports as "MacIntel" with touch points, hence the second check.)
-const IS_IOS =
-  typeof navigator !== 'undefined' &&
-  (/iP(hone|ad|od)/.test(navigator.userAgent) ||
-    (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1));
-
 /**
- * Self-contained volume button + popover. Designed to sit in a CardAction
- * slot. Owns the popover open/close; volume value is lifted to the parent
- * via `value` / `onChange` so the audio element (in AudioPlayer) can read it.
+ * Self-contained volume button + popover. Owns the popover open/close; volume
+ * value is lifted to the parent via `value` / `onChange` so the audio element
+ * (in AudioPlayer) can read it.
  *
- * Renders nothing on iOS, where volume can't be set programmatically.
+ * Hidden on coarse-pointer (touch) devices — phones and tablets — where the
+ * hardware buttons handle volume and some browsers (iOS/iPadOS) make
+ * programmatic volume a no-op anyway.
  */
 export default function VolumeControl({
   value,
@@ -51,26 +45,23 @@ export default function VolumeControl({
     };
   }, [open]);
 
-  // iOS ignores programmatic volume — don't show a control that does nothing.
-  if (IS_IOS) return null;
-
   return (
-    <div ref={wrapRef} className="relative inline-flex">
+    <div ref={wrapRef} className="relative inline-flex pointer-coarse:hidden">
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}
         aria-label="Volume"
         aria-expanded={open}
-        className={`flex items-center justify-center size-11 sm:size-9 rounded-md transition-colors active:scale-[0.97] ${
+        className={`flex items-center justify-center size-8 rounded-md transition-colors active:scale-[0.97] ${
           open
             ? 'bg-muted text-foreground ring-2 ring-ring/50'
             : 'text-muted-foreground hover:text-foreground hover:bg-muted'
         }`}
       >
         {muted ? (
-          <VolumeX className="size-5 sm:size-4" />
+          <VolumeX className="size-4" />
         ) : (
-          <Volume2 className="size-5 sm:size-4" />
+          <Volume2 className="size-4" />
         )}
       </button>
       {open && (
