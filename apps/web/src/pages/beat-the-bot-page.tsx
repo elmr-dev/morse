@@ -14,6 +14,7 @@ import {
   User,
 } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
+import { Presence } from '@/components/presence';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -214,106 +215,116 @@ export default function BeatTheBotPage() {
         </div>
       )}
 
-      {round && (phase === 'listening' || phase === 'guessing') && (
-        <div ref={roundRef} className="scroll-mt-4">
-          <Card className="mb-4">
-            <CardContent>
-              <div className="flex items-center justify-between gap-2 mb-4">
-                <div className="text-[12px] text-muted-foreground font-mono">
-                  ~{round.wpm} wpm
-                  <span className="text-muted-foreground/40 mx-1.5">·</span>
-                  SNR {round.snr} dB
-                  <span className="text-muted-foreground/40 mx-1.5">·</span>
-                  sent twice
+      {round && (
+        <Presence show={phase === 'listening' || phase === 'guessing'}>
+          <div ref={roundRef} className="scroll-mt-4">
+            <Card className="mb-4">
+              <CardContent>
+                <div className="flex items-center justify-between gap-2 mb-4">
+                  <div className="text-[12px] text-muted-foreground font-mono">
+                    ~{round.wpm} wpm
+                    <span className="text-muted-foreground/40 mx-1.5">·</span>
+                    SNR {round.snr} dB
+                    <span className="text-muted-foreground/40 mx-1.5">·</span>
+                    sent twice
+                  </div>
+                  <div className="shrink-0">
+                    <VolumeControl value={volume} onChange={onVolumeChange} />
+                  </div>
                 </div>
-                <div className="shrink-0">
-                  <VolumeControl value={volume} onChange={onVolumeChange} />
+
+                {/* biome-ignore lint/a11y/useMediaCaption: programmatically generated audio */}
+                <audio ref={audioRef} src={round.dataUri} preload="auto" />
+
+                <div className="flex flex-col items-center gap-2.5 py-3">
+                  <button
+                    type="button"
+                    onClick={playAudio}
+                    disabled={
+                      phase !== 'listening' ||
+                      listens >= MAX_LISTENS ||
+                      isPlaying
+                    }
+                    aria-label={listens === 0 ? 'Play once' : 'Already played'}
+                    className="size-16 rounded-full bg-primary text-primary-foreground flex items-center justify-center transition-transform enabled:hover:scale-105 enabled:active:scale-95 disabled:opacity-50"
+                  >
+                    {isPlaying ? (
+                      <Loader2 className="size-7 animate-spin" />
+                    ) : (
+                      <Play
+                        className="size-7 translate-x-[2px]"
+                        fill="currentColor"
+                      />
+                    )}
+                  </button>
+                  <span className="inline-flex items-center gap-1.5 text-[13px] text-chart-5">
+                    <Headphones className="size-3.5" />
+                    {listens === 0
+                      ? 'One listen — make it count'
+                      : isPlaying
+                        ? 'Listen closely…'
+                        : 'That was your shot'}
+                  </span>
                 </div>
-              </div>
 
-              {/* biome-ignore lint/a11y/useMediaCaption: programmatically generated audio */}
-              <audio ref={audioRef} src={round.dataUri} preload="auto" />
-
-              <div className="flex flex-col items-center gap-2.5 py-3">
-                <button
-                  type="button"
-                  onClick={playAudio}
-                  disabled={
-                    phase !== 'listening' || listens >= MAX_LISTENS || isPlaying
-                  }
-                  aria-label={listens === 0 ? 'Play once' : 'Already played'}
-                  className="size-16 rounded-full bg-primary text-primary-foreground flex items-center justify-center transition-transform enabled:hover:scale-105 enabled:active:scale-95 disabled:opacity-50"
-                >
-                  {isPlaying ? (
-                    <Loader2 className="size-7 animate-spin" />
-                  ) : (
-                    <Play
-                      className="size-7 translate-x-[2px]"
-                      fill="currentColor"
-                    />
-                  )}
-                </button>
-                <span className="inline-flex items-center gap-1.5 text-[13px] text-chart-5">
-                  <Headphones className="size-3.5" />
-                  {listens === 0
-                    ? 'One listen — make it count'
-                    : isPlaying
-                      ? 'Listen closely…'
-                      : 'That was your shot'}
-                </span>
-              </div>
-
-              <div className="flex gap-2 mt-2">
-                <Input
-                  id="guess"
-                  type="text"
-                  value={guess}
-                  onChange={(e) => setGuess(e.target.value.toUpperCase())}
-                  placeholder="Your copy…"
-                  aria-label="Your guess"
-                  className="flex-1 min-w-0 h-10 font-mono tracking-[1px]"
-                  disabled={phase !== 'listening'}
-                  maxLength={20}
-                  onKeyDown={(e) => {
-                    if (
-                      e.key === 'Enter' &&
-                      phase === 'listening' &&
-                      guess.trim() &&
-                      listens > 0
-                    )
-                      void submitGuess();
-                  }}
-                />
-                <Button
-                  variant="default"
-                  disabled={
-                    phase !== 'listening' || !guess.trim() || listens === 0
-                  }
-                  onClick={submitGuess}
-                  className="shrink-0 h-10"
-                >
-                  {phase === 'guessing' ? (
-                    <>
-                      <Loader2 className="animate-spin size-4" /> Grading…
-                    </>
-                  ) : (
-                    <>
-                      <Send className="size-4" />
-                      Submit
-                    </>
-                  )}
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
+                <div className="flex gap-2 mt-2">
+                  <Input
+                    id="guess"
+                    type="text"
+                    value={guess}
+                    onChange={(e) => setGuess(e.target.value.toUpperCase())}
+                    placeholder="Your copy…"
+                    aria-label="Your guess"
+                    className="flex-1 min-w-0 h-10 font-mono tracking-[1px]"
+                    disabled={phase !== 'listening'}
+                    maxLength={20}
+                    onKeyDown={(e) => {
+                      if (
+                        e.key === 'Enter' &&
+                        phase === 'listening' &&
+                        guess.trim() &&
+                        listens > 0
+                      )
+                        void submitGuess();
+                    }}
+                  />
+                  <Button
+                    variant="default"
+                    disabled={
+                      phase !== 'listening' || !guess.trim() || listens === 0
+                    }
+                    onClick={submitGuess}
+                    className="shrink-0 h-10"
+                  >
+                    {phase === 'guessing' ? (
+                      <>
+                        <Loader2 className="animate-spin size-4" /> Grading…
+                      </>
+                    ) : (
+                      <>
+                        <Send className="size-4" />
+                        Submit
+                      </>
+                    )}
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        </Presence>
       )}
 
-      {phase === 'graded' &&
-        round &&
-        botResult &&
-        userCerPct !== null &&
-        botCerPct !== null && (
+      <Presence
+        show={
+          phase === 'graded' &&
+          !!round &&
+          !!botResult &&
+          userCerPct !== null &&
+          botCerPct !== null
+        }
+        delay={90}
+      >
+        {round && botResult && userCerPct !== null && botCerPct !== null && (
           <div ref={resultRef} className="scroll-mt-4">
             <Card className="mb-4">
               <CardContent>
@@ -375,6 +386,7 @@ export default function BeatTheBotPage() {
             </Card>
           </div>
         )}
+      </Presence>
     </div>
   );
 }

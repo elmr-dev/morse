@@ -183,7 +183,10 @@ export default function AudioPlayer({
           {hasBars ? (
             <div className="flex items-end justify-between w-full h-9">
               {displayBars.map((v, i) => {
-                const played = i / displayBars.length <= progress;
+                // Flip at the bar's center (not its left edge) so the
+                // played/unplayed boundary straddles the playhead instead of
+                // running a full bar-width ahead of it.
+                const played = (i + 0.5) / displayBars.length <= progress;
                 const px = 3 + v * 33; // 3px floor (gaps) .. 36px (key-down)
                 return (
                   <div
@@ -203,9 +206,10 @@ export default function AudioPlayer({
               />
             </div>
           )}
-          {/* Playhead */}
+          {/* Playhead — amber radio-dial needle with a soft backlit glow.
+              Overhangs the bars top and bottom like a tuner pointer. */}
           <div
-            className="absolute top-1 bottom-1 w-0.5 bg-foreground/70 rounded-full pointer-events-none"
+            className="absolute -top-0.5 -bottom-0.5 w-0.5 bg-dial rounded-full pointer-events-none shadow-[0_0_6px_1px] shadow-dial/60"
             style={{ left: `${progress * 100}%` }}
           />
         </div>

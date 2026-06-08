@@ -37,6 +37,7 @@
   --color-sidebar-ring: var(--sidebar-ring);
   --color-good: var(--success);
   --color-bad: var(--destructive);
+  --color-dial: var(--dial);
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
@@ -56,14 +57,56 @@
   --shadow-2xl: var(--shadow-2xl);
   --tracking-normal: var(--tracking-normal);
   --spacing: var(--spacing);
+  /* Enter: slide up, then a few decaying bounces that settle into place.
+     Exit: a small anticipatory dip, then accelerate away (back-in). */
+  --animate-slide-up: slide-up 0.42s ease-out both;
+  --animate-slide-down: slide-down 0.4s cubic-bezier(0.36, 0, 0.66, -0.56) both;
+
+  @keyframes slide-up {
+    0% {
+      opacity: 0;
+      transform: translateY(1.25rem);
+    }
+    40% {
+      opacity: 1;
+      transform: translateY(-0.5rem);
+    }
+    58% {
+      transform: translateY(0.3rem);
+    }
+    73% {
+      transform: translateY(-0.18rem);
+    }
+    86% {
+      transform: translateY(0.09rem);
+    }
+    94% {
+      transform: translateY(-0.04rem);
+    }
+    100% {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  @keyframes slide-down {
+    from {
+      opacity: 1;
+      transform: translateY(0);
+    }
+    to {
+      opacity: 0;
+      transform: translateY(1.25rem);
+    }
+  }
 }
 
 :root {
-  --background: oklch(0.973 0.0133 286.1503);
+  --background: oklch(0.93 0.006 286.15);
   --foreground: oklch(0.3015 0.0572 282.4176);
-  --card: oklch(1 0 0);
+  --card: oklch(0.995 0.002 286.15);
   --card-foreground: oklch(0.3015 0.0572 282.4176);
-  --popover: oklch(1 0 0);
+  --popover: oklch(0.995 0.002 286.15);
   --popover-foreground: oklch(0.3015 0.0572 282.4176);
   --primary: oklch(0.5417 0.179 288.0332);
   --primary-foreground: oklch(1 0 0);
@@ -79,6 +122,8 @@
   --input: oklch(0.9115 0.0216 285.9625);
   --ring: oklch(0.5417 0.179 288.0332);
   --success: oklch(0.55 0.17 145);
+  /* Radio-dial pointer: warm amber, like a backlit analog tuner needle. */
+  --dial: oklch(0.72 0.17 60);
   --chart-1: oklch(0.5417 0.179 288.0332);
   --chart-2: oklch(0.7042 0.1602 288.988);
   --chart-3: oklch(0.5679 0.2113 276.7065);
@@ -141,6 +186,8 @@
   --input: oklch(0.3261 0.0597 282.5832);
   --ring: oklch(0.7162 0.1597 290.3962);
   --success: oklch(0.7 0.17 145);
+  /* Brighter in dark mode so the needle reads as glowing against the bars. */
+  --dial: oklch(0.8 0.16 70);
   --chart-1: oklch(0.7162 0.1597 290.3962);
   --chart-2: oklch(0.6382 0.1047 274.9117);
   --chart-3: oklch(0.7482 0.1235 244.7492);
@@ -197,5 +244,36 @@
     font-family: var(--font-sans);
     letter-spacing: var(--tracking-normal);
     -webkit-font-smoothing: antialiased;
+    position: relative;
+  }
+  /* App-wide graph-paper texture: a fixed full-viewport grid, theme-aware (line
+     color derived from --foreground so it reads on both light and dark), faded
+     toward the edges so it's texture, not a box. Sits ABOVE the body's themed
+     background (z-0) so it shows on both themes; the app content is raised above
+     it via #root. */
+  body::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    z-index: 0;
+    pointer-events: none;
+    --grid-line: color-mix(in oklch, var(--foreground) 12%, transparent);
+    background-image:
+      linear-gradient(to right, var(--grid-line) 1px, transparent 1px),
+      linear-gradient(to bottom, var(--grid-line) 1px, transparent 1px);
+    background-size: 24px 24px;
+    -webkit-mask-image: radial-gradient(ellipse 70% 70% at 50% 38%, #000 0%, transparent 82%);
+    mask-image: radial-gradient(ellipse 70% 70% at 50% 38%, #000 0%, transparent 82%);
+  }
+  /* keep all app content above the grid layer */
+  #root {
+    position: relative;
+    z-index: 1;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .animate-slide-up,
+    .animate-slide-down {
+      animation: none;
+    }
   }
 }

@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import AudioPlayer, { fmt } from '@/components/audio-player';
+import { Presence } from '@/components/presence';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -59,8 +60,9 @@ export default function DecodePage() {
   });
   const [playTime, setPlayTime] = useState({ current: 0, duration: 0 });
   const resultsRef = useRef<HTMLDivElement>(null);
-  // True once we've auto-scrolled results into view; prevents re-scrolling (and
-  // the resulting page jump) on every Regenerate while results are already shown.
+  const modelRef = useRef<HTMLDivElement>(null);
+  // Guards the auto-scroll so it fires once per generate, not on every render
+  // (e.g. play-time ticks). Regenerate re-arms it explicitly in onGenerate.
   const didScrollRef = useRef(false);
 
   const onTime = useCallback((current: number, duration: number) => {
@@ -80,7 +82,9 @@ export default function DecodePage() {
       return;
     didScrollRef.current = true;
     const id = window.setTimeout(() => {
-      resultsRef.current?.scrollIntoView({
+      // Bring the model output into view (it's the point of a decode), falling
+      // back to the results container if its card isn't mounted yet.
+      (modelRef.current ?? resultsRef.current)?.scrollIntoView({
         behavior: 'smooth',
         block: 'start',
       });
@@ -143,6 +147,9 @@ export default function DecodePage() {
     setError(null);
     setResult(null);
     setBusy(true);
+    // Regenerate is an explicit user action, so bring the freshly-animated
+    // results back into view (the scroll effect is otherwise one-shot).
+    didScrollRef.current = false;
     try {
       const out = generateAudio({
         text: text.toUpperCase(),
@@ -333,8 +340,8 @@ export default function DecodePage() {
         </CardContent>
       </Card>
 
-      {(dataUri || result) && (
-        <div ref={resultsRef} className="scroll-mt-4">
+      <div ref={resultsRef} className="scroll-mt-4">
+        <Presence show={!!dataUri}>
           {dataUri && (
             <Card className="mb-4">
               <CardHeader className="[&]:flex [&]:flex-row [&]:items-center [&]:gap-3">
@@ -360,7 +367,9 @@ export default function DecodePage() {
               </CardContent>
             </Card>
           )}
+        </Presence>
 
+        <Presence show={!!result} delay={90}>
           {result &&
             (() => {
               // The model's charset has no space, so it never emits word gaps. Grade
@@ -377,7 +386,7 @@ export default function DecodePage() {
               // re-insert visible word breaks into the spaceless output for reading.
               const wordStarts = wordStartIndices(text.toUpperCase());
               return (
-                <Card className="mb-4">
+                <Card ref={modelRef} className="mb-4">
                   <CardHeader className="[&]:flex [&]:flex-row [&]:items-center [&]:gap-2">
                     <CardTitle className="flex-1">
                       <Cpu
@@ -505,8 +514,8 @@ export default function DecodePage() {
                 </Card>
               );
             })()}
-        </div>
-      )}
+        </Presence>
+      </div>
     </div>
   );
 }

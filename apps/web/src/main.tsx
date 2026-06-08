@@ -21,8 +21,3 @@ createRoot(rootEl).render(
     </BrowserRouter>
   </StrictMode>
 );
-
-// Remove the static pre-mount loader (in index.html) once React has mounted,
-// and cancel its delayed reveal so it never flashes on fast/cached loads.
-clearTimeout((window as unknown as { __loaderTimer?: number }).__loaderTimer);
-document.getElementById('app-loader')?.remove();

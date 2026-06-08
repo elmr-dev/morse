@@ -25,12 +25,12 @@ export default function App() {
         <div className="flex items-center justify-between gap-3 mb-3">
           <div className="flex items-center gap-2">
             <img
-              src={`${import.meta.env.BASE_URL}favicon.svg`}
+              src={`${import.meta.env.BASE_URL}logo.webp`}
               alt=""
-              className="size-6"
+              className="h-4 w-auto"
             />
-            <span className="font-mono font-bold text-foreground text-lg tracking-tight">
-              Morse
+            <span className="font-mono font-bold text-foreground text-xl tracking-tight">
+              MORSE
             </span>
           </div>
           <ThemeSwitcher />
