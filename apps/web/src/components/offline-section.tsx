@@ -1,8 +1,8 @@
 import {
-  Check,
   CloudDownload,
   CloudOff,
   Loader2,
+  Trees,
   TriangleAlert,
 } from 'lucide-react';
 import { useOfflineModel } from '@/lib/use-offline-model';
@@ -32,11 +32,11 @@ export function OfflineSection() {
     return (
       <div className="border-t border-border pt-1">
         <div className={rowBase}>
-          <Check className="mt-0.5 size-5 shrink-0 text-primary" aria-hidden />
+          <Trees className="mt-0.5 size-5 shrink-0 text-good" aria-hidden />
           <span className="flex flex-1 flex-col">
-            Saved for offline
+            Saved for off-grid use
             <span className={subline}>
-              The decoder lives on your device — no connection needed.
+              The decoder runs entirely on your device — no connection needed.
             </span>
           </span>
         </div>
@@ -55,9 +55,9 @@ export function OfflineSection() {
             aria-hidden
           />
           <span className="flex flex-1 flex-col">
-            Not saved for offline
+            Not saved for off-grid use
             <span className={subline}>
-              Reconnect to the internet to save the decoder for offline use.
+              Reconnect to the internet to save the decoder for off-grid use.
             </span>
           </span>
         </div>
@@ -95,10 +95,10 @@ export function OfflineSection() {
         )}
         <span className="flex flex-1 flex-col" aria-live="polite">
           {downloading
-            ? 'Saving for offline…'
+            ? 'Saving for off-grid use…'
             : failed
               ? 'Download failed — try again'
-              : 'Save for offline use'}
+              : 'Save for off-grid use'}
           {!(downloading || failed) && (
             <span className={subline}>
               Download the decoder (~16&nbsp;MB) to use without a connection.

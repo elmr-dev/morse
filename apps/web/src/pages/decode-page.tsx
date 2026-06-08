@@ -390,7 +390,7 @@ export default function DecodePage() {
               <span>
                 You're offline and the decoder isn't saved on this device.
                 Reconnect to the internet, then reopen the app to download it
-                for offline use.
+                for off-grid use.
               </span>
             </div>
           )}

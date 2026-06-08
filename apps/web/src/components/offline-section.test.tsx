@@ -31,43 +31,43 @@ afterEach(() => {
 });
 
 describe('OfflineSection', () => {
-  it('offers to save for offline use when nothing is cached', async () => {
+  it('offers to save for off-grid use when nothing is cached', async () => {
     render(<OfflineSection />);
     expect(
-      await screen.findByRole('button', { name: /offline/i })
+      await screen.findByRole('button', { name: /off-grid/i })
     ).toBeInTheDocument();
   });
 
-  it('downloads the model on tap and confirms it is available offline', async () => {
+  it('downloads the model on tap and confirms it is available off-grid', async () => {
     loadSession.mockResolvedValue({});
     render(<OfflineSection />);
     await userEvent.click(
-      await screen.findByRole('button', { name: /offline/i })
+      await screen.findByRole('button', { name: /off-grid/i })
     );
     expect(loadSession).toHaveBeenCalledTimes(1);
-    expect(await screen.findByText(/saved for offline/i)).toBeInTheDocument();
+    expect(await screen.findByText(/saved for off-grid/i)).toBeInTheDocument();
   });
 
   it('surfaces an error and allows retry when the download fails', async () => {
     loadSession.mockRejectedValueOnce(new Error('network')); // first tap fails
     render(<OfflineSection />);
     await userEvent.click(
-      await screen.findByRole('button', { name: /offline/i })
+      await screen.findByRole('button', { name: /off-grid/i })
     );
     const retry = await screen.findByRole('button', { name: /try again/i });
     loadSession.mockResolvedValueOnce({});
     await userEvent.click(retry);
-    expect(await screen.findByText(/saved for offline/i)).toBeInTheDocument();
+    expect(await screen.findByText(/saved for off-grid/i)).toBeInTheDocument();
   });
 
   it('reflects already-cached state on mount without re-downloading', async () => {
     stubCaches(true);
     render(<OfflineSection />);
-    expect(await screen.findByText(/saved for offline/i)).toBeInTheDocument();
+    expect(await screen.findByText(/saved for off-grid/i)).toBeInTheDocument();
     expect(loadSession).not.toHaveBeenCalled();
   });
 
-  it('does not offer to save while offline (it could only fail)', async () => {
+  it('does not offer to save while off-grid (it could only fail)', async () => {
     Object.defineProperty(navigator, 'onLine', {
       configurable: true,
       value: false,
@@ -77,7 +77,7 @@ describe('OfflineSection', () => {
       await screen.findByText(/reconnect to the internet/i)
     ).toBeInTheDocument();
     expect(
-      screen.queryByRole('button', { name: /save for offline/i })
+      screen.queryByRole('button', { name: /save for off-grid/i })
     ).not.toBeInTheDocument();
     Object.defineProperty(navigator, 'onLine', {
       configurable: true,
@@ -87,7 +87,7 @@ describe('OfflineSection', () => {
 
   it('has no accessibility violations', async () => {
     const { container } = render(<OfflineSection />);
-    await screen.findByRole('button', { name: /offline/i });
+    await screen.findByRole('button', { name: /off-grid/i });
     expect(await axe(container)).toHaveNoViolations();
   });
 });

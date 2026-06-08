@@ -20,9 +20,9 @@ export function OfflineProvisioner() {
     if (status !== 'idle' || started.current) return;
     started.current = true;
     toast.promise(download(), {
-      loading: 'Saving the decoder for offline use…',
-      success: 'Decoder saved — works offline now',
-      error: "Couldn't save for offline — try again from More.",
+      loading: 'Saving the decoder for off-grid use…',
+      success: 'Decoder saved — ready off-grid',
+      error: "Couldn't save for off-grid use — try again from More.",
     });
   }, [standalone, online, status, download]);
 
