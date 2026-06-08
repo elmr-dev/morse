@@ -1,0 +1,122 @@
+[
+  {
+    "input": "/Users/mdp/Downloads/cq call",
+    "name": "cq call",
+    "decoder": "greedy",
+    "returncode": 0,
+    "elapsed_s": 7.66,
+    "tone_hz": 898.4,
+    "decoded": "CQCQLCTEN0DN0DCA",
+    "spaced": "CQCQLCTEN0D N0DCA",
+    "confidence": 0.894,
+    "raw_output": "/Users/mdp/Sync/src/mdp/morse/ml/model/runs/real_audio_compare_20260608/cq_call_greedy.txt"
+  },
+  {
+    "input": "/Users/mdp/Downloads/cq call",
+    "name": "cq call",
+    "decoder": "cnn-hsmm",
+    "returncode": 0,
+    "elapsed_s": 23.56,
+    "tone_hz": 898.4,
+    "decoded": "CQKKLCTDEN0DNN0DSA",
+    "spaced": null,
+    "confidence": 0.706,
+    "raw_output": "/Users/mdp/Sync/src/mdp/morse/ml/model/runs/real_audio_compare_20260608/cq_call_cnn-hsmm.txt"
+  },
+  {
+    "input": "/Users/mdp/Downloads/40m tough",
+    "name": "40m tough",
+    "decoder": "greedy",
+    "returncode": 0,
+    "elapsed_s": 25.82,
+    "tone_hz": 910.2,
+    "decoded": "THEGGHMCHRISEUSEMALLPINARATIEMMSFORETERANMERTME",
+    "spaced": "THEG GH MCHRIS EUSEMALLPINARATIEMMS FORETERANME RTME",
+    "confidence": 0.744,
+    "raw_output": "/Users/mdp/Sync/src/mdp/morse/ml/model/runs/real_audio_compare_20260608/40m_tough_greedy.txt"
+  },
+  {
+    "input": "/Users/mdp/Downloads/40m tough",
+    "name": "40m tough",
+    "decoder": "cnn-hsmm",
+    "returncode": 0,
+    "elapsed_s": 38.84,
+    "tone_hz": 910.2,
+    "decoded": "E6ECHSR65EI3CHRISEISE?IZALLGETARATITMNSFOREETERANDEHRTGI",
+    "spaced": null,
+    "confidence": 0.673,
+    "raw_output": "/Users/mdp/Sync/src/mdp/morse/ml/model/runs/real_audio_compare_20260608/40m_tough_cnn-hsmm.txt"
+  },
+  {
+    "input": "/Users/mdp/Downloads/40m qsb exchange - bug",
+    "name": "40m qsb exchange - bug",
+    "decoder": "greedy",
+    "returncode": 0,
+    "elapsed_s": 28.73,
+    "tone_hz": 484.4,
+    "decoded": "WLSENDWIDFIL/HRBUTTOFTHSRTEENNHCNNNMMNETTNSTTITTNNR645NC1WRA975903750NRO647KC1ZQR082Z",
+    "spaced": "WLSENDWIDFIL /HR BUTTOFTHSRTEENNHCNN N MMNETTNSTTITTNNR 645NC1WRA97 5903750 NRO647KC1ZQR 082 Z",
+    "confidence": 0.778,
+    "raw_output": "/Users/mdp/Sync/src/mdp/morse/ml/model/runs/real_audio_compare_20260608/40m_qsb_exchange_-_bug_greedy.txt"
+  },
+  {
+    "input": "/Users/mdp/Downloads/40m qsb exchange - bug",
+    "name": "40m qsb exchange - bug",
+    "decoder": "cnn-hsmm",
+    "returncode": 0,
+    "elapsed_s": 64.02,
+    "tone_hz": 484.4,
+    "decoded": "SHHES5S55?HSHHESHEHISEEEISH5NIH5S55IESSISISI5SE55H555IH5ISI55E555555555555SH5HHII555IHI",
+    "spaced": null,
+    "confidence": 0.559,
+    "raw_output": "/Users/mdp/Sync/src/mdp/morse/ml/model/runs/real_audio_compare_20260608/40m_qsb_exchange_-_bug_cnn-hsmm.txt"
+  },
+  {
+    "input": "/Users/mdp/Downloads/bug for sure",
+    "name": "bug for sure",
+    "decoder": "greedy",
+    "returncode": 0,
+    "elapsed_s": 51.38,
+    "tone_hz": 625.0,
+    "decoded": "EDT1T/GDEMGFMG4LENENFBOEEEEUMEAMETNMNITMSRENNGTFNMBENDINTNDMYLESTTOMTOUMWEMEST73TMDTJA/GDEMG4LTUIIENENUTBESTEB3TTBUANDGUDTUUTTYTCGNEMGVLTUEE",
+    "spaced": "E DT1T/GDEMGFMG4LENENFBOEEEEUMEAMETN MNITMSRENNGTFNMBENDINTNDMYLESTTOMTOUMWEMEST73TMDTJA/GDEMG4LTU I I ENENUTBESTEB3TTBUANDGUDTUUTTYTCGNEMGVLTUEE",
+    "confidence": 0.852,
+    "raw_output": "/Users/mdp/Sync/src/mdp/morse/ml/model/runs/real_audio_compare_20260608/bug_for_sure_greedy.txt"
+  },
+  {
+    "input": "/Users/mdp/Downloads/bug for sure",
+    "name": "bug for sure",
+    "decoder": "cnn-hsmm",
+    "returncode": 0,
+    "elapsed_s": 75.26,
+    "tone_hz": 625.0,
+    "decoded": "ITDA3/FBUSFMGH6E/FBHH??ETFABT7LNN5FX6D6IWHVX55E54EUUUN6V53XDL2/GB?VLTUIIHIEELNSM6V745?FGULXUTL4TNLNE?4LESEE",
+    "spaced": null,
+    "confidence": 0.606,
+    "raw_output": "/Users/mdp/Sync/src/mdp/morse/ml/model/runs/real_audio_compare_20260608/bug_for_sure_cnn-hsmm.txt"
+  },
+  {
+    "input": "/Users/mdp/Downloads/2 party qso",
+    "name": "2 party qso",
+    "decoder": "greedy",
+    "returncode": 143,
+    "elapsed_s": 13.38,
+    "tone_hz": NaN,
+    "decoded": null,
+    "spaced": null,
+    "confidence": NaN,
+    "raw_output": "/Users/mdp/Sync/src/mdp/morse/ml/model/runs/real_audio_compare_20260608/2_party_qso_greedy.txt"
+  },
+  {
+    "input": "/Users/mdp/Downloads/2 party qso",
+    "name": "2 party qso",
+    "decoder": "cnn-hsmm",
+    "returncode": 0,
+    "elapsed_s": 153.12,
+    "tone_hz": 671.9,
+    "decoded": "DEK9WWTFBDJUTEETESSOLIDCOPYAGSDA8BURICOMESTEOINGAGUDJWINUEIHAGEIS88ESBEENAHAMFOA66YRSTVMOSTLYCWESSOMECGITESTINGNUWXNICEDAYTOTEAYSUNNYESHOTATO0FTAHRRIGHTNOWESGOTURTO8HTODAYNUTVHRBEENRETINED2TOYRSFMATTATTINCHICAGOAFTERIA0YRSWITSTHEMINELEKTRONICSE4SOBTUDOUG9VEEMEXJDK9WDTK",
+    "spaced": null,
+    "confidence": 0.717,
+    "raw_output": "/Users/mdp/Sync/src/mdp/morse/ml/model/runs/real_audio_compare_20260608/2_party_qso_cnn-hsmm.txt"
+  }
+]
