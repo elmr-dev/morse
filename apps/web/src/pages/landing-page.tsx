@@ -173,7 +173,7 @@ function HeroWaveform() {
           this exact clip (the bake refuses to ship unless it's letter-perfect),
           and the percentage is the model's real confidence. */}
       <div className="mt-3.5 flex items-center justify-between gap-3 rounded-lg border border-border bg-card px-4 py-3">
-        <span className="font-mono text-sm sm:text-lg tracking-[0.1em] sm:tracking-[0.18em] text-foreground">
+        <span className="font-mono text-sm sm:text-lg tracking-widest sm:tracking-[0.18em] text-foreground">
           {HERO_DECODED}
         </span>
         <span className="inline-flex items-center gap-1.5 font-mono text-[11px] uppercase tracking-[0.15em] text-good shrink-0">
@@ -331,7 +331,7 @@ function BeatTheBotTeaser() {
         </div>
 
         {/* fairness callout — amber accent to draw the eye */}
-        <div className="rounded-lg border border-dial/40 border-l-2 border-l-dial bg-dial/[0.06] p-4">
+        <div className="rounded-lg border border-dial/40 border-l-2 border-l-dial bg-dial/6 p-4">
           <div className="font-mono text-[11px] tracking-[0.15em] uppercase text-dial-strong mb-2">
             Is that a fair fight?
           </div>

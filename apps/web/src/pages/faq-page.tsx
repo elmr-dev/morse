@@ -168,7 +168,7 @@ function Roadmap() {
           className={cn(
             'flex gap-3 rounded-md border p-3',
             accent
-              ? 'border-dial/40 border-l-2 border-l-dial bg-dial/[0.06]'
+              ? 'border-dial/40 border-l-2 border-l-dial bg-dial/6'
               : 'border-border bg-background'
           )}
         >
@@ -189,7 +189,7 @@ function Roadmap() {
               </span>
               <span
                 className={cn(
-                  'rounded-full px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-[0.1em]',
+                  'rounded-full px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-widest',
                   accent
                     ? 'bg-dial/15 text-dial-strong'
                     : 'bg-muted text-muted-foreground'
@@ -427,7 +427,7 @@ export default function FaqPage() {
               </Link>
               <Link
                 to="/beat-the-bot"
-                className="group flex items-center gap-3 rounded-lg border border-dial/40 border-l-2 border-l-dial bg-dial/[0.06] p-3.5 transition-colors hover:border-dial/60 outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+                className="group flex items-center gap-3 rounded-lg border border-dial/40 border-l-2 border-l-dial bg-dial/6 p-3.5 transition-colors hover:border-dial/60 outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
               >
                 <span className="flex size-9 shrink-0 items-center justify-center rounded-md bg-dial/15 text-dial-strong">
                   <Swords className="size-4" />
@@ -479,7 +479,7 @@ function FaqRow({ item, id }: { item: QA; id: string }) {
               <ChevronRight className="size-3.5 transition-transform group-open/tech:rotate-90" />
               The technical version
             </summary>
-            <div className="mt-2.5 flex flex-col gap-2.5 rounded-md border-l-2 border-l-dial border border-border bg-dial/[0.05] p-3">
+            <div className="mt-2.5 flex flex-col gap-2.5 rounded-md border-l-2 border-l-dial border border-border bg-dial/5 p-3">
               {item.technical.map((para) => (
                 <p
                   key={para.slice(0, 32)}

@@ -74,11 +74,11 @@ export default function VolumeControl({
           {/* caret on mobile; right edge (points right) on sm+ */}
           <div
             className={cn(
-              'absolute -top-[6px] size-3 rotate-45 bg-popover border-l border-t border-border sm:hidden',
+              'absolute top-[-6px] size-3 rotate-45 bg-popover border-l border-t border-border sm:hidden',
               align === 'center' ? 'left-1/2 -translate-x-1/2' : 'right-4'
             )}
           />
-          <div className="hidden sm:block absolute top-1/2 -right-[6px] -translate-y-1/2 size-3 rotate-45 bg-popover border-r border-t border-border" />
+          <div className="hidden sm:block absolute top-1/2 right-[-6px] -translate-y-1/2 size-3 rotate-45 bg-popover border-r border-t border-border" />
           <div className="flex items-center gap-2 sm:gap-3">
             <Slider
               min={0}
