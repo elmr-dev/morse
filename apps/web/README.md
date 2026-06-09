@@ -24,8 +24,9 @@ bun run build     # production build to dist/ (Vite; no type-check)
 bun run typecheck # tsc --noEmit type-check
 bun run preview   # serve the production build locally
 bun run test      # Vitest
-bun run check     # Biome lint + format check
-bun run check:fix # Biome, applying fixes
+bun run check       # Biome lint + format check
+bun run check:fix   # Biome, applying fixes
+bun run reuse:fix   # annotate all source files with correct SPDX headers
 ```
 
 ## Stack
@@ -34,6 +35,19 @@ bun run check:fix # Biome, applying fixes
 - **Tailwind CSS v4** + **shadcn/ui** (Radix primitives) for accessible UI
 - **onnxruntime-web** for in-browser model inference
 - **Vitest** for tests, **Biome** for lint/format (no ESLint)
+
+## Licensing
+
+This package is licensed under **AGPL-3.0-or-later** (see `LICENSE.md`).
+Third-party files carry their own headers:
+
+- `src/components/ui/` — shadcn/ui components, MIT © 2023 shadcn
+- `public/ort/` — ONNX Runtime Web, MIT © Microsoft Corporation
+- `public/fonts/` — DSEG7Classic, OFL-1.1 © Keshikan
+
+SPDX compliance is enforced at commit time via `reuse lint` (lefthook pre-commit).
+If a new file is flagged, run `bun run reuse:fix` to annotate the whole package,
+then re-stage and commit.
 
 ## Notes
 
