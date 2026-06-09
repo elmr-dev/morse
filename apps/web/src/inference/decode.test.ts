@@ -4,7 +4,7 @@
 
 import { describe, expect, it } from 'vitest';
 import { BLANK_IDX, CHARS, IDX_TO_CHAR, NUM_CLASSES } from './constants';
-import { cer, greedyDecode } from './decode';
+import { accuracy, cer, greedyDecode, levenshtein } from './decode';
 
 // Build a (T * NUM_CLASSES) Float32Array from a list of "winner" class indices,
 // where each winner gets logit 0 (≈ p=1 after softmax) and others get -10.
@@ -84,5 +84,54 @@ describe('cer', () => {
   });
   it('returns 0 for both empty', () => {
     expect(cer('', '')).toBe(0);
+  });
+});
+
+describe('levenshtein', () => {
+  it('is 0 for identical strings', () => {
+    expect(levenshtein('PARIS', 'PARIS')).toBe(0);
+  });
+  it('counts a single substitution / deletion / insertion as 1', () => {
+    expect(levenshtein('PARIS', 'PARIZ')).toBe(1);
+    expect(levenshtein('PARIS', 'PARI')).toBe(1);
+    expect(levenshtein('PARIS', 'PARISX')).toBe(1);
+  });
+  it('equals the longer length when one side is empty', () => {
+    expect(levenshtein('ABC', '')).toBe(3);
+    expect(levenshtein('', 'ABCD')).toBe(4);
+    expect(levenshtein('', '')).toBe(0);
+  });
+});
+
+describe('accuracy', () => {
+  it('is 1 for an exact copy', () => {
+    expect(accuracy('PARIS', 'PARIS')).toBe(1);
+  });
+  it('is 1 for two empty strings', () => {
+    expect(accuracy('', '')).toBe(1);
+  });
+  it('is 0 when one side is empty', () => {
+    expect(accuracy('AB', '')).toBe(0);
+    expect(accuracy('', 'AB')).toBe(0);
+  });
+  // Regression: the old cer-based metric reported >100% error (1.5) here, which
+  // produced a >100% bar. accuracy normalizes by the longer length, so a guess
+  // longer than the truth can never exceed 100%.
+  it('normalizes by the longer length (never exceeds 100%)', () => {
+    expect(accuracy('K7', 'K7X')).toBeCloseTo(2 / 3, 10);
+  });
+  it('stays within [0, 1] for adversarial pairs', () => {
+    const pairs: [string, string][] = [
+      ['VE5AGZ', 'QQQQQQQQQQQQ'],
+      ['A', 'ZZZZZZZZ'],
+      ['W1AW', ''],
+      ['', 'GARBAGE'],
+      ['HELLO', 'OLLEH'],
+    ];
+    for (const [truth, guess] of pairs) {
+      const a = accuracy(truth, guess);
+      expect(a).toBeGreaterThanOrEqual(0);
+      expect(a).toBeLessThanOrEqual(1);
+    }
   });
 });

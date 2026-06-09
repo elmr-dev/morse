@@ -1,15 +1,9 @@
-import {
-  HelpCircle,
-  House,
-  type LucideIcon,
-  Menu,
-  Radio,
-  Swords,
-} from 'lucide-react';
-import { useState } from 'react';
+import { HelpCircle, House, type LucideIcon, Menu, Radio } from 'lucide-react';
+import { type ComponentType, useState } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
 import { useIsStandalone } from '@/lib/use-standalone';
 import { cn } from '@/lib/utils';
+import { BoxingGloveIcon } from './boxing-glove-icon';
 import { GITHUB_URL, GithubIcon } from './github';
 import Logo from './logo';
 import { MoreSheet } from './more-sheet';
@@ -19,7 +13,7 @@ import ThemeSwitcher from './theme-switcher';
 interface NavItem {
   to: string;
   label: string;
-  icon: LucideIcon;
+  icon: LucideIcon | ComponentType<{ className?: string }>;
   /** Match only the exact path (needed for "/", which otherwise prefix-matches
    *  every route and stays perpetually active). */
   end?: boolean;
@@ -30,7 +24,7 @@ interface NavItem {
 // lives in the header on desktop and the footer on mobile only.
 const NAV_ITEMS: NavItem[] = [
   { to: '/decode', label: 'Decode', icon: Radio },
-  { to: '/beat-the-bot', label: 'Beat the Bot', icon: Swords },
+  { to: '/beat-the-bot', label: 'Beat the Bot', icon: BoxingGloveIcon },
   { to: '/faq', label: 'FAQ', icon: HelpCircle },
 ];
 

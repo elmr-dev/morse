@@ -37,6 +37,15 @@
         if (standalone) document.documentElement.classList.add('standalone');
       })();
     </script>
+    <style>
+      /* Hide the portrait guard up front in normal browser tabs (where it never
+         applies) so it can't flash before the CSS bundle loads. The script
+         above has already set .standalone, so this no-ops for installed PWAs,
+         leaving their landscape guard to index.css. */
+      html:not(.standalone) #rotate-guard {
+        display: none;
+      }
+    </style>
   </head>
   <body>
     <div id="root"></div>

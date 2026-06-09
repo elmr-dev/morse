@@ -8,6 +8,8 @@
 // licensed amateurs and the user-base demographics of a North-America-hosted
 // demo. Rough percentages: 60% US, 25% Canada, 15% world.
 
+import { CALLSIGN_SERIES } from './callsign-countries';
+
 export interface CallsignOptions {
   /** Weights for each region. Defaults to 60/25/15 US/CA/world. */
   weights?: { us: number; canada: number; world: number };
@@ -280,4 +282,53 @@ export function callsignRegion(call: string): 'US' | 'Canada' | 'World' {
   if (/^[KWN]\d/.test(upper) || /^[KWN][A-Z]\d/.test(upper)) return 'US';
   if (/^A[A-L]\d/.test(upper)) return 'US';
   return 'World';
+}
+
+// Pre-split the ITU series into [start, end] pairs once at module load.
+const PARSED_SERIES = CALLSIGN_SERIES.map((s) => {
+  const [start, end] = s.series.split('-');
+  return { start, end, country: s.country, flag: s.flag };
+});
+
+// Does `call` fall within the inclusive prefix range [start, end]? Compares
+// symbol-by-symbol over the range's significant length. A position whose bounds
+// span the full A–Z is a wildcard (and crucially accepts a digit there, since a
+// real callsign carries its call-area digit where the series notation pads with
+// letters); equal bounds require an exact symbol; otherwise the call's symbol
+// must sit within [start[i], end[i]].
+function inSeries(call: string, start: string, end: string): boolean {
+  const len = Math.min(start.length, end.length);
+  for (let i = 0; i < len; i++) {
+    const lo = start[i];
+    const hi = end[i];
+    if (lo === 'A' && hi === 'Z') continue; // trailing wildcard
+    const c = call[i];
+    if (c === undefined) return false;
+    if (lo === hi) {
+      if (c !== lo) return false;
+    } else if (c < lo || c > hi) {
+      return false;
+    }
+  }
+  return true;
+}
+
+/**
+ * Resolve a callsign to its country + flag via the ITU prefix-series table.
+ * Returns `null` when nothing matches or the matched series is reserved (no
+ * flag) — callers should fall back to {@link callsignRegion} for a label. The
+ * flag emoji is garnish (regional-indicator glyphs don't render on Windows
+ * Chrome/Firefox); the country name is the dependable signal.
+ */
+export function callsignCountry(
+  call: string
+): { country: string; flag: string } | null {
+  const upper = call.toUpperCase();
+  if (!upper) return null;
+  for (const s of PARSED_SERIES) {
+    if (inSeries(upper, s.start, s.end)) {
+      return s.flag ? { country: s.country, flag: s.flag } : null;
+    }
+  }
+  return null;
 }

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  callsignCountry,
   callsignRegion,
   randomCallsign,
   randomCanadianCallsign,
@@ -116,5 +117,74 @@ describe('callsignRegion', () => {
   it('handles lowercase input', () => {
     expect(callsignRegion('ve3abc')).toBe('Canada');
     expect(callsignRegion('k1abc')).toBe('US');
+  });
+});
+
+describe('callsignCountry', () => {
+  it('resolves a US call to the United States', () => {
+    expect(callsignCountry('W1AW')).toEqual({
+      country: 'United States',
+      flag: '🇺🇸',
+    });
+    expect(callsignCountry('K3ABC')).toEqual({
+      country: 'United States',
+      flag: '🇺🇸',
+    });
+  });
+
+  it('resolves a 2x1 (A-prefix, digit in 3rd position) US call', () => {
+    // Exercises the trailing A–Z wildcard accepting a digit where the series
+    // notation has a letter ("AAA-ALZ" covers AA1, AL9, …).
+    expect(callsignCountry('AA1BC')).toEqual({
+      country: 'United States of America',
+      flag: '🇺🇸',
+    });
+  });
+
+  it('resolves world calls to their country', () => {
+    expect(callsignCountry('JA1XYZ')).toEqual({ country: 'Japan', flag: '🇯🇵' });
+    expect(callsignCountry('G3XYZ')).toEqual({
+      country: 'United Kingdom',
+      flag: '🇬🇧',
+    });
+    expect(callsignCountry('DL1ABC')).toEqual({
+      country: 'Germany',
+      flag: '🇩🇪',
+    });
+  });
+
+  it('is case-insensitive', () => {
+    expect(callsignCountry('w1aw')).toEqual({
+      country: 'United States',
+      flag: '🇺🇸',
+    });
+  });
+
+  it('returns null for a reserved series (empty flag)', () => {
+    // QAA-QNZ is reserved → no flag → caller falls back to the region label.
+    expect(callsignCountry('Q3ABC')).toBeNull();
+  });
+
+  it('returns null for empty / unresolvable input', () => {
+    expect(callsignCountry('')).toBeNull();
+    expect(callsignCountry('123')).toBeNull();
+  });
+
+  it('resolves Canadian VE/VC calls to Canada', () => {
+    expect(callsignCountry('VE5AGZ')).toEqual({
+      country: 'Canada',
+      flag: '🇨🇦',
+    });
+    expect(callsignCountry('VC3XYZ')).toEqual({
+      country: 'Canada',
+      flag: '🇨🇦',
+    });
+  });
+
+  it('resolves ZL calls to New Zealand', () => {
+    expect(callsignCountry('ZL2ABC')).toEqual({
+      country: 'New Zealand',
+      flag: '🇳🇿',
+    });
   });
 });

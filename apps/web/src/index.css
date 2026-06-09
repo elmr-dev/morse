@@ -5,6 +5,18 @@
 @import "@fontsource-variable/inter";
 @import "@fontsource-variable/jetbrains-mono";
 
+/* Seven-segment face for the Beat-the-Bot scoreboard numerals (digits only).
+   Self-hosted under public/fonts so it's same-origin (COEP-safe) and precached
+   by the service worker. `block` swap avoids a flash of fallback glyphs on a
+   segment display. MIT. */
+@font-face {
+  font-family: "DSEG7 Classic";
+  src: url("/fonts/DSEG7Classic-Regular.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: block;
+}
+
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {
@@ -43,6 +55,12 @@
   --color-good: var(--success);
   --color-bad: var(--destructive);
   --color-dial: var(--dial);
+  /* Beat-the-Bot competitor identity. Distinct hues in BOTH themes (blue vs
+     pink) — kept clear of green (=correct char), red (=wrong), and the app's
+     primary purple. Darker in light mode so a near-white % label reads on the
+     bar fill; lighter in dark mode for the same reason inverted. */
+  --color-you: var(--you);
+  --color-bot: var(--bot);
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
@@ -52,6 +70,9 @@
   --font-sans: var(--font-sans);
   --font-mono: var(--font-mono);
   --font-serif: var(--font-serif);
+  /* Seven-segment display for the scoreboard numerals. Digits only — never
+     for prose. */
+  --font-dseg7: "DSEG7 Classic", var(--font-mono);
   --shadow-2xs: var(--shadow-2xs);
   --shadow-xs: var(--shadow-xs);
   --shadow-sm: var(--shadow-sm);
@@ -127,6 +148,49 @@
       opacity: 0;
     }
   }
+
+  /* Beat-the-Bot "copying" phase: abstract activity only (no bot text). An
+     equalizer of bars pulsing out of phase, and a progress sheen sweeping
+     across the sealed-copy bar. */
+  --animate-eq-bounce: eq-bounce 0.9s ease-in-out infinite;
+  --animate-sweep: sweep 1.4s ease-in-out infinite;
+
+  @keyframes eq-bounce {
+    0%,
+    100% {
+      transform: scaleY(0.3);
+    }
+    50% {
+      transform: scaleY(1);
+    }
+  }
+
+  @keyframes sweep {
+    0% {
+      transform: translateX(-100%);
+    }
+    100% {
+      transform: translateX(300%);
+    }
+  }
+
+  /* Reveal: the crown drops onto the winner's label with a small settle. */
+  --animate-crown-drop: crown-drop 0.5s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+
+  @keyframes crown-drop {
+    0% {
+      opacity: 0;
+      transform: translateY(-0.6rem) scale(0.6);
+    }
+    70% {
+      opacity: 1;
+      transform: translateY(0.08rem) scale(1.12);
+    }
+    100% {
+      opacity: 1;
+      transform: translateY(0) scale(1);
+    }
+  }
 }
 
 :root {
@@ -150,6 +214,9 @@
   --input: oklch(0.9115 0.0216 285.9625);
   --ring: oklch(0.5417 0.179 288.0332);
   --success: oklch(0.55 0.17 145);
+  /* Competitor identity (light mode — darker so the white bar label reads). */
+  --you: oklch(0.48 0.17 252);
+  --bot: oklch(0.48 0.2 350);
   /* Radio-dial pointer: warm amber, like a backlit analog tuner needle. */
   --dial: oklch(0.72 0.17 60);
   --chart-1: oklch(0.5417 0.179 288.0332);
@@ -214,6 +281,9 @@
   --input: oklch(0.3261 0.0597 282.5832);
   --ring: oklch(0.7162 0.1597 290.3962);
   --success: oklch(0.7 0.17 145);
+  /* Competitor identity (dark mode — lighter so the dark bar label reads). */
+  --you: oklch(0.72 0.15 252);
+  --bot: oklch(0.75 0.18 347);
   /* Brighter in dark mode so the needle reads as glowing against the bars. */
   --dial: oklch(0.8 0.16 70);
   --chart-1: oklch(0.7162 0.1597 290.3962);
@@ -346,6 +416,9 @@
   @media (prefers-reduced-motion: reduce) {
     .animate-slide-up,
     .animate-slide-down,
+    .animate-eq-bounce,
+    .animate-sweep,
+    .animate-crown-drop,
     #rotate-guard svg {
       animation: none;
     }

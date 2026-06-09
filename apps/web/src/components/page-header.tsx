@@ -11,12 +11,15 @@ export default function PageHeader({
   icon: Icon,
   title,
   children,
+  wideIntro = false,
 }: {
   eyebrow: string;
   icon: LucideIcon;
   title: string;
   /** Optional intro paragraph below the title. */
   children?: React.ReactNode;
+  /** Let the intro run the full content width instead of the readable cap. */
+  wideIntro?: boolean;
 }) {
   return (
     <header className="mb-5">
@@ -28,7 +31,9 @@ export default function PageHeader({
         {title}
       </h1>
       {children && (
-        <p className="mt-2 max-w-xl text-sm text-muted-foreground leading-relaxed">
+        <p
+          className={`mt-2 text-sm text-muted-foreground leading-relaxed ${wideIntro ? '' : 'max-w-xl'}`}
+        >
           {children}
         </p>
       )}

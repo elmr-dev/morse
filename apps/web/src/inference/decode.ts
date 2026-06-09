@@ -101,23 +101,39 @@ export function greedyDecode(
   return { text, confidence: conf, indices };
 }
 
-// Character Error Rate — Levenshtein distance / reference length
-export function cer(ref: string, hyp: string): number {
-  if (ref.length === 0) return hyp.length === 0 ? 0 : 1;
-  const m = ref.length,
-    n = hyp.length;
+// Levenshtein edit distance between two strings (insert/delete/substitute = 1).
+export function levenshtein(a: string, b: string): number {
+  const m = a.length,
+    n = b.length;
   let prev = new Int32Array(n + 1);
   let curr = new Int32Array(n + 1);
   for (let j = 0; j <= n; j++) prev[j] = j;
   for (let i = 1; i <= m; i++) {
     curr[0] = i;
     for (let j = 1; j <= n; j++) {
-      const cost = ref[i - 1] === hyp[j - 1] ? 0 : 1;
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
       curr[j] = Math.min(prev[j] + 1, curr[j - 1] + 1, prev[j - 1] + cost);
     }
     const t = prev;
     prev = curr;
     curr = t;
   }
-  return prev[n] / m;
+  return prev[n];
+}
+
+// Character Error Rate — Levenshtein distance / reference length. Can exceed 1
+// when the hypothesis is much longer than the reference; callers that need a
+// bounded score should use `accuracy` instead.
+export function cer(ref: string, hyp: string): number {
+  if (ref.length === 0) return hyp.length === 0 ? 0 : 1;
+  return levenshtein(ref, hyp) / ref.length;
+}
+
+// Fraction of characters copied correctly, in [0, 1]. Symmetric and normalized
+// by the longer of the two strings, so a garbage or over-long guess can never
+// score below 0% or above 100% (unlike `cer`, which is unbounded above).
+export function accuracy(truth: string, guess: string): number {
+  const denom = Math.max(truth.length, guess.length);
+  if (denom === 0) return 1;
+  return Math.max(0, 1 - levenshtein(truth, guess) / denom);
 }
