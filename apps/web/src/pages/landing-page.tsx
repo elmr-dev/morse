@@ -46,7 +46,7 @@ export default function LandingPage() {
 }
 
 /* -------------------------------------------------------------------------- */
-/* Hero — a REAL "CQ CQ DE KC4T" clip at −12 dB SNR. The raw signal arrives as */
+/* Hero — a REAL "CQ CQ DE KC4T K" clip at −12 dB SNR. The raw signal arrives as */
 /* a wall of noise (top band); the matched-filter front-end recovers clean     */
 /* keying from that same clip (bottom band). Both layers are baked from one    */
 /* genuine morse-audio clip — see lib/hero-signal.generated.ts. Messy in →     */

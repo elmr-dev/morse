@@ -24,10 +24,10 @@ import { IN_CHANNELS, NUM_CLASSES } from '../src/inference/constants';
 import { greedyDecode } from '../src/inference/decode';
 import { DSP_SAMPLE_RATE, extractEnvelope } from '../src/inference/dsp';
 
-// --- the real message: a complete, on-air-valid CW call, with KC4T (Mark, the
-// project's creator) as the station. "CQ CQ DE KC4T" = "calling anyone, this
-// is KC4T". Short enough that the elements stay legible as distinct humps.
-const MESSAGE = 'CQ CQ DE KC4T';
+// --- the real message: a complete, on-air-valid CQ call, with KC4T (Mark, the
+// project's creator) as the station. "CQ CQ DE KC4T K" = "calling anyone, this
+// is KC4T, over". Short enough that the elements stay legible as distinct humps.
+const MESSAGE = 'CQ CQ DE KC4T K';
 const WPM = 22;
 const FREQ = 700;
 const GEN_RATE = 22050;
@@ -200,7 +200,7 @@ function std(arr: number[]): number {
 }
 
 // International Morse — used to regenerate the IDEAL on/off keying from the
-// message constant, so the timing diagram is faithful to "CQ CQ DE KC4T" by
+// message constant, so the timing diagram is faithful to "CQ CQ DE KC4T K" by
 // construction (correct dit/dah ratios), not hand-drawn.
 const MORSE: Record<string, string> = {
   A: '.-',
