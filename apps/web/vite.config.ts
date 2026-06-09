@@ -4,6 +4,7 @@ import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
 import { defineConfig, loadEnv } from 'vite';
 import { VitePWA } from 'vite-plugin-pwa';
+import { SITE_DESCRIPTION, SITE_TITLE } from './src/lib/site';
 import { seoHead } from './vite-plugin-seo-head';
 
 // Opt-in HTTPS for LAN / on-device PWA testing: service workers need a secure
@@ -36,9 +37,42 @@ export default defineConfig(({ mode }) => {
       tailwindcss(),
       seoHead(siteUrl, version),
       VitePWA({
-        // Keep the hand-tuned public/manifest.webmanifest (already linked in
-        // index.html). The plugin only generates and wires up the service worker.
-        manifest: false,
+        // Generate the manifest from shared constants so name/description can't
+        // drift from the rest of the site (SITE_TITLE/SITE_DESCRIPTION live in
+        // src/lib/site.ts). The plugin emits manifest.webmanifest and injects the
+        // <link> — no hand-maintained public/ copy. (theme_color also lives in the
+        // theme-color meta + CSS token; centralizing color is a separate job.)
+        manifest: {
+          name: SITE_TITLE,
+          short_name: 'Morse',
+          description: SITE_DESCRIPTION,
+          start_url: '/',
+          scope: '/',
+          display: 'standalone',
+          orientation: 'portrait',
+          background_color: '#0F0F1A',
+          theme_color: '#0F0F1A',
+          icons: [
+            {
+              src: '/icon-192.png',
+              sizes: '192x192',
+              type: 'image/png',
+              purpose: 'any',
+            },
+            {
+              src: '/icon-512.png',
+              sizes: '512x512',
+              type: 'image/png',
+              purpose: 'any',
+            },
+            {
+              src: '/icon-maskable-512.png',
+              sizes: '512x512',
+              type: 'image/png',
+              purpose: 'maskable',
+            },
+          ],
+        },
         // Surface a "new version" prompt instead of silently swapping the app out
         // from under an in-progress decode. Driven by useRegisterSW in
         // src/components/pwa-update-prompt.tsx.
