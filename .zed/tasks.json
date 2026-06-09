@@ -1,0 +1,19 @@
+// Single replacement for Zed's built-in JS/TS test runnables (disabled in
+// .zed/settings.json). Invokes the repo-local vitest by absolute path so the
+// gutter never resolves a global/parent vitest off PATH; cwd = worktree root so
+// the root vitest.config.ts routes the file to the correct project.
+[
+  {
+    "label": "vitest test $ZED_SYMBOL",
+    "command": "$ZED_WORKTREE_ROOT/node_modules/.bin/vitest",
+    "args": [
+      "run",
+      "--no-file-parallelism",
+      "--testNamePattern",
+      "\"$ZED_SYMBOL\"",
+      "$ZED_FILE"
+    ],
+    "tags": ["js-test", "ts-test", "tsx-test"],
+    "cwd": "$ZED_WORKTREE_ROOT"
+  }
+]

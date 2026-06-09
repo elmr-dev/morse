@@ -61,7 +61,7 @@ export function SiteHeader() {
             beside the logo, fading out toward the screen edges. Mobile only. */}
         <span
           aria-hidden="true"
-          className="h-px flex-1 bg-gradient-to-r from-transparent to-primary/60 sm:hidden"
+          className="h-px flex-1 bg-linear-to-r from-transparent to-primary/60 sm:hidden"
         />
         <NavLink
           to="/"
@@ -76,7 +76,7 @@ export function SiteHeader() {
         </NavLink>
         <span
           aria-hidden="true"
-          className="h-px flex-1 bg-gradient-to-l from-transparent to-primary/60 sm:hidden"
+          className="h-px flex-1 bg-linear-to-l from-transparent to-primary/60 sm:hidden"
         />
 
         <div className="flex items-center gap-1">

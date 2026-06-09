@@ -1,15 +1,39 @@
+# ── JS/TS dependencies & build output ──────────────────────────────────────
 node_modules/
+# dist/ has no leading/embedded slash, so it matches at any depth (root + every package)
 dist/
-.env
-**/dist/
+# Vite transform cache + Turborepo task cache
 **/.vite/
 **/.turbo/
-packages/*/dist/
-*.log
-.DS_Store
-.claude/
+# tsc incremental build info
 *.tsbuildinfo
+# vitest/v8 coverage reports
+coverage/
+
+# ── Environment ──────────────────────────────────────────────────────────────
+# Keep real .env files out of git (VITE_-prefixed vars are public — inlined into
+# the client bundle — so this is hygiene, not secrecy). The build reads the
+# working-tree apps/web/.env.production, which is intentionally untracked; a
+# committed *.example documents the required vars for clone-and-build.
+.env
+.env.*
+!.env*.example
+
+# ── Logs ─────────────────────────────────────────────────────────────────────
+*.log
+
+# ── OS / editor / local tooling ──────────────────────────────────────────────
+.DS_Store
+# Claude Code session data
+.claude/
+
+# ── Stray package-manager lockfiles ──────────────────────────────────────────
+# This repo uses bun (bun.lock is the committed lockfile); reject others.
 package-lock.json
+
+# ── ML / Python artifacts & datasets (packages/ml) ───────────────────────────
+# Large, generated, or environment-local files from the ML package. The package
+# also has its own packages/ml/**/.gitignore; these are the repo-root rules.
 *.gz
 *.jsonl
 *.npy

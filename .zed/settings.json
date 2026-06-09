@@ -1,11 +1,29 @@
 {
+  "languages": {
+    "CSS": {
+      "language_servers": ["tailwindcss-language-server"],
+    },
+    // Suppress Zed's auto-generated test runnables (vitest + node, ×file/single/
+    // debug) so the gutter shows only our single vitest task in .zed/tasks.json.
+    // `tasks.enabled: false` gates only language-provided tasks; worktree tasks
+    // still bind to the gutter by tag.
+    "TypeScript": {
+      "tasks": { "enabled": false },
+    },
+    "TSX": {
+      "tasks": { "enabled": false },
+    },
+    "JavaScript": {
+      "tasks": { "enabled": false },
+    },
+  },
   "lsp": {
     "vtsls": {
       "settings": {
         "typescript": {
-          "tsdk": "node_modules/typescript/lib"
-        }
-      }
-    }
-  }
+          "tsdk": "node_modules/typescript/lib",
+        },
+      },
+    },
+  },
 }

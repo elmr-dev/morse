@@ -15,6 +15,7 @@ import { useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { GITHUB_URL } from '@/components/github';
 import { Reveal } from '@/components/reveal';
+import { useDocumentHead } from '@/lib/use-document-head';
 import { cn } from '@/lib/utils';
 
 interface QA {
@@ -168,7 +169,7 @@ function Roadmap() {
           className={cn(
             'flex gap-3 rounded-md border p-3',
             accent
-              ? 'border-dial/40 border-l-2 border-l-dial bg-dial/[0.06]'
+              ? 'border-dial/40 border-l-2 border-l-dial bg-dial/6'
               : 'border-border bg-background'
           )}
         >
@@ -189,7 +190,7 @@ function Roadmap() {
               </span>
               <span
                 className={cn(
-                  'rounded-full px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-[0.1em]',
+                  'rounded-full px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-widest',
                   accent
                     ? 'bg-dial/15 text-dial-strong'
                     : 'bg-muted text-muted-foreground'
@@ -320,7 +321,49 @@ const SECTIONS: FaqSection[] = [
   },
 ];
 
+/**
+ * FAQPage structured data built from the real SECTIONS content above, so the
+ * schema can never drift from what's on the page. Uses the plain-language
+ * `a[]` answers (crawler-safe text), joining paragraphs into one answer string
+ * (the rich `node` variants are JSX, not text, and are simply not referenced).
+ *
+ * Google only grants FAQ rich results when the answer text is present in the
+ * RENDERED HTML. Our answers live inside <details> accordions, so this is fully
+ * effective on the prerendered /faq route (the build snapshots the rendered DOM)
+ * and for crawlers that execute JS.
+ */
+export function faqJsonLd(): Record<string, unknown> {
+  // Schema text must be plain text, not HTML/JSX \u2014 normalize the curly quotes
+  // used in the copy to straight quotes so the JSON-LD reads cleanly.
+  const normalizeQuotes = (s: string) =>
+    s.replace(/[\u201c\u201d\u2018\u2019]/g, (m) =>
+      m === '\u2018' || m === '\u2019' ? "'" : '"'
+    );
+  const entities = SECTIONS.flatMap((section) =>
+    section.items.map((item) => ({
+      '@type': 'Question',
+      name: normalizeQuotes(item.q),
+      acceptedAnswer: {
+        '@type': 'Answer',
+        text: normalizeQuotes(item.a.join(' ')),
+      },
+    }))
+  );
+  return {
+    '@context': 'https://schema.org',
+    '@type': 'FAQPage',
+    mainEntity: entities,
+  };
+}
+
 export default function FaqPage() {
+  useDocumentHead({
+    title: 'FAQ',
+    description:
+      'How the MORSE neural CW decoder works, how good it is, why Beat the Bot is set up the way it is, who built it, and what is coming next.',
+    path: '/faq',
+    jsonLd: faqJsonLd(),
+  });
   // Deep-linking: /faq#<id> opens that question and scrolls it into view, with
   // a brief highlight. Runs on mount and on later hash changes. (ScrollToTop
   // bails when a hash is present so it doesn't fight this.)
@@ -427,7 +470,7 @@ export default function FaqPage() {
               </Link>
               <Link
                 to="/beat-the-bot"
-                className="group flex items-center gap-3 rounded-lg border border-dial/40 border-l-2 border-l-dial bg-dial/[0.06] p-3.5 transition-colors hover:border-dial/60 outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+                className="group flex items-center gap-3 rounded-lg border border-dial/40 border-l-2 border-l-dial bg-dial/6 p-3.5 transition-colors hover:border-dial/60 outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
               >
                 <span className="flex size-9 shrink-0 items-center justify-center rounded-md bg-dial/15 text-dial-strong">
                   <Swords className="size-4" />
@@ -479,7 +522,7 @@ function FaqRow({ item, id }: { item: QA; id: string }) {
               <ChevronRight className="size-3.5 transition-transform group-open/tech:rotate-90" />
               The technical version
             </summary>
-            <div className="mt-2.5 flex flex-col gap-2.5 rounded-md border-l-2 border-l-dial border border-border bg-dial/[0.05] p-3">
+            <div className="mt-2.5 flex flex-col gap-2.5 rounded-md border-l-2 border-l-dial border border-border bg-dial/5 p-3">
               {item.technical.map((para) => (
                 <p
                   key={para.slice(0, 32)}

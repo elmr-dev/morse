@@ -129,7 +129,7 @@ export function MoreSheet({
                     key={value}
                     className={cn(
                       rowClass,
-                      'cursor-pointer has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-ring/50'
+                      'cursor-pointer has-focus-visible:ring-2 has-focus-visible:ring-ring/50'
                     )}
                   >
                     <input
