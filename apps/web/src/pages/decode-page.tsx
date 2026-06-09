@@ -26,6 +26,7 @@ import { Slider } from '@/components/ui/slider';
 import { Switch } from '@/components/ui/switch';
 import VolumeControl from '@/components/volume-control';
 import { randomCwMessage } from '@/lib/cw-message';
+import { useDocumentHead } from '@/lib/use-document-head';
 import { isOfflineModelCached } from '@/lib/use-offline-model';
 import { usePersistedState } from '@/lib/use-persisted-state';
 import { cer } from '../inference/decode';
@@ -39,6 +40,12 @@ const DEFAULT_SNR = 6;
 const DEFAULT_QSB = false;
 
 export default function DecodePage() {
+  useDocumentHead({
+    title: 'Decode',
+    description:
+      'Generate a Morse code (CW) clip at 12–50 WPM and any signal-to-noise ratio, then watch a neural network copy it in your browser — with character error rate and a per-character diff.',
+    path: '/decode',
+  });
   const [text, setText] = useState(() => randomCwMessage());
   const [wpm, setWpm] = usePersistedState('decode.wpm', DEFAULT_WPM);
   const [snr, setSnr] = usePersistedState('decode.snr', DEFAULT_SNR);

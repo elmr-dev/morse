@@ -18,9 +18,16 @@ import {
   HERO_NOISY,
   HERO_SNR_DB,
 } from '@/lib/hero-signal.generated';
+import { SITE_DESCRIPTION, SITE_TITLE } from '@/lib/site';
+import { useDocumentHead } from '@/lib/use-document-head';
 import { cn } from '@/lib/utils';
 
 export default function LandingPage() {
+  useDocumentHead({
+    fullTitle: SITE_TITLE,
+    description: SITE_DESCRIPTION,
+    path: '/',
+  });
   return (
     <div className="flex flex-col gap-14 pb-6">
       <Hero />

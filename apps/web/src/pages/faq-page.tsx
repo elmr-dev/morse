@@ -15,6 +15,7 @@ import { useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { GITHUB_URL } from '@/components/github';
 import { Reveal } from '@/components/reveal';
+import { useDocumentHead } from '@/lib/use-document-head';
 import { cn } from '@/lib/utils';
 
 interface QA {
@@ -320,7 +321,49 @@ const SECTIONS: FaqSection[] = [
   },
 ];
 
+/**
+ * FAQPage structured data built from the real SECTIONS content above, so the
+ * schema can never drift from what's on the page. Uses the plain-language
+ * `a[]` answers (crawler-safe text), joining paragraphs into one answer string
+ * (the rich `node` variants are JSX, not text, and are simply not referenced).
+ *
+ * Google only grants FAQ rich results when the answer text is present in the
+ * RENDERED HTML. Our answers live inside <details> accordions, so this is fully
+ * effective on the prerendered /faq route (the build snapshots the rendered DOM)
+ * and for crawlers that execute JS.
+ */
+export function faqJsonLd(): Record<string, unknown> {
+  // Schema text must be plain text, not HTML/JSX \u2014 normalize the curly quotes
+  // used in the copy to straight quotes so the JSON-LD reads cleanly.
+  const normalizeQuotes = (s: string) =>
+    s.replace(/[\u201c\u201d\u2018\u2019]/g, (m) =>
+      m === '\u2018' || m === '\u2019' ? "'" : '"'
+    );
+  const entities = SECTIONS.flatMap((section) =>
+    section.items.map((item) => ({
+      '@type': 'Question',
+      name: normalizeQuotes(item.q),
+      acceptedAnswer: {
+        '@type': 'Answer',
+        text: normalizeQuotes(item.a.join(' ')),
+      },
+    }))
+  );
+  return {
+    '@context': 'https://schema.org',
+    '@type': 'FAQPage',
+    mainEntity: entities,
+  };
+}
+
 export default function FaqPage() {
+  useDocumentHead({
+    title: 'FAQ',
+    description:
+      'How the MORSE neural CW decoder works, how good it is, why Beat the Bot is set up the way it is, who built it, and what is coming next.',
+    path: '/faq',
+    jsonLd: faqJsonLd(),
+  });
   // Deep-linking: /faq#<id> opens that question and scrolls it into view, with
   // a brief highlight. Runs on mount and on later hash changes. (ScrollToTop
   // bails when a hash is present so it doesn't fight this.)

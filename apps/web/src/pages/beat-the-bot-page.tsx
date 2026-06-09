@@ -21,6 +21,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import VolumeControl from '@/components/volume-control';
 import { fireConfetti } from '@/lib/confetti';
+import { useDocumentHead } from '@/lib/use-document-head';
 import { usePersistedState } from '@/lib/use-persisted-state';
 import { callsignRegion, randomCallsign } from '../inference/callsign';
 import { cer } from '../inference/decode';
@@ -60,6 +61,12 @@ function randomRound(): Round {
 }
 
 export default function BeatTheBotPage() {
+  useDocumentHead({
+    title: 'Beat the Bot',
+    description:
+      'One callsign buried in static, keyed twice in a single pass — the same audio you and the model both get. Out-copy a neural CW decoder by ear, if you can.',
+    path: '/beat-the-bot',
+  });
   const [phase, setPhase] = useState<Phase>('idle');
   const [round, setRound] = useState<Round | null>(null);
   const [listens, setListens] = useState(0);
