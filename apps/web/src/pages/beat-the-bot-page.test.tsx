@@ -12,26 +12,42 @@ import {
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { axe } from 'vitest-axe';
 import type { DualDecodeResult } from '../inference/dual-decode';
+import type { PipelineResult } from '../inference/pipeline';
 
 // The round always copies W1AW (truth) — a real US call so callsignCountry
 // resolves and the CER/beatCount math is predictable.
 const TRUTH = 'W1AW';
+// Fixed random-mode copy (short, so it clears the clip-budget cap on the first
+// try) for deterministic random-round assertions.
+const RANDOM_TRUTH = 'CQ TEST';
 
-const { loadSession, decodeDual, fireConfetti, randomCallsign, generateAudio } =
-  vi.hoisted(() => ({
-    loadSession: vi.fn(),
-    decodeDual: vi.fn(),
-    fireConfetti: vi.fn(),
-    randomCallsign: vi.fn(() => 'W1AW'),
-    generateAudio: vi.fn(() => ({
-      dataUri: 'data:audio/wav;base64,AAAA',
-      sampleRate: 22050,
-    })),
-  }));
+const {
+  loadSession,
+  decodeDual,
+  decodeSingle,
+  fireConfetti,
+  randomCallsign,
+  randomCwMessage,
+  generateAudio,
+} = vi.hoisted(() => ({
+  loadSession: vi.fn(),
+  decodeDual: vi.fn(),
+  decodeSingle: vi.fn(),
+  fireConfetti: vi.fn(),
+  randomCallsign: vi.fn(() => 'W1AW'),
+  randomCwMessage: vi.fn(() => 'CQ TEST'),
+  generateAudio: vi.fn(() => ({
+    dataUri: 'data:audio/wav;base64,AAAA',
+    sampleRate: 22050,
+  })),
+}));
 
 vi.mock('@/inference/onnx', () => ({ loadSession: () => loadSession() }));
 vi.mock('../inference/dual-decode', () => ({
   decodeDualCallsignDataUri: (...args: unknown[]) => decodeDual(...args),
+}));
+vi.mock('../inference/pipeline', () => ({
+  decodeDataUri: (...args: unknown[]) => decodeSingle(...args),
 }));
 vi.mock('../inference/generate', () => ({
   generateAudio: () => generateAudio(),
@@ -40,6 +56,10 @@ vi.mock('../inference/callsign', async (orig) => {
   const actual = await orig<typeof import('../inference/callsign')>();
   return { ...actual, randomCallsign: () => randomCallsign() };
 });
+vi.mock('@/lib/cw-message', () => ({
+  randomCwMessage: () => randomCwMessage(),
+  MAX_CW_MESSAGE: 40,
+}));
 vi.mock('@/lib/confetti', () => ({ fireConfetti: () => fireConfetti() }));
 
 import BeatTheBotPage from './beat-the-bot-page';
@@ -54,6 +74,15 @@ function botResult(text: string): DualDecodeResult {
     secondHalf: half,
     agreement: true,
     splitFrame: 0,
+    envelopeBars: [0.2, 0.6, 0.4, 0.8, 0.3],
+  };
+}
+
+function singleResult(text: string): PipelineResult {
+  return {
+    text,
+    confidence: 0.9,
+    timing: { audioMs: 0, dspMs: 0, modelMs: 0, decodeMs: 0, totalMs: 0 },
     envelopeBars: [0.2, 0.6, 0.4, 0.8, 0.3],
   };
 }
@@ -92,6 +121,8 @@ beforeEach(() => {
   stubLocalStorage();
   loadSession.mockResolvedValue({});
   decodeDual.mockResolvedValue(botResult('XXXX'));
+  decodeSingle.mockResolvedValue(singleResult('YYYY'));
+  randomCwMessage.mockReturnValue(RANDOM_TRUTH);
   // Default to reduced motion so the staged reveal resolves synchronously
   // (typing/racing skipped) — individual tests can opt back into animation.
   stubMatchMedia(true);
@@ -347,5 +378,102 @@ describe('BeatTheBotPage', () => {
       /New best at|You out-copied the bot|You matched the bot|You \d+%/
     );
     expect(container.textContent).not.toContain('CER');
+  });
+
+  describe('callsign / random text mode', () => {
+    it('offers a single-select toggle defaulting to Callsigns', async () => {
+      await renderArmed();
+      const group = screen.getByRole('radiogroup', { name: 'Round text' });
+      expect(group).toBeInTheDocument();
+      expect(screen.getByRole('radio', { name: 'Callsigns' })).toBeChecked();
+      expect(screen.getByRole('radio', { name: 'Random' })).not.toBeChecked();
+      // Callsign mode keys twice; the chip says so.
+      expect(screen.getByText('2X')).toBeInTheDocument();
+    });
+
+    it('selecting Random re-arms a single-send round (no KEYED 2X chip, mode-specific helper)', async () => {
+      await renderArmed();
+      fireEvent.click(screen.getByRole('radio', { name: 'Random' }));
+      expect(screen.getByRole('radio', { name: 'Random' })).toBeChecked();
+      expect(
+        screen.getByRole('radio', { name: 'Callsigns' })
+      ).not.toBeChecked();
+      // Keyed once → no 2X chip; helper reflects the active mode.
+      expect(screen.queryByText('2X')).toBeNull();
+      expect(screen.getByText(/Random groups/)).toBeInTheDocument();
+    });
+
+    it('persists the choice under morse:btb:textmode', async () => {
+      await renderArmed();
+      fireEvent.click(screen.getByRole('radio', { name: 'Random' }));
+      await waitFor(() =>
+        expect(localStorage.getItem('morse:btb:textmode')).toBe('"random"')
+      );
+    });
+
+    it('a random round single-decodes (no dual look) and omits the country', async () => {
+      const { container } = await renderArmed();
+      fireEvent.click(screen.getByRole('radio', { name: 'Random' }));
+      await play();
+      await submit(RANDOM_TRUTH);
+      await screen.findByText(
+        /New best at|You out-copied the bot|You matched the bot|You \d+%/
+      );
+      // Single decode ran; the dual-look path did not.
+      expect(decodeSingle).toHaveBeenCalled();
+      expect(decodeDual).not.toHaveBeenCalled();
+      // Truth shown (word breaks render as subtle dots between groups), but no
+      // country/region pill for a random group.
+      expect(container.textContent).toContain('CQ');
+      expect(container.textContent).toContain('TEST');
+      expect(screen.queryByText('United States')).toBeNull();
+      expect(screen.queryByText('International')).toBeNull();
+    });
+
+    it('grades a random round letters-only — word gaps count for neither side', async () => {
+      // Bot copies the letters perfectly but, like the model, emits no space.
+      decodeSingle.mockResolvedValue(singleResult('CQTEST'));
+      const { container } = await renderArmed();
+      fireEvent.click(screen.getByRole('radio', { name: 'Random' }));
+      await play();
+      // Human types the copy WITH the word break.
+      await submit('CQ TEST');
+      await screen.findByText(/New best at|You matched the bot/);
+      // Both sides scored 100% — neither penalized for the gap in "CQ TEST".
+      const pcts = Array.from(container.querySelectorAll('span'))
+        .map((s) => s.textContent?.trim() ?? '')
+        .filter((t) => /^\d+%$/.test(t))
+        .map((t) => parseInt(t, 10));
+      expect(pcts.length).toBeGreaterThan(0);
+      expect(pcts.every((p) => p === 100)).toBe(true);
+    });
+
+    it('a random round drops the two-looks panel for a single-send disclosure', async () => {
+      await renderArmed();
+      fireEvent.click(screen.getByRole('radio', { name: 'Random' }));
+      await play();
+      await submit(RANDOM_TRUTH);
+      await screen.findByText(
+        /New best at|You out-copied the bot|You matched the bot|You \d+%/
+      );
+      expect(screen.getByText('What you were up against')).toBeInTheDocument();
+      expect(screen.queryByText('How the bot got two looks')).toBeNull();
+    });
+
+    it('scores a random round into the same per-tier best (no new storage key)', async () => {
+      await renderArmed();
+      fireEvent.click(screen.getByRole('radio', { name: 'Random' }));
+      await play();
+      await submit(RANDOM_TRUTH); // perfect copy → bestCER 0 at the active tier
+      await screen.findByText(/New best at/);
+      await waitFor(() => {
+        const stored = JSON.parse(
+          localStorage.getItem('morse:btb:bests') ?? '{}'
+        );
+        expect(stored.technician.bestCER).toBe(0);
+      });
+      // No mode-dimensioned best key was introduced.
+      expect(localStorage.getItem('morse:btb:bests:random')).toBeNull();
+    });
   });
 });

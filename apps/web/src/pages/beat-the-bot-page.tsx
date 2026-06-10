@@ -22,7 +22,8 @@ import {
   User,
   Zap,
 } from 'lucide-react';
-import { useEffect, useRef, useState } from 'react';
+import { calculateDuration, translate } from 'morse-audio';
+import { Fragment, useEffect, useRef, useState } from 'react';
 import { BoxingGloveIcon } from '@/components/boxing-glove-icon';
 import PageHeader from '@/components/page-header';
 import { usePrefersReducedMotion } from '@/components/presence';
@@ -31,6 +32,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import VolumeControl from '@/components/volume-control';
 import { fireConfetti } from '@/lib/confetti';
+import { randomCwMessage } from '@/lib/cw-message';
 import { useDocumentHead } from '@/lib/use-document-head';
 import { clearPersisted, usePersistedState } from '@/lib/use-persisted-state';
 import {
@@ -45,6 +47,7 @@ import {
 } from '../inference/dual-decode';
 import { generateAudio } from '../inference/generate';
 import { loadSession } from '../inference/onnx';
+import { decodeDataUri, type PipelineResult } from '../inference/pipeline';
 
 const TONE_FREQ = 700;
 // Reveal staging timings (ms). Per-character typing cadence, the bar-race
@@ -116,12 +119,43 @@ const EMPTY_BESTS: Bests = {
 
 type Phase = 'armed' | 'copying' | 'reveal';
 
+// The round's copy is either a real callsign (keyed twice, with a country) or a
+// random on-air group reused from DecodePage's generator (keyed once, no origin).
+type TextMode = 'callsigns' | 'random';
+
 interface Round {
-  text: string;
-  region: 'US' | 'Canada' | 'World';
+  text: string; // the truth — single callsign, or the random string
+  mode: TextMode;
+  region: 'US' | 'Canada' | 'World'; // callsign rounds only; unused for random
   tier: Tier['id'];
   human: { wpm: number; snr: number; dataUri: string }; // what the player hears
   bot: { wpm: number; snr: number; dataUri: string }; // what the bot decodes
+}
+
+// The model envelope tops out at MAX_FRAMES / ENVELOPE_SR = 16 s (see onnx.ts);
+// past that runInference *throws* (it doesn't silently truncate). The slowest
+// tier (No-Code, 13 WPM) produces the LONGEST clip, so if a single send fits the
+// envelope there, it fits at every faster tier — and the bot's fixed 28 WPM
+// decode clip (the only clip actually fed to the model) clears it with room to
+// spare (~7 s vs 16 s). randomCwMessage caps at 40 chars, which at 13 WPM can run
+// to ~24 s, so we reject over-budget candidates and regenerate.
+const SLOWEST_WPM = 13;
+const CLIP_BUDGET_SEC = 15; // 16 s envelope − ~1 s (≈0.4 s generator padding + margin)
+
+// Keyed duration (seconds) of one send of `text` at `wpm`, from the same element
+// timing the generator uses — no audio synthesis needed.
+function keyedDurationSec(text: string, wpm: number): number {
+  return calculateDuration(translate(text, wpm, wpm).timings);
+}
+
+// A random on-air group from DecodePage's generator, length-bounded so its single
+// send stays inside the 16 s envelope at the slowest tier (avg ~2 tries).
+function randomString(): string {
+  for (let i = 0; i < 40; i++) {
+    const msg = randomCwMessage();
+    if (keyedDurationSec(msg, SLOWEST_WPM) <= CLIP_BUDGET_SEC) return msg;
+  }
+  return 'CQ TEST'; // guaranteed-short fallback (~2 s at 13 WPM)
 }
 
 // Format an SNR value with sign: +10, −6, +0, etc. (proper minus sign).
@@ -130,10 +164,21 @@ function formatSnr(snr: number): string {
   return `−${Math.abs(snr)}`;
 }
 
-function randomRound(tier: Tier): Round {
-  const text = randomCallsign();
-  const region = callsignRegion(text);
-  const sentText = `${text} ${text}`; // keyed twice, as today
+// Strip spaces for grading and alignment. CW word gaps are a reading aid — the
+// model's charset has no space, so it never emits one (same rule as DecodePage).
+// Random messages carry spaces; callsigns don't. Grading letters-only keeps both
+// sides fair (the bot isn't dinged for gaps it can't key) and lets the player
+// type word breaks or not. The spaced text is still shown verbatim on reveal.
+function lettersOnly(s: string): string {
+  return s.replace(/\s+/g, '');
+}
+
+function randomRound(tier: Tier, mode: TextMode): Round {
+  // Callsigns are keyed twice (the on-air convention — you send a call twice so
+  // the other op catches it); random groups are sent once, as they would be.
+  const text = mode === 'callsigns' ? randomCallsign() : randomString();
+  const region = mode === 'callsigns' ? callsignRegion(text) : 'World';
+  const sentText = mode === 'callsigns' ? `${text} ${text}` : text;
   const human = generateAudio({
     text: sentText,
     wpm: tier.wpm,
@@ -148,6 +193,7 @@ function randomRound(tier: Tier): Round {
   });
   return {
     text,
+    mode,
     region,
     tier: tier.id,
     human: { wpm: tier.wpm, snr: tier.snr, dataUri: human.dataUri },
@@ -191,6 +237,10 @@ export default function BeatTheBotPage() {
     'morse:btb:bests',
     EMPTY_BESTS
   );
+  const [textMode, setTextMode] = usePersistedState<TextMode>(
+    'morse:btb:textmode',
+    'callsigns'
+  );
 
   const tierObj = TIERS.find((t) => t.id === activeTier) ?? TIERS[2];
 
@@ -204,7 +254,11 @@ export default function BeatTheBotPage() {
   const [modelReady, setModelReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const [botResult, setBotResult] = useState<DualDecodeResult | null>(null);
+  // Callsign rounds dual-decode (two looks merged); random rounds single-decode.
+  // Both shapes expose `.text` and `.envelopeBars`, which is all the reveal needs.
+  const [botResult, setBotResult] = useState<
+    DualDecodeResult | PipelineResult | null
+  >(null);
   const [isNewBest, setIsNewBest] = useState(false);
   // 0 = nothing, 1 = your copy typed, 2 = bot copy typed, 3 = bars race,
   // 4 = gap + best.
@@ -219,7 +273,9 @@ export default function BeatTheBotPage() {
   const inputRef = useRef<HTMLInputElement | null>(null);
   // The bot's decode lives only here until submit — never in state during the
   // copying phase, so its text can't leak into the DOM (anti-cheat).
-  const botPromiseRef = useRef<Promise<DualDecodeResult> | null>(null);
+  const botPromiseRef = useRef<Promise<
+    DualDecodeResult | PipelineResult
+  > | null>(null);
   const timers = useRef<number[]>([]);
 
   function clearTimers() {
@@ -243,7 +299,9 @@ export default function BeatTheBotPage() {
     let r1: number;
     let r2: number;
     r1 = requestAnimationFrame(() => {
-      r2 = requestAnimationFrame(() => setRound(randomRound(tierObj)));
+      r2 = requestAnimationFrame(() =>
+        setRound(randomRound(tierObj, textMode))
+      );
     });
     return () => {
       cancelAnimationFrame(r1);
@@ -297,7 +355,12 @@ export default function BeatTheBotPage() {
 
     // Seal the bot's copy against its harder clip. Store only the promise; its
     // text never reaches state (and so never the DOM) until the player submits.
-    const p = decodeDualCallsignDataUri(round.bot.dataUri, TONE_FREQ);
+    // Callsigns are sent twice → dual-look merge; random groups are sent once →
+    // a single decode, the same copy a human gets.
+    const p =
+      round.mode === 'callsigns'
+        ? decodeDualCallsignDataUri(round.bot.dataUri, TONE_FREQ)
+        : decodeDataUri(round.bot.dataUri, TONE_FREQ);
     botPromiseRef.current = p;
     p.catch(() => {});
 
@@ -312,8 +375,9 @@ export default function BeatTheBotPage() {
       if (newBest) fireConfetti();
       return;
     }
-    const userLen = alignChars(userText, round.text).length;
-    const botLen = alignChars(botText, round.text).length;
+    const truth = lettersOnly(round.text);
+    const userLen = alignChars(userText, truth).length;
+    const botLen = alignChars(botText, truth).length;
     setRevealStep(1);
     const id1 = window.setTimeout(
       () => {
@@ -345,10 +409,13 @@ export default function BeatTheBotPage() {
     try {
       const res =
         (await botPromiseRef.current) ??
-        (await decodeDualCallsignDataUri(round.bot.dataUri, TONE_FREQ));
-      const userText = guess.toUpperCase().trim();
-      const userCER = 1 - accuracy(round.text, userText);
-      const botCER = 1 - accuracy(round.text, res.text);
+        (await (round.mode === 'callsigns'
+          ? decodeDualCallsignDataUri(round.bot.dataUri, TONE_FREQ)
+          : decodeDataUri(round.bot.dataUri, TONE_FREQ)));
+      const truth = lettersOnly(round.text);
+      const userText = lettersOnly(guess.toUpperCase().trim());
+      const userCER = 1 - accuracy(truth, userText);
+      const botCER = 1 - accuracy(truth, res.text);
       const rec = bests[round.tier];
       const newBestFlag =
         userCER < 1 && (rec.bestCER === null || userCER < rec.bestCER);
@@ -390,7 +457,7 @@ export default function BeatTheBotPage() {
     setIsNewBest(false);
     setRevealStep(0);
     botPromiseRef.current = null;
-    setRound(randomRound(tierObj));
+    setRound(randomRound(tierObj, textMode));
     setPhase('armed');
   }
 
@@ -411,12 +478,21 @@ export default function BeatTheBotPage() {
       botPromiseRef.current = null;
       setPhase('armed');
     }
-    setRound(randomRound(newTier));
+    setRound(randomRound(newTier, textMode));
   }
 
-  const userText = guess.toUpperCase().trim();
-  const userAcc = botResult && round ? accuracy(round.text, userText) : 0;
-  const botAcc = botResult && round ? accuracy(round.text, botResult.text) : 0;
+  // The toggle only shows in the armed phase, so flipping it just re-arms the
+  // round with the new text mode (same idea as changing tier).
+  function onTextModeChange(mode: TextMode) {
+    if (mode === textMode) return;
+    setTextMode(mode);
+    setRound(randomRound(tierObj, mode));
+  }
+
+  const userText = lettersOnly(guess.toUpperCase().trim());
+  const truth = round ? lettersOnly(round.text) : '';
+  const userAcc = botResult && round ? accuracy(truth, userText) : 0;
+  const botAcc = botResult && round ? accuracy(truth, botResult.text) : 0;
   const userPct = Math.round(userAcc * 100);
   const botPct = Math.round(botAcc * 100);
   return (
@@ -456,6 +532,8 @@ export default function BeatTheBotPage() {
                 <ArmedPanel
                   round={round}
                   tierObj={tierObj}
+                  textMode={textMode}
+                  onTextModeChange={onTextModeChange}
                   modelReady={modelReady}
                   isPlaying={isPlaying}
                   volume={volume}
@@ -473,6 +551,9 @@ export default function BeatTheBotPage() {
                   inputRef={inputRef}
                   onSubmit={submitGuess}
                   reduce={reduce}
+                  devTruth={
+                    import.meta.env.MODE === 'development' ? round.text : null
+                  }
                 />
               )}
 
@@ -598,17 +679,66 @@ function TierRow({
   );
 }
 
-function Chip({ children }: { children: React.ReactNode }) {
+// Quiet, non-interactive readout pill. Deliberately borderless and hover-free so
+// it reads as metadata, not a control — the play button and the mode toggle are
+// the only things meant to look pressable. Two-tone: faint label, bright value.
+function SpecPill({ children }: { children: React.ReactNode }) {
   return (
-    <span className="inline-flex items-center gap-1 rounded-md border border-border bg-background/60 px-3 py-1.5 text-[13px] text-muted-foreground">
+    <span className="inline-flex items-center gap-1 rounded-full bg-muted/50 px-2 py-0.5 text-[11px] text-muted-foreground">
       {children}
     </span>
+  );
+}
+
+// Single-select segmented control for the round's text mode. A real radio group
+// (role="radiogroup" + role="radio") so keyboard / assistive tech announce
+// "1 of 2 selected" rather than two independent toggles.
+function TextModeToggle({
+  value,
+  onChange,
+}: {
+  value: TextMode;
+  onChange: (m: TextMode) => void;
+}) {
+  const options: { id: TextMode; label: string }[] = [
+    { id: 'callsigns', label: 'Callsigns' },
+    { id: 'random', label: 'Random' },
+  ];
+  return (
+    <div
+      role="radiogroup"
+      aria-label="Round text"
+      className="inline-flex items-center gap-0.5 rounded-lg border border-border bg-background/60 p-0.5"
+    >
+      {options.map((o) => {
+        const active = value === o.id;
+        return (
+          // biome-ignore lint/a11y/useSemanticElements: a segmented single-select control — role="radio" buttons in a radiogroup give the "1 of 2 selected" semantics without native radios' default styling/layout
+          <button
+            key={o.id}
+            type="button"
+            role="radio"
+            aria-checked={active}
+            onClick={() => onChange(o.id)}
+            className={`rounded-md px-3 py-1 text-[13px] font-medium transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring/50 ${
+              active
+                ? 'bg-primary text-primary-foreground'
+                : 'text-muted-foreground hover:text-foreground'
+            }`}
+          >
+            {o.label}
+          </button>
+        );
+      })}
+    </div>
   );
 }
 
 function ArmedPanel({
   round,
   tierObj,
+  textMode,
+  onTextModeChange,
   modelReady,
   isPlaying,
   volume,
@@ -617,6 +747,8 @@ function ArmedPanel({
 }: {
   round: Round;
   tierObj: Tier;
+  textMode: TextMode;
+  onTextModeChange: (m: TextMode) => void;
   modelReady: boolean;
   isPlaying: boolean;
   volume: number;
@@ -631,22 +763,45 @@ function ArmedPanel({
         <VolumeControl value={volume} onChange={onVolumeChange} />
       </div>
 
-      <div className="flex flex-wrap items-center justify-center gap-2 font-mono">
-        <Chip>
+      {/* The interactive control sits above the quiet spec readout, centered in
+          the same column as the play button. Its helper line explains the
+          CURRENT mode (not a static caption). */}
+      <div className="flex flex-col items-center gap-1.5">
+        <TextModeToggle value={textMode} onChange={onTextModeChange} />
+        <span className="text-[12px] text-muted-foreground/80 text-center">
+          {textMode === 'callsigns' ? (
+            'Real callsigns — lean on the format.'
+          ) : (
+            <>
+              Random groups — no patterns to lean on. Sent once;{' '}
+              <strong className="font-semibold">
+                spaces don&apos;t count.
+              </strong>
+            </>
+          )}
+        </span>
+      </div>
+
+      <div className="flex flex-wrap items-center justify-center gap-1.5 font-mono">
+        <SpecPill>
           {/* Sign kept in the same span as the value so it reads tight
-              ("~13", "~28"), with chip gaps only around the unit labels. */}
+              ("~13", "~28"), with gaps only around the unit labels. */}
           <span className="text-foreground">~{round.human.wpm}</span>
           <span>WPM</span>
-        </Chip>
-        <Chip>
+        </SpecPill>
+        <SpecPill>
           <span>SNR</span>
           <span className="text-foreground">{formatSnr(round.human.snr)}</span>
           <span>dB</span>
-        </Chip>
-        <Chip>
-          <span>KEYED</span>
-          <span className="text-foreground">2X</span>
-        </Chip>
+        </SpecPill>
+        {/* Callsigns are keyed twice; random groups are sent once, so the chip
+            only applies to callsign rounds. */}
+        {round.mode === 'callsigns' && (
+          <SpecPill>
+            <span>KEYED</span>
+            <span className="text-foreground">2X</span>
+          </SpecPill>
+        )}
       </div>
 
       <button
@@ -685,6 +840,7 @@ function CopyingPanel({
   inputRef,
   onSubmit,
   reduce,
+  devTruth,
 }: {
   guess: string;
   setGuess: (v: string) => void;
@@ -693,9 +849,17 @@ function CopyingPanel({
   inputRef: React.RefObject<HTMLInputElement | null>;
   onSubmit: () => void;
   reduce: boolean;
+  devTruth: string | null;
 }) {
   return (
     <div className="flex flex-col gap-4">
+      {/* DEV-ONLY: the round's truth, so you can copy it by hand to test the
+          flow. Gated on import.meta.env.DEV — never rendered in a prod build. */}
+      {devTruth && (
+        <div className="rounded-md border border-dashed border-bad/50 bg-bad/5 px-3 py-1.5 font-mono text-[13px] text-bad">
+          dev · truth: {devTruth}
+        </div>
+      )}
       <div className="flex items-center gap-3 rounded-lg border border-border bg-background/40 p-4">
         {/* Abstract activity only — never any text derived from the bot copy. */}
         <div
@@ -797,7 +961,7 @@ function RevealPanel({
 }: {
   round: Round;
   guess: string;
-  botResult: DualDecodeResult;
+  botResult: DualDecodeResult | PipelineResult;
   isNewBest: boolean;
   tierName: string;
   revealStep: number;
@@ -819,26 +983,42 @@ function RevealPanel({
     );
   }, []);
 
-  const origin = originDisplay(round);
-  const userCells = alignChars(guess, round.text);
-  const botCells = alignChars(botResult.text, round.text);
-  const userCER = 1 - accuracy(round.text, guess);
-  const botCER = 1 - accuracy(round.text, botResult.text);
+  // Random rounds have no country/region, so the origin pill is callsign-only.
+  const origin = round.mode === 'callsigns' ? originDisplay(round) : null;
+  // Grade/align letters-only (see lettersOnly); the spaced text is still shown
+  // verbatim in the "It was" line. `guess` arrives already stripped.
+  const truth = lettersOnly(round.text);
+  const userCells = alignChars(guess, truth);
+  const botCells = alignChars(botResult.text, truth);
+  const userCER = 1 - accuracy(truth, guess);
+  const botCER = 1 - accuracy(truth, botResult.text);
   return (
     <div className="flex flex-col gap-4">
       <div className="flex flex-wrap items-center justify-center gap-2.5">
         <span className="text-[13px] text-muted-foreground">It was</span>
-        <span className="font-mono text-[22px] text-foreground tracking-[2px]">
-          {round.text}
+        <span className="font-mono text-[22px] text-foreground tracking-[2px] break-all">
+          {/* Render word breaks as subtle dots so a random message reads as
+              distinct groups ("AJ2KKM · 2A · AL"); callsigns have no spaces. */}
+          {round.text.split(/\s+/).map((word, i) => (
+            // biome-ignore lint/suspicious/noArrayIndexKey: positional word cells; regenerated each render
+            <Fragment key={i}>
+              {i > 0 && (
+                <span className="mx-1 text-muted-foreground/40">·</span>
+              )}
+              {word}
+            </Fragment>
+          ))}
         </span>
-        <span className="inline-flex items-center gap-1.5 text-[12px] bg-secondary text-secondary-foreground rounded-md px-2 py-0.5">
-          {origin.flag && (
-            <span aria-hidden="true" className="text-[15px] leading-none">
-              {origin.flag}
-            </span>
-          )}
-          {origin.name}
-        </span>
+        {origin && (
+          <span className="inline-flex items-center gap-1.5 text-[12px] bg-secondary text-secondary-foreground rounded-md px-2 py-0.5">
+            {origin.flag && (
+              <span aria-hidden="true" className="text-[15px] leading-none">
+                {origin.flag}
+              </span>
+            )}
+            {origin.name}
+          </span>
+        )}
       </div>
 
       {/* One line per competitor: name · accuracy bar (grows to fill) · copy.
@@ -905,7 +1085,14 @@ function RevealPanel({
         )}
       </div>
 
-      <TwoLookDetail result={botResult} />
+      {/* Callsigns get the full two-looks merge story (sent twice); random rounds
+          were sent once — there's no second look to explain, so we show just the
+          signal envelope under a plainer disclosure. */}
+      {round.mode === 'callsigns' ? (
+        <TwoLookDetail result={botResult as DualDecodeResult} />
+      ) : (
+        <SignalEnvelopeDetail bars={botResult.envelopeBars} />
+      )}
 
       <Button
         ref={bottomRef}
@@ -1102,31 +1289,69 @@ function CompetitorRow({
   );
 }
 
+// On opening a reveal disclosure, ease the newly-revealed content into view.
+function scrollDisclosureIntoView(e: React.SyntheticEvent<HTMLDetailsElement>) {
+  if (!e.currentTarget.open) return;
+  const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  window.setTimeout(
+    () =>
+      window.scrollTo({
+        top: document.body.scrollHeight,
+        behavior: reduce ? 'auto' : 'smooth',
+      }),
+    60
+  );
+}
+
+// Envelope bar strip shared by both disclosures: the keying the bot copied.
+function EnvelopeBars({ bars }: { bars: number[] }) {
+  const max = bars.length > 0 ? Math.max(...bars, 0.0001) : 1;
+  return (
+    <div className="flex items-end gap-[2px] h-9 bg-background rounded-md px-2 py-1.5">
+      {bars.map((v, i) => (
+        <div
+          // biome-ignore lint/suspicious/noArrayIndexKey: positional waveform bar; bars are recomputed each render
+          key={i}
+          className="flex-1 rounded-[1px] bg-primary/70"
+          style={{ height: `${Math.max(6, (v / max) * 100)}%` }}
+        />
+      ))}
+    </div>
+  );
+}
+
+// Random rounds are a single send — no second look, no merge to explain. Show
+// only the signal envelope (the noisy clip the bot copied, same as the human).
+function SignalEnvelopeDetail({ bars }: { bars: number[] }) {
+  return (
+    <details onToggle={scrollDisclosureIntoView} className="group">
+      <summary className="flex items-center gap-1.5 text-xs text-muted-foreground cursor-pointer select-none list-none">
+        <ScanEye className="size-3.5" />
+        What you were up against
+        <span className="text-[16px] leading-none text-muted-foreground/50 group-open:rotate-90 transition-transform">
+          ›
+        </span>
+      </summary>
+      {bars.length > 0 && (
+        <div className="mt-2.5">
+          <EnvelopeBars bars={bars} />
+          <p className="mt-1.5 text-[12px] text-muted-foreground">
+            The signal you both copied — a random group, sent once. The bot
+            decoded this same noisy clip in one pass, just like you.
+          </p>
+        </div>
+      )}
+    </details>
+  );
+}
+
 function TwoLookDetail({ result }: { result: DualDecodeResult }) {
   const looks = [
     { n: 1, text: result.firstHalf.text, conf: result.firstHalf.confidence },
     { n: 2, text: result.secondHalf.text, conf: result.secondHalf.confidence },
   ];
-  const envelopeMax =
-    result.envelopeBars.length > 0
-      ? Math.max(...result.envelopeBars, 0.0001)
-      : 1;
-  function onToggle(e: React.SyntheticEvent<HTMLDetailsElement>) {
-    if (!e.currentTarget.open) return;
-    const reduce = window.matchMedia(
-      '(prefers-reduced-motion: reduce)'
-    ).matches;
-    window.setTimeout(
-      () =>
-        window.scrollTo({
-          top: document.body.scrollHeight,
-          behavior: reduce ? 'auto' : 'smooth',
-        }),
-      60
-    );
-  }
   return (
-    <details onToggle={onToggle} className="group">
+    <details onToggle={scrollDisclosureIntoView} className="group">
       <summary className="flex items-center gap-1.5 text-xs text-muted-foreground cursor-pointer select-none list-none">
         <ScanEye className="size-3.5" />
         How the bot got two looks
@@ -1137,18 +1362,7 @@ function TwoLookDetail({ result }: { result: DualDecodeResult }) {
       <div className="mt-2.5 flex flex-col gap-3">
         {result.envelopeBars.length > 0 && (
           <div>
-            <div className="flex items-end gap-[2px] h-9 bg-background rounded-md px-2 py-1.5">
-              {result.envelopeBars.map((v, i) => (
-                <div
-                  // biome-ignore lint/suspicious/noArrayIndexKey: positional waveform bar; bars are recomputed each render
-                  key={i}
-                  className="flex-1 rounded-[1px] bg-primary/70"
-                  style={{
-                    height: `${Math.max(6, (v / envelopeMax) * 100)}%`,
-                  }}
-                />
-              ))}
-            </div>
+            <EnvelopeBars bars={result.envelopeBars} />
             <p className="mt-1.5 text-[12px] text-muted-foreground">
               The signal you both copied — the call is keyed twice, with a gap
               between.
