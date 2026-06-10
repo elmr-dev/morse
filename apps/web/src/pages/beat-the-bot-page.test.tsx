@@ -232,7 +232,7 @@ describe('BeatTheBotPage', () => {
       const stored = JSON.parse(
         localStorage.getItem('morse:btb:bests') ?? '{}'
       );
-      expect(stored.general.beatCount).toBe(1);
+      expect(stored.technician.beatCount).toBe(1);
     });
   });
 
@@ -247,7 +247,7 @@ describe('BeatTheBotPage', () => {
       const stored = JSON.parse(
         localStorage.getItem('morse:btb:bests') ?? '{}'
       );
-      expect(stored.general.beatCount).toBe(0);
+      expect(stored.technician.beatCount).toBe(0);
     });
   });
 
@@ -262,7 +262,7 @@ describe('BeatTheBotPage', () => {
       const stored = JSON.parse(
         localStorage.getItem('morse:btb:bests') ?? '{}'
       );
-      expect(stored.general.bestCER).toBe(0);
+      expect(stored.technician.bestCER).toBe(0);
     });
   });
 

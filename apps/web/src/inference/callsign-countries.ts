@@ -21,7 +21,7 @@ export interface CallsignSeries {
 }
 
 export const CALLSIGN_SERIES: readonly CallsignSeries[] = [
-  { series: 'AAA-ALZ', country: 'United States of America', flag: '🇺🇸' },
+  { series: 'AAA-ALZ', country: 'United States', flag: '🇺🇸' },
   { series: 'AMA-AOZ', country: 'Spain', flag: '🇪🇸' },
   { series: 'APA-ASZ', country: 'Pakistan', flag: '🇵🇰' },
   { series: 'ATA-AWZ', country: 'India', flag: '🇮🇳' },

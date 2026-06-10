@@ -38,7 +38,7 @@ import {
   callsignRegion,
   randomCallsign,
 } from '../inference/callsign';
-import { accuracy, cer } from '../inference/decode';
+import { accuracy } from '../inference/decode';
 import {
   type DualDecodeResult,
   decodeDualCallsignDataUri,
@@ -185,7 +185,7 @@ export default function BeatTheBotPage() {
 
   const [activeTier, setActiveTier] = usePersistedState<Tier['id']>(
     'morse:btb:tier',
-    'general'
+    'technician'
   );
   const [bests, setBests] = usePersistedState<Bests>(
     'morse:btb:bests',
@@ -347,15 +347,22 @@ export default function BeatTheBotPage() {
         (await botPromiseRef.current) ??
         (await decodeDualCallsignDataUri(round.bot.dataUri, TONE_FREQ));
       const userText = guess.toUpperCase().trim();
-      const userCER = cer(round.text, userText);
-      const botCER = cer(round.text, res.text);
+      const userCER = 1 - accuracy(round.text, userText);
+      const botCER = 1 - accuracy(round.text, res.text);
       const rec = bests[round.tier];
-      const newBestFlag = rec.bestCER === null || userCER < rec.bestCER;
+      const newBestFlag =
+        userCER < 1 && (rec.bestCER === null || userCER < rec.bestCER);
       setIsNewBest(newBestFlag);
       setBests((prev) => {
         const r = prev[round.tier];
+        // A 0% score (userCER = 1) doesn't count as a best — keep null until
+        // the user copies at least one character correctly.
         const newBestVal =
-          r.bestCER === null ? userCER : Math.min(r.bestCER, userCER);
+          userCER >= 1
+            ? r.bestCER
+            : r.bestCER === null
+              ? userCER
+              : Math.min(r.bestCER, userCER);
         const beat = userCER < botCER ? 1 : 0; // STRICT < — a tie does NOT count
         return {
           ...prev,
@@ -815,8 +822,8 @@ function RevealPanel({
   const origin = originDisplay(round);
   const userCells = alignChars(guess, round.text);
   const botCells = alignChars(botResult.text, round.text);
-  const userCER = cer(round.text, guess);
-  const botCER = cer(round.text, botResult.text);
+  const userCER = 1 - accuracy(round.text, guess);
+  const botCER = 1 - accuracy(round.text, botResult.text);
   return (
     <div className="flex flex-col gap-4">
       <div className="flex flex-wrap items-center justify-center gap-2.5">
