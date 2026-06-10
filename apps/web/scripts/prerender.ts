@@ -37,6 +37,12 @@ if (!existsSync(join(distDir, 'index.html'))) {
   );
 }
 
+// Save the Vite-built SPA shell before the prerender loop overwrites index.html
+// with the landing page snapshot. After prerendering, we restore the shell so
+// the service worker's navigateFallback caches an empty shell rather than the
+// prerendered landing page — which would otherwise flash on every deep-link reload.
+const spaShell = readFileSync(join(distDir, 'index.html'), 'utf8');
+
 // VITE_SITE_URL is baked into the JS at build time, but this Node process needs
 // it too (for the absolute sitemap/robots URLs). Read it from the same
 // .env.production that drove the build so there's a single source of truth.
@@ -130,9 +136,12 @@ try {
       // is also the host-agnostic choice: Cloudflare Pages strips trailing
       // slashes by default (the opposite of Netlify), so flat files + no-slash
       // canonicals are correct on both.
+      // The landing page is saved to landing.html (not index.html directly) so
+      // the SPA shell can be restored to index.html after the loop. Netlify
+      // serves landing.html at / via a forced redirect in _redirects.
       const outPath =
         route === '/'
-          ? join(distDir, 'index.html')
+          ? join(distDir, 'landing.html')
           : join(distDir, `${route.replace(/^\//, '')}.html`);
       mkdirSync(dirname(outPath), { recursive: true });
       writeFileSync(outPath, html);
@@ -160,6 +169,12 @@ try {
 if (failed) {
   throw new Error('prerender: one or more routes failed — see errors above.');
 }
+
+// Restore the SPA shell so the SW caches an empty app shell at /index.html,
+// not the prerendered landing page. The landing page lives at landing.html and
+// is served at / by the forced Netlify redirect in public/_redirects.
+writeFileSync(join(distDir, 'index.html'), spaShell);
+console.log('restored index.html → SPA shell (landing page → landing.html)');
 
 // --- sitemap.xml + robots.txt, from the same route list (single source). No
 // <lastmod>: a per-build timestamp with no content change just misleads crawlers,
