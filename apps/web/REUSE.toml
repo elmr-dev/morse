@@ -29,12 +29,6 @@ path = ["src/components/ui/**"]
 SPDX-FileCopyrightText = "2023 shadcn"
 SPDX-License-Identifier = "MIT"
 
-# DSEG7Classic font by Keshikan — https://github.com/keshikan/DSEG
-[[annotations]]
-path = ["public/fonts/DSEG7Classic-Regular.woff2"]
-SPDX-FileCopyrightText = "2014-2020 Keshikan (https://www.keshikan.net)"
-SPDX-License-Identifier = "OFL-1.1"
-
 # ONNX Runtime Web — vendored from microsoft/onnxruntime
 [[annotations]]
 path = [
