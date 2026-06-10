@@ -576,8 +576,8 @@ export default function BeatTheBotPage() {
           ) : (
             /* Skeleton: disabled play button shown while the clip is being generated */
             <div className="flex flex-col items-center gap-4">
-              <div className="size-[72px] rounded-full bg-primary flex items-center justify-center opacity-50">
-                <Loader2 className="size-8 animate-spin text-primary-foreground" />
+              <div className="size-[60px] sm:size-[72px] rounded-full bg-primary flex items-center justify-center opacity-50">
+                <Loader2 className="size-7 sm:size-8 animate-spin text-primary-foreground" />
               </div>
               <span className="inline-flex items-center gap-1.5 text-[13px] text-muted-foreground">
                 <Cpu className="size-3.5" />
@@ -636,7 +636,7 @@ function TierRow({
                   }
                 : undefined
             }
-            className={`flex flex-col items-center gap-1 rounded-xl border p-3 transition-all outline-none focus-visible:ring-2 focus-visible:ring-ring/50 ${
+            className={`flex flex-col items-center gap-1 rounded-xl border px-3 py-2 sm:p-3 transition-all outline-none focus-visible:ring-2 focus-visible:ring-ring/50 ${
               isActive && phase === 'reveal'
                 ? 'cursor-default'
                 : 'cursor-pointer'
@@ -646,20 +646,25 @@ function TierRow({
                 : 'border-border/50 bg-background hover:border-border hover:bg-muted/30'
             } disabled:opacity-50 disabled:pointer-events-none disabled:cursor-default`}
           >
-            <Icon className="size-4" style={{ color: tier.accent }} />
-            <span className="text-[13px] font-medium text-foreground">
-              {tier.name}
+            <span className="flex items-center gap-1.5">
+              <Icon
+                className="size-4 shrink-0"
+                style={{ color: tier.accent }}
+              />
+              <span className="text-[13px] font-medium text-foreground">
+                {tier.name}
+              </span>
             </span>
             <span className="text-[11px] text-muted-foreground font-mono">
               {formatSnr(tier.snr)} dB · {tier.wpm} wpm
             </span>
             {bestPct === null ? (
-              <span className="text-[28px] leading-none text-muted-foreground/40 mt-1 select-none">
+              <span className="text-[28px] leading-none text-muted-foreground/40 mt-0.5 sm:mt-1 select-none">
                 —
               </span>
             ) : (
               <span
-                className="font-mono text-[22px] font-semibold leading-none tabular-nums mt-1"
+                className="font-mono text-[22px] font-semibold leading-none tabular-nums mt-0.5 sm:mt-1"
                 style={{
                   color: isActive ? tier.accent : 'var(--muted-foreground)',
                 }}
@@ -812,12 +817,15 @@ function ArmedPanel({
         onClick={onPlay}
         disabled={!modelReady || isPlaying}
         aria-label="Play the signal once"
-        className="size-[72px] rounded-full bg-primary text-primary-foreground flex items-center justify-center transition-transform enabled:hover:scale-105 enabled:active:scale-95 disabled:opacity-50 outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+        className="size-[60px] sm:size-[72px] rounded-full bg-primary text-primary-foreground flex items-center justify-center transition-transform enabled:hover:scale-105 enabled:active:scale-95 disabled:opacity-50 outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
       >
         {!modelReady || isPlaying ? (
-          <Loader2 className="size-8 animate-spin" />
+          <Loader2 className="size-7 sm:size-8 animate-spin" />
         ) : (
-          <Play className="size-8 translate-x-[2px]" fill="currentColor" />
+          <Play
+            className="size-7 sm:size-8 translate-x-[2px]"
+            fill="currentColor"
+          />
         )}
       </button>
 
