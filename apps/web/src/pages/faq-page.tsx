@@ -12,11 +12,11 @@ import {
   Plus,
   Radio,
   Scale,
-  Swords,
   Trophy,
 } from 'lucide-react';
 import { useEffect } from 'react';
 import { Link } from 'react-router-dom';
+import { BoxingGloveIcon } from '@/components/boxing-glove-icon';
 import { GITHUB_URL } from '@/components/github';
 import { Reveal } from '@/components/reveal';
 import { useDocumentHead } from '@/lib/use-document-head';
@@ -285,12 +285,19 @@ const SECTIONS: FaqSection[] = [
     heading: 'Beat the Bot',
     items: [
       {
+        // TODO(mark): This entry describes the old win/loss/streak model and
+        // references "the same clip" — which is no longer accurate under the
+        // golf-handicap redesign (per-tier eased clips, copy-% scoring, no
+        // streak). Needs a full rewrite once the new model is the stable story.
         q: 'What is Beat the Bot?',
         a: [
           'A game. You are given one callsign buried in noise and a single listen to copy it. The model decodes the same clip, and you are scored side-by-side on who got closer. Win and your streak grows; lose and the bot gloats a little.',
         ],
       },
       {
+        // TODO(mark): This entry claims same-audio symmetry, which is no longer
+        // true — the human now gets an eased clip and the bot gets a hard one
+        // (handicap model). Needs a rewrite to honestly describe the new setup.
         q: 'Is it rigged? Does the bot get an unfair advantage?',
         anchor: 'is-it-rigged',
         a: [
@@ -477,7 +484,7 @@ export default function FaqPage() {
                 className="group flex items-center gap-3 rounded-lg border border-dial/40 border-l-2 border-l-dial bg-dial/6 p-3.5 transition-colors hover:border-dial/60 outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
               >
                 <span className="flex size-9 shrink-0 items-center justify-center rounded-md bg-dial/15 text-dial-strong">
-                  <Swords className="size-4" />
+                  <BoxingGloveIcon className="size-4" />
                 </span>
                 <span className="min-w-0 flex-1">
                   <span className="block font-mono text-sm text-foreground">

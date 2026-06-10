@@ -8,10 +8,10 @@ import {
   HelpCircle,
   Radio,
   ShieldCheck,
-  Swords,
   Waves,
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
+import { BoxingGloveIcon } from '@/components/boxing-glove-icon';
 import { Reveal } from '@/components/reveal';
 import { buttonVariants } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -99,7 +99,7 @@ function Hero() {
               'w-full sm:w-auto font-mono transition duration-200 hover:scale-[1.04] active:scale-[0.98]'
             )}
           >
-            <Swords className="size-4" />
+            <BoxingGloveIcon className="size-4" />
             Beat the Bot
           </Link>
         </div>
@@ -314,7 +314,7 @@ function BeatTheBotTeaser() {
   return (
     <section>
       <SectionLabel>
-        <Swords className="size-3.5 text-primary" />
+        <BoxingGloveIcon className="size-3.5 text-primary" />
         Beat the Bot
       </SectionLabel>
       <div className="mt-4 grid gap-5 sm:grid-cols-[1fr_minmax(0,20rem)] sm:items-center">

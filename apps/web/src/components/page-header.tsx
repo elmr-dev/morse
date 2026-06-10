@@ -2,8 +2,6 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import type { LucideIcon } from 'lucide-react';
-
 /**
  * Shared page header in the receiver tone used across the site: a mono eyebrow
  * label with an icon, a mono title, and an optional intro line. Keeps Decode,
@@ -18,7 +16,7 @@ export default function PageHeader({
   wideIntro = false,
 }: {
   eyebrow: string;
-  icon: LucideIcon;
+  icon: React.ComponentType<{ className?: string }>;
   title: string;
   /** Optional intro paragraph below the title. */
   children?: React.ReactNode;
