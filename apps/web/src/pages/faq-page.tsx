@@ -285,28 +285,21 @@ const SECTIONS: FaqSection[] = [
     heading: 'Beat the Bot',
     items: [
       {
-        // TODO(mark): This entry describes the old win/loss/streak model and
-        // references "the same clip" — which is no longer accurate under the
-        // golf-handicap redesign (per-tier eased clips, copy-% scoring, no
-        // streak). Needs a full rewrite once the new model is the stable story.
         q: 'What is Beat the Bot?',
         a: [
-          'A game. You are given one callsign buried in noise and a single listen to copy it. The model decodes the same clip, and you are scored side-by-side on who got closer. Win and your streak grows; lose and the bot gloats a little.',
+          'A game. Pick your license class — No-Code through Extra — and you get one callsign buried in static with a single listen to copy it. The callsign is keyed twice in the clip. A neural decoder works from a harder version of the same call, and after you submit your copy you see how each side did, scored character by character. The goal is to out-copy the machine despite starting from a cleaner signal.',
         ],
       },
       {
-        // TODO(mark): This entry claims same-audio symmetry, which is no longer
-        // true — the human now gets an eased clip and the bot gets a hard one
-        // (handicap model). Needs a rewrite to honestly describe the new setup.
         q: 'Is it rigged? Does the bot get an unfair advantage?',
         anchor: 'is-it-rigged',
         a: [
-          'Here is the honest answer: you and the model work from the exact same audio. The callsign is keyed twice inside one clip, and you hear that whole clip once — both repeats included — just as the model does. Neither side gets extra plays or a cleaner signal.',
-          'The model’s one edge is what it does after the audio: it decodes each of the two sends separately and merges the two copies, while you have to listen in real time and commit to a single copy on the spot. That is a processing advantage, not an access advantage — and combining two noisy copies of the same signal is a genuine low-SNR technique, the machine equivalent of a human catching on the second repeat what they missed on the first. The interesting question is not “can a machine beat a human” but how much that merge step is worth against a trained ear — and the game shows you exactly how the model used its two looks after every round.',
+          'The contest is intentionally asymmetric — but in your favor. Your clip is tuned to your tier: a No-Code clip is +10 dB at 13 WPM; an Extra clip is −6 dB at 28 WPM. The bot always decodes from the same hard clip — Extra difficulty — regardless of your tier. At Extra, you copy the same clip as the bot — no handicap. Below Extra, you start with a real noise and speed advantage.',
+          'What the bot has on its side is a processing advantage, not an access advantage: it decodes each of the two sends separately and merges the results, while you have to commit to a single copy in real time. That two-look merge is the interesting variable — and the game shows you exactly how the bot used it after every round. The question is not whether a machine can beat a human, but whether a neural decoder can overcome a noise and speed handicap by combining two noisy copies.',
         ],
         technical: [
           'The clip contains the call sent twice (e.g. “K1ABC K1ABC”). The decoder splits the envelope at the inter-send silence, runs inference on each half independently, greedy-decodes both, then combines them: if the two agree it takes the higher-confidence copy; if they disagree it Levenshtein-aligns them and fills missing characters from whichever look had them. This is post-decode ensembling, not coherent integration — summing per-frame log-probabilities before the CTC decode (for a true ~√2 SNR gain) is noted as future work.',
-          'The human, by contrast, is capped at one listen (MAX_LISTENS = 1). The asymmetry is deliberate and surfaced in the “How the bot got two looks” detail after each round.',
+          'The human is capped at one listen (MAX_LISTENS = 1). The clip asymmetry is deliberate and surfaced per-round: the SNR and WPM of both clips are shown in the result, and the “How the bot got two looks” detail explains the merge step.',
         ],
       },
     ],

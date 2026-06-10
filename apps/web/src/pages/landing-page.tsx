@@ -323,9 +323,10 @@ function BeatTheBotTeaser() {
           <p className="max-w-lg text-[15px] leading-relaxed text-foreground/85">
             A callsign, buried in static, keyed{' '}
             <span className="text-dial-strong font-mono">twice</span> in one
-            clip — the same audio you both get. You stitch the two repeats
-            together in your head on the fly; the model decodes each send on its
-            own and merges them. Same trick, different hardware.
+            clip — yours eased to your tier, the bot’s cranked to Extra. You
+            stitch the repeats together in your head on the fly; the model
+            decodes each send on its own and merges them. Same trick, different
+            hardware.
           </p>
           <div className="mt-6">
             <Link
