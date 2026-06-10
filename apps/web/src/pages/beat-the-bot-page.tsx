@@ -17,6 +17,7 @@ import {
   RadioTower,
   ScanEye,
   Send,
+  Shuffle,
   TriangleAlert,
   Trophy,
   User,
@@ -700,9 +701,9 @@ function TextModeToggle({
   value: TextMode;
   onChange: (m: TextMode) => void;
 }) {
-  const options: { id: TextMode; label: string }[] = [
-    { id: 'callsigns', label: 'Callsigns' },
-    { id: 'random', label: 'Random' },
+  const options: { id: TextMode; label: string; icon: LucideIcon }[] = [
+    { id: 'callsigns', label: 'Callsigns', icon: RadioTower },
+    { id: 'random', label: 'Random', icon: Shuffle },
   ];
   return (
     <div
@@ -712,6 +713,7 @@ function TextModeToggle({
     >
       {options.map((o) => {
         const active = value === o.id;
+        const Icon = o.icon;
         return (
           // biome-ignore lint/a11y/useSemanticElements: a segmented single-select control — role="radio" buttons in a radiogroup give the "1 of 2 selected" semantics without native radios' default styling/layout
           <button
@@ -720,12 +722,13 @@ function TextModeToggle({
             role="radio"
             aria-checked={active}
             onClick={() => onChange(o.id)}
-            className={`rounded-md px-3 py-1 text-[13px] font-medium transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring/50 ${
+            className={`inline-flex items-center gap-1.5 rounded-md px-3 py-1 text-[13px] font-medium transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring/50 ${
               active
                 ? 'bg-primary text-primary-foreground'
                 : 'text-muted-foreground hover:text-foreground'
             }`}
           >
+            <Icon className="size-3.5" />
             {o.label}
           </button>
         );
