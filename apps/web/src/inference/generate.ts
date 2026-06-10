@@ -11,7 +11,13 @@
 
 import { createMorseAudioGenerator } from 'morse-audio';
 
-const gen = createMorseAudioGenerator();
+// Lazy singleton — defers construction to first call rather than at module
+// import time, keeping the module side-effect-free.
+let _gen: ReturnType<typeof createMorseAudioGenerator> | null = null;
+function gen() {
+  if (!_gen) _gen = createMorseAudioGenerator();
+  return _gen;
+}
 
 export interface GenerateOptions {
   text: string;
@@ -28,7 +34,8 @@ export interface GeneratedAudio {
 }
 
 export function generateAudio(opts: GenerateOptions): GeneratedAudio {
-  const result = gen.generate({
+  const g = gen();
+  const result = g.generate({
     text: opts.text,
     wpm: opts.wpm,
     frequency: opts.frequency ?? 700,
@@ -40,5 +47,5 @@ export function generateAudio(opts: GenerateOptions): GeneratedAudio {
     durationSec: 0,
     seed: opts.seed ?? Math.floor(Math.random() * 2147483647),
   });
-  return { dataUri: gen.toDataUri(result), sampleRate: 22050 };
+  return { dataUri: g.toDataUri(result), sampleRate: 22050 };
 }

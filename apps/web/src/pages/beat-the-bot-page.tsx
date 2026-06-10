@@ -238,9 +238,17 @@ export default function BeatTheBotPage() {
       .catch((e) => setError(String(e)));
   }, []);
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: mount-only round init — deferred to avoid blocking first paint
+  // biome-ignore lint/correctness/useExhaustiveDependencies: mount-only round init — double-rAF guarantees the browser paints the skeleton before the synchronous audio generation blocks the main thread
   useEffect(() => {
-    setRound(randomRound(tierObj));
+    let r1: number;
+    let r2: number;
+    r1 = requestAnimationFrame(() => {
+      r2 = requestAnimationFrame(() => setRound(randomRound(tierObj)));
+    });
+    return () => {
+      cancelAnimationFrame(r1);
+      cancelAnimationFrame(r2);
+    };
   }, []);
 
   // Clear any pending reveal timers on unmount.
@@ -430,9 +438,9 @@ export default function BeatTheBotPage() {
 
           <div className="border-t border-border" />
 
-          {/* Audio + phase panels — hidden for one tick while the initial clip
-              generates in useEffect, so first paint is not blocked. */}
-          {round && (
+          {/* Audio + phase panels — skeleton shown while the initial clip generates
+              after the first paint, then swapped for the real content. */}
+          {round ? (
             <>
               {/* biome-ignore lint/a11y/useMediaCaption: programmatically generated audio */}
               <audio ref={audioRef} src={round.human.dataUri} preload="auto" />
@@ -476,6 +484,17 @@ export default function BeatTheBotPage() {
                 />
               )}
             </>
+          ) : (
+            /* Skeleton: disabled play button shown while the clip is being generated */
+            <div className="flex flex-col items-center gap-4">
+              <div className="size-[72px] rounded-full bg-primary flex items-center justify-center opacity-50">
+                <Loader2 className="size-8 animate-spin text-primary-foreground" />
+              </div>
+              <span className="inline-flex items-center gap-1.5 text-[13px] text-muted-foreground">
+                <Cpu className="size-3.5" />
+                Generating signal…
+              </span>
+            </div>
           )}
 
           {error && (
