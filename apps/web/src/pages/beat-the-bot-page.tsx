@@ -714,7 +714,7 @@ function TextModeToggle({
     <div
       role="radiogroup"
       aria-label="Round text"
-      className="inline-flex items-center gap-0.5 rounded-lg border border-border bg-background/60 p-0.5"
+      className="flex w-full sm:inline-flex sm:w-auto items-stretch gap-0.5 rounded-lg border border-border bg-background/60 p-0.5"
     >
       {options.map((o) => {
         const active = value === o.id;
@@ -727,7 +727,7 @@ function TextModeToggle({
             role="radio"
             aria-checked={active}
             onClick={() => onChange(o.id)}
-            className={`inline-flex items-center gap-1.5 rounded-md px-3 py-1 text-[13px] font-medium transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring/50 ${
+            className={`flex-1 sm:flex-initial inline-flex items-center justify-center gap-1.5 rounded-md px-3 py-2 sm:py-1.5 text-[14px] font-medium transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring/50 ${
               active
                 ? 'bg-primary text-primary-foreground'
                 : 'text-muted-foreground hover:text-foreground'
@@ -774,7 +774,7 @@ function ArmedPanel({
       {/* The interactive control sits above the quiet spec readout, centered in
           the same column as the play button. Its helper line explains the
           CURRENT mode (not a static caption). */}
-      <div className="flex flex-col items-center gap-1.5">
+      <div className="flex w-full sm:w-auto flex-col items-center gap-1.5">
         <TextModeToggle value={textMode} onChange={onTextModeChange} />
         <span className="text-[12px] text-muted-foreground/80 text-center">
           {textMode === 'callsigns' ? (
@@ -944,12 +944,13 @@ function CopyingPanel({
         >
           {submitting ? (
             <>
-              <Loader2 className="animate-spin size-4" /> Grading…
+              <Loader2 className="animate-spin size-4" />{' '}
+              <span className="hidden sm:inline">Grading…</span>
             </>
           ) : (
             <>
               <Send className="size-4" />
-              Submit
+              <span className="hidden sm:inline">Submit</span>
             </>
           )}
         </Button>
