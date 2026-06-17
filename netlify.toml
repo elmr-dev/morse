@@ -1,0 +1,9 @@
+[build]
+  base = "apps/web"
+  command = "bun run build"
+  publish = "dist"
+  edge_functions = "netlify/edge-functions"
+
+[[edge_functions]]
+  function = "badge"
+  path = "/badge/*"

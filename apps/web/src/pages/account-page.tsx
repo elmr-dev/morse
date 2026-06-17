@@ -27,6 +27,7 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 import { type AuthProvider, useAuth } from '@/lib/auth';
+import { SITE_URL } from '@/lib/site';
 import { isAuthConfigured, supabase } from '@/lib/supabase';
 import { useDocumentHead } from '@/lib/use-document-head';
 
@@ -314,6 +315,7 @@ function ReadyView({
         {!verified && (
           <VerifySection callsign={callsign} onVerified={onRefreshProfile} />
         )}
+        <BadgeSection callsign={callsign} />
         {email && (
           <p className="text-sm text-muted-foreground">
             Signed in as <span className="text-foreground">{email}</span>
@@ -559,6 +561,69 @@ function VerifySection({
           {error}
         </p>
       )}
+    </div>
+  );
+}
+
+// Until a public /u/CALL operator page exists, the snippet link points at the
+// site root via VITE_SITE_URL. Falls back to morse-ml.netlify.app so the badge
+// preview still works in a bare local dev with no env file.
+const BADGE_LINK_ORIGIN = SITE_URL || 'https://morse-ml.netlify.app';
+
+function badgeUrlFor(callsign: string): string {
+  return `${BADGE_LINK_ORIGIN}/badge/${encodeURIComponent(callsign)}.svg`;
+}
+
+function badgeSnippetFor(callsign: string, url: string): string {
+  return `<a href="${BADGE_LINK_ORIGIN}" target="_blank" rel="noopener noreferrer"><img src="${url}" alt="${callsign} on MORSE" /></a>`;
+}
+
+function BadgeSection({ callsign }: { callsign: string }) {
+  const url = badgeUrlFor(callsign);
+  const snippet = badgeSnippetFor(callsign, url);
+
+  async function handleCopy() {
+    try {
+      await navigator.clipboard.writeText(snippet);
+      toast.success('Snippet copied.');
+    } catch {
+      toast.error("Couldn't copy. Select and copy it manually.");
+    }
+  }
+
+  return (
+    <div className="flex flex-col gap-3 rounded-md border border-border bg-muted/30 p-3">
+      <div>
+        <p className="text-sm font-medium text-foreground">Your MORSE badge</p>
+        <p className="text-xs text-muted-foreground">
+          Paste this anywhere on the web — your QRZ bio, a blog, a club page —
+          to show your MORSE standing. It updates automatically as you set new
+          bests.
+        </p>
+      </div>
+      <img src={url} alt={`${callsign} on MORSE`} width={340} height={88} />
+      <div className="flex flex-col gap-2">
+        <Label htmlFor="badge-snippet" className="text-xs">
+          Snippet
+        </Label>
+        <div className="flex items-center gap-2">
+          <Input
+            id="badge-snippet"
+            value={snippet}
+            readOnly
+            className="font-mono text-xs"
+          />
+          <Button
+            type="button"
+            variant="outline"
+            size="icon"
+            onClick={handleCopy}
+            aria-label="Copy badge snippet"
+          >
+            <Copy className="size-4" aria-hidden="true" />
+          </Button>
+        </div>
+      </div>
     </div>
   );
 }

@@ -47,3 +47,6 @@ ml/model/data/
 ml/cw-dsp-research/testdata/
 ml/cw-dsp-research/evaldata/
 ml/cw-dsp-research/human_baseline_audio/
+
+# Local Netlify folder
+.netlify

@@ -16,7 +16,8 @@
       "**/*.tsx",
       "!archive/**",
       "!**/*.generated.ts",
-      "!apps/web/supabase/functions/**"
+      "!apps/web/supabase/functions/**",
+      "!apps/web/netlify/edge-functions/**"
     ]
   },
   "formatter": {

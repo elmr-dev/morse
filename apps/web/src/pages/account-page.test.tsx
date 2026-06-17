@@ -98,6 +98,7 @@ function renderPage() {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  vi.stubEnv('VITE_SUPABASE_URL', 'https://example.supabase.co');
   const s = getState();
   s.status = 'signed-out';
   s.profile = null;
@@ -108,6 +109,7 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup();
+  vi.unstubAllEnvs();
 });
 
 describe('AccountPage', () => {
@@ -384,6 +386,42 @@ describe('AccountPage', () => {
       await screen.findByDisplayValue('MORSE-VERIFY-ABCDEFGHIJ');
       fireEvent.click(screen.getByRole('button', { name: /^check$/i }));
       await screen.findByText(/expired/i);
+    });
+  });
+
+  describe('badge section', () => {
+    it('renders the badge preview + snippet for a ready unverified operator', () => {
+      const s = getState();
+      s.status = 'ready';
+      s.user = { email: 'op@example.com' };
+      s.profile = {
+        id: 'u1',
+        call_sign: 'W1AW',
+        verified: false,
+        created_at: '2026-06-17T00:00:00Z',
+      };
+      renderPage();
+      const img = screen.getByAltText('W1AW on MORSE') as HTMLImageElement;
+      expect(img.src).toContain('/badge/W1AW.svg');
+      const snippet = screen.getByLabelText(/^snippet$/i) as HTMLInputElement;
+      expect(snippet.value).toContain('/badge/W1AW.svg');
+      expect(
+        screen.getByRole('button', { name: /copy badge snippet/i })
+      ).toBeInTheDocument();
+    });
+
+    it('also renders the badge for a verified operator', () => {
+      const s = getState();
+      s.status = 'ready';
+      s.user = { email: 'op@example.com' };
+      s.profile = {
+        id: 'u1',
+        call_sign: 'K1ABC',
+        verified: true,
+        created_at: '2026-06-17T00:00:00Z',
+      };
+      renderPage();
+      expect(screen.getByAltText('K1ABC on MORSE')).toBeInTheDocument();
     });
   });
 
