@@ -12,34 +12,54 @@ import {
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { axe } from 'vitest-axe';
 import type { DualDecodeResult } from '../inference/dual-decode';
+import type { PipelineResult } from '../inference/pipeline';
 
 // The round always copies W1AW (truth) — a real US call so callsignCountry
-// resolves and the win/tie/loss math is predictable.
+// resolves and the CER/beatCount math is predictable.
 const TRUTH = 'W1AW';
+// Fixed random-mode copy (short, so it clears the clip-budget cap on the first
+// try) for deterministic random-round assertions.
+const RANDOM_TRUTH = 'CQ TEST';
 
-const { loadSession, decodeDual, fireConfetti, randomCallsign } = vi.hoisted(
-  () => ({
-    loadSession: vi.fn(),
-    decodeDual: vi.fn(),
-    fireConfetti: vi.fn(),
-    randomCallsign: vi.fn(() => 'W1AW'),
-  })
-);
+const {
+  loadSession,
+  decodeDual,
+  decodeSingle,
+  fireConfetti,
+  randomCallsign,
+  randomCwMessage,
+  generateAudio,
+} = vi.hoisted(() => ({
+  loadSession: vi.fn(),
+  decodeDual: vi.fn(),
+  decodeSingle: vi.fn(),
+  fireConfetti: vi.fn(),
+  randomCallsign: vi.fn(() => 'W1AW'),
+  randomCwMessage: vi.fn(() => 'CQ TEST'),
+  generateAudio: vi.fn(() => ({
+    dataUri: 'data:audio/wav;base64,AAAA',
+    sampleRate: 22050,
+  })),
+}));
 
 vi.mock('@/inference/onnx', () => ({ loadSession: () => loadSession() }));
 vi.mock('../inference/dual-decode', () => ({
   decodeDualCallsignDataUri: (...args: unknown[]) => decodeDual(...args),
 }));
+vi.mock('../inference/pipeline', () => ({
+  decodeDataUri: (...args: unknown[]) => decodeSingle(...args),
+}));
 vi.mock('../inference/generate', () => ({
-  generateAudio: () => ({
-    dataUri: 'data:audio/wav;base64,AAAA',
-    sampleRate: 22050,
-  }),
+  generateAudio: () => generateAudio(),
 }));
 vi.mock('../inference/callsign', async (orig) => {
   const actual = await orig<typeof import('../inference/callsign')>();
   return { ...actual, randomCallsign: () => randomCallsign() };
 });
+vi.mock('@/lib/cw-message', () => ({
+  randomCwMessage: () => randomCwMessage(),
+  MAX_CW_MESSAGE: 40,
+}));
 vi.mock('@/lib/confetti', () => ({ fireConfetti: () => fireConfetti() }));
 
 import BeatTheBotPage from './beat-the-bot-page';
@@ -58,8 +78,17 @@ function botResult(text: string): DualDecodeResult {
   };
 }
 
+function singleResult(text: string): PipelineResult {
+  return {
+    text,
+    confidence: 0.9,
+    timing: { audioMs: 0, dspMs: 0, modelMs: 0, decodeMs: 0, totalMs: 0 },
+    envelopeBars: [0.2, 0.6, 0.4, 0.8, 0.3],
+  };
+}
+
 // happy-dom's localStorage here is a partial stub (no clear/removeItem), so
-// swap in a real in-memory Storage per test for isolated persisted-score reads.
+// swap in a real in-memory Storage per test for isolated persisted-state reads.
 function stubLocalStorage() {
   const map = new Map<string, string>();
   vi.stubGlobal('localStorage', {
@@ -92,6 +121,8 @@ beforeEach(() => {
   stubLocalStorage();
   loadSession.mockResolvedValue({});
   decodeDual.mockResolvedValue(botResult('XXXX'));
+  decodeSingle.mockResolvedValue(singleResult('YYYY'));
+  randomCwMessage.mockReturnValue(RANDOM_TRUTH);
   // Default to reduced motion so the staged reveal resolves synchronously
   // (typing/racing skipped) — individual tests can opt back into animation.
   stubMatchMedia(true);
@@ -158,9 +189,11 @@ describe('BeatTheBotPage', () => {
 
   it('walks armed → copying → reveal → next round', async () => {
     await renderArmed();
-    // Armed: rig chips + play button.
+    // Armed: chips + play button.
     expect(screen.getByText('WPM')).toBeInTheDocument();
-    expect(screen.getByText('One listen — make it count')).toBeInTheDocument();
+    expect(
+      screen.getByText(/One listen — close the gap on/)
+    ).toBeInTheDocument();
 
     await play();
     // Copying: the play button is gone (one listen) and the copy field is live.
@@ -168,12 +201,14 @@ describe('BeatTheBotPage', () => {
     expect(screen.getByLabelText('Your copy')).toBeInTheDocument();
 
     await submit(TRUTH);
-    // Reveal: the callsign + country are unmasked and a verdict appears.
-    await screen.findByText(/out-copied the bot|copied it cleaner|Dead heat/);
+    // Reveal: callsign + country unmasked, gap block visible.
+    await screen.findByText(
+      /New best at|You out-copied the bot|You matched the bot|You \d+%/
+    );
     expect(screen.getByText(TRUTH)).toBeInTheDocument();
     expect(screen.getByText('United States')).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole('button', { name: /next round/i }));
+    fireEvent.click(screen.getByRole('button', { name: /another round/i }));
     // Back to armed: play button returns, copy field gone.
     await waitFor(() =>
       expect(screen.getByLabelText('Play the signal once')).toBeInTheDocument()
@@ -181,49 +216,85 @@ describe('BeatTheBotPage', () => {
     expect(screen.queryByLabelText('Your copy')).toBeNull();
   });
 
-  it('scores a player win by accuracy and fires confetti', async () => {
-    decodeDual.mockResolvedValue(botResult('XXXX')); // bot misses badly
+  it('generates two clips per round — one eased for the human, one hard for the bot', async () => {
+    await renderArmed();
+    // randomRound calls generateAudio twice: human clip + bot clip.
+    expect(generateAudio).toHaveBeenCalledTimes(2);
+  });
+
+  it('fires confetti on a new personal best', async () => {
+    decodeDual.mockResolvedValue(botResult('XXXX')); // bot misses → botCER > 0
     await renderArmed();
     await play();
-    await submit(TRUTH); // perfect copy → higher accuracy → win
+    await submit(TRUTH); // perfect copy → userCER = 0, new best (prev was null)
 
-    await screen.findByText('You out-copied the bot');
+    await screen.findByText(/New best at/); // isNewBest=true on first round
     expect(fireConfetti).toHaveBeenCalledTimes(1);
-    await waitFor(() =>
-      expect(JSON.parse(localStorage.getItem('beat.score') ?? '{}').wins).toBe(
-        1
-      )
-    );
   });
 
-  it('scores a bot win when the bot copies cleaner (no confetti)', async () => {
-    decodeDual.mockResolvedValue(botResult(TRUTH)); // bot nails it
-    await renderArmed();
-    await play();
-    await submit('ZZZZ'); // garbage copy → lower accuracy → loss
-
-    await screen.findByText('The bot copied it cleaner');
-    expect(fireConfetti).not.toHaveBeenCalled();
-    await waitFor(() =>
-      expect(
-        JSON.parse(localStorage.getItem('beat.score') ?? '{}').losses
-      ).toBe(1)
-    );
-  });
-
-  it('scores a dead heat when both copies match (no confetti)', async () => {
-    decodeDual.mockResolvedValue(botResult(TRUTH));
+  it('does not fire confetti when the score is not a personal best', async () => {
+    // First round: perfect copy, bestCER set to 0.
+    decodeDual.mockResolvedValue(botResult('XXXX'));
     await renderArmed();
     await play();
     await submit(TRUTH);
+    await screen.findByText(/New best at/); // isNewBest=true on first round
+    expect(fireConfetti).toHaveBeenCalledTimes(1);
 
-    await screen.findByText('Dead heat — same copy');
-    expect(fireConfetti).not.toHaveBeenCalled();
+    // Second round: perfect copy again — userCER = 0 = bestCER, not strictly less.
+    fireEvent.click(screen.getByRole('button', { name: /another round/i }));
     await waitFor(() =>
-      expect(JSON.parse(localStorage.getItem('beat.score') ?? '{}').ties).toBe(
-        1
-      )
+      expect(screen.getByLabelText('Play the signal once')).toBeEnabled()
     );
+    await play();
+    await submit(TRUTH);
+    await screen.findByText(/You out-copied the bot/);
+    expect(fireConfetti).toHaveBeenCalledTimes(1); // no additional confetti
+  });
+
+  it('increments beatCount only on strict userCER < botCER', async () => {
+    decodeDual.mockResolvedValue(botResult('XXXX')); // bot misses → botCER > 0
+    await renderArmed();
+    await play();
+    await submit(TRUTH); // perfect copy → userCER = 0 < botCER
+
+    await screen.findByText(/New best at/); // isNewBest=true on first round
+    await waitFor(() => {
+      const stored = JSON.parse(
+        localStorage.getItem('morse:btb:bests') ?? '{}'
+      );
+      expect(stored.technician.beatCount).toBe(1);
+    });
+  });
+
+  it('does not increment beatCount on a perfect tie (userCER === 0, botCER === 0)', async () => {
+    decodeDual.mockResolvedValue(botResult(TRUTH)); // bot also copies perfectly
+    await renderArmed();
+    await play();
+    await submit(TRUTH); // userCER = 0, botCER = 0 — tie, not a beat
+
+    await screen.findByText(/New best at/); // isNewBest=true on first round (bestCER was null)
+    await waitFor(() => {
+      const stored = JSON.parse(
+        localStorage.getItem('morse:btb:bests') ?? '{}'
+      );
+      expect(stored.technician.beatCount).toBe(0);
+    });
+  });
+
+  it('records bestCER after first submission', async () => {
+    decodeDual.mockResolvedValue(botResult('XXXX'));
+    await renderArmed();
+    await play();
+    await submit(TRUTH); // userCER = 0
+
+    await screen.findByText(/New best at/); // isNewBest=true on first round
+    await waitFor(() => {
+      const stored = JSON.parse(
+        localStorage.getItem('morse:btb:bests') ?? '{}'
+      );
+      expect(stored.technician.bestCER).toBe(0);
+    });
   });
 
   it('stops the audio the moment the player submits', async () => {
@@ -240,7 +311,9 @@ describe('BeatTheBotPage', () => {
     const input = screen.getByLabelText('Your copy');
     fireEvent.change(input, { target: { value: TRUTH } });
     fireEvent.keyDown(input, { key: 'Enter' });
-    await screen.findByText(/out-copied the bot|copied it cleaner|Dead heat/);
+    await screen.findByText(
+      /New best at|You out-copied the bot|You matched the bot|You \d+%/
+    );
   });
 
   it('never shows an accuracy bar above 100%', async () => {
@@ -249,42 +322,15 @@ describe('BeatTheBotPage', () => {
     const { container } = await renderArmed();
     await play();
     await submit('W1AWZZZZZZZZ');
-    await screen.findByText(/out-copied the bot|copied it cleaner|Dead heat/);
+    await screen.findByText(
+      /New best at|You out-copied the bot|You matched the bot|You \d+%/
+    );
     const pcts = Array.from(container.querySelectorAll('span'))
       .map((s) => s.textContent?.trim() ?? '')
       .filter((t) => /^\d+%$/.test(t))
       .map((t) => parseInt(t, 10));
     expect(pcts.length).toBeGreaterThan(0);
     for (const p of pcts) expect(p).toBeLessThanOrEqual(100);
-  });
-
-  it('confirms before wiping the scoreboard', async () => {
-    decodeDual.mockResolvedValue(botResult(TRUTH));
-    await renderArmed();
-    await play();
-    await submit('ZZZZ'); // loss → bot gets a point, so Reset appears
-    await screen.findByText('The bot copied it cleaner');
-
-    // Cancelling keeps the scores.
-    fireEvent.click(screen.getByRole('button', { name: /^reset$/i }));
-    await screen.findByText('Reset the scoreboard?');
-    fireEvent.click(screen.getByRole('button', { name: /keep my scores/i }));
-    await waitFor(() =>
-      expect(screen.queryByText('Reset the scoreboard?')).toBeNull()
-    );
-    expect(JSON.parse(localStorage.getItem('beat.score') ?? '{}').losses).toBe(
-      1
-    );
-
-    // Confirming wipes them.
-    fireEvent.click(screen.getByRole('button', { name: /^reset$/i }));
-    await screen.findByText('Reset the scoreboard?');
-    fireEvent.click(screen.getByRole('button', { name: /reset scores/i }));
-    await waitFor(() =>
-      expect(
-        JSON.parse(localStorage.getItem('beat.score') ?? '{}').losses
-      ).toBe(0)
-    );
   });
 
   describe('accessibility (no axe violations)', () => {
@@ -303,21 +349,131 @@ describe('BeatTheBotPage', () => {
       const { container } = await renderArmed();
       await play();
       await submit(TRUTH);
-      await screen.findByText(/out-copied the bot|copied it cleaner|Dead heat/);
+      await screen.findByText(
+        /New best at|You out-copied the bot|You matched the bot|You \d+%/
+      );
       expect(await axe(container)).toHaveNoViolations();
     });
   });
 
   it('renders the full reveal immediately under reduced motion', async () => {
-    // Already in reduced motion (default). The verdict + final bars appear with
-    // no timer advance — proving the non-animated path applies the result.
+    // Already in reduced motion (default). The gap block + final bars appear
+    // with no timer advance — proving the non-animated path applies the result.
     decodeDual.mockResolvedValue(botResult('XXXX'));
     await renderArmed();
     await play();
     await submit(TRUTH);
     expect(
-      await screen.findByText('You out-copied the bot')
+      await screen.findByText(/New best at/) // isNewBest=true on first round
     ).toBeInTheDocument();
-    expect(screen.getByText('100%')).toBeInTheDocument(); // user bar at full
+    expect(screen.getAllByText('100%').length).toBeGreaterThan(0); // user bar at full
+  });
+
+  it('never shows the string "CER" in the rendered output', async () => {
+    decodeDual.mockResolvedValue(botResult('XXXX'));
+    const { container } = await renderArmed();
+    await play();
+    await submit(TRUTH);
+    await screen.findByText(
+      /New best at|You out-copied the bot|You matched the bot|You \d+%/
+    );
+    expect(container.textContent).not.toContain('CER');
+  });
+
+  describe('callsign / random text mode', () => {
+    it('offers a single-select toggle defaulting to Callsigns', async () => {
+      await renderArmed();
+      const group = screen.getByRole('radiogroup', { name: 'Round text' });
+      expect(group).toBeInTheDocument();
+      expect(screen.getByRole('radio', { name: 'Callsigns' })).toBeChecked();
+      expect(screen.getByRole('radio', { name: 'Random' })).not.toBeChecked();
+      // Callsign mode keys twice; the chip says so.
+      expect(screen.getByText('2X')).toBeInTheDocument();
+    });
+
+    it('selecting Random re-arms a single-send round (no KEYED 2X chip, mode-specific helper)', async () => {
+      await renderArmed();
+      fireEvent.click(screen.getByRole('radio', { name: 'Random' }));
+      expect(screen.getByRole('radio', { name: 'Random' })).toBeChecked();
+      expect(
+        screen.getByRole('radio', { name: 'Callsigns' })
+      ).not.toBeChecked();
+      // Keyed once → no 2X chip; helper reflects the active mode.
+      expect(screen.queryByText('2X')).toBeNull();
+      expect(screen.getByText(/Random groups/)).toBeInTheDocument();
+    });
+
+    it('persists the choice under morse:btb:textmode', async () => {
+      await renderArmed();
+      fireEvent.click(screen.getByRole('radio', { name: 'Random' }));
+      await waitFor(() =>
+        expect(localStorage.getItem('morse:btb:textmode')).toBe('"random"')
+      );
+    });
+
+    it('a random round single-decodes (no dual look) and omits the country', async () => {
+      const { container } = await renderArmed();
+      fireEvent.click(screen.getByRole('radio', { name: 'Random' }));
+      await play();
+      await submit(RANDOM_TRUTH);
+      await screen.findByText(
+        /New best at|You out-copied the bot|You matched the bot|You \d+%/
+      );
+      // Single decode ran; the dual-look path did not.
+      expect(decodeSingle).toHaveBeenCalled();
+      expect(decodeDual).not.toHaveBeenCalled();
+      // Truth shown (word breaks render as subtle dots between groups), but no
+      // country/region pill for a random group.
+      expect(container.textContent).toContain('CQ');
+      expect(container.textContent).toContain('TEST');
+      expect(screen.queryByText('United States')).toBeNull();
+      expect(screen.queryByText('International')).toBeNull();
+    });
+
+    it('grades a random round letters-only — word gaps count for neither side', async () => {
+      // Bot copies the letters perfectly but, like the model, emits no space.
+      decodeSingle.mockResolvedValue(singleResult('CQTEST'));
+      const { container } = await renderArmed();
+      fireEvent.click(screen.getByRole('radio', { name: 'Random' }));
+      await play();
+      // Human types the copy WITH the word break.
+      await submit('CQ TEST');
+      await screen.findByText(/New best at|You matched the bot/);
+      // Both sides scored 100% — neither penalized for the gap in "CQ TEST".
+      const pcts = Array.from(container.querySelectorAll('span'))
+        .map((s) => s.textContent?.trim() ?? '')
+        .filter((t) => /^\d+%$/.test(t))
+        .map((t) => parseInt(t, 10));
+      expect(pcts.length).toBeGreaterThan(0);
+      expect(pcts.every((p) => p === 100)).toBe(true);
+    });
+
+    it('a random round drops the two-looks panel for a single-send disclosure', async () => {
+      await renderArmed();
+      fireEvent.click(screen.getByRole('radio', { name: 'Random' }));
+      await play();
+      await submit(RANDOM_TRUTH);
+      await screen.findByText(
+        /New best at|You out-copied the bot|You matched the bot|You \d+%/
+      );
+      expect(screen.getByText('What you were up against')).toBeInTheDocument();
+      expect(screen.queryByText('How the bot got two looks')).toBeNull();
+    });
+
+    it('scores a random round into the same per-tier best (no new storage key)', async () => {
+      await renderArmed();
+      fireEvent.click(screen.getByRole('radio', { name: 'Random' }));
+      await play();
+      await submit(RANDOM_TRUTH); // perfect copy → bestCER 0 at the active tier
+      await screen.findByText(/New best at/);
+      await waitFor(() => {
+        const stored = JSON.parse(
+          localStorage.getItem('morse:btb:bests') ?? '{}'
+        );
+        expect(stored.technician.bestCER).toBe(0);
+      });
+      // No mode-dimensioned best key was introduced.
+      expect(localStorage.getItem('morse:btb:bests:random')).toBeNull();
+    });
   });
 });

@@ -140,7 +140,7 @@ describe('callsignCountry', () => {
     // Exercises the trailing A–Z wildcard accepting a digit where the series
     // notation has a letter ("AAA-ALZ" covers AA1, AL9, …).
     expect(callsignCountry('AA1BC')).toEqual({
-      country: 'United States of America',
+      country: 'United States',
       flag: '🇺🇸',
     });
   });

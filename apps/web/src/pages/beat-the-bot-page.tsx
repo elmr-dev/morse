@@ -2,8 +2,10 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+import type { LucideIcon } from 'lucide-react';
 import {
   Bot,
+  Cpu,
   Crown,
   Eye,
   GitMerge,
@@ -11,35 +13,29 @@ import {
   Loader2,
   Lock,
   Play,
-  RotateCcw,
+  Radio,
+  RadioTower,
+  ScanEye,
   Send,
-  Swords,
+  Shuffle,
   TriangleAlert,
   Trophy,
   User,
+  Zap,
 } from 'lucide-react';
-import { useEffect, useRef, useState } from 'react';
+import { calculateDuration, translate } from 'morse-audio';
+import { Fragment, useEffect, useRef, useState } from 'react';
 import { BoxingGloveIcon } from '@/components/boxing-glove-icon';
 import PageHeader from '@/components/page-header';
 import { usePrefersReducedMotion } from '@/components/presence';
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogTrigger,
-} from '@/components/ui/alert-dialog';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import VolumeControl from '@/components/volume-control';
 import { fireConfetti } from '@/lib/confetti';
+import { randomCwMessage } from '@/lib/cw-message';
 import { useDocumentHead } from '@/lib/use-document-head';
-import { usePersistedState } from '@/lib/use-persisted-state';
+import { clearPersisted, usePersistedState } from '@/lib/use-persisted-state';
 import {
   callsignCountry,
   callsignRegion,
@@ -52,6 +48,7 @@ import {
 } from '../inference/dual-decode';
 import { generateAudio } from '../inference/generate';
 import { loadSession } from '../inference/onnx';
+import { decodeDataUri, type PipelineResult } from '../inference/pipeline';
 
 const TONE_FREQ = 700;
 // Reveal staging timings (ms). Per-character typing cadence, the bar-race
@@ -60,30 +57,149 @@ const CHAR_MS = 95;
 const BAR_MS = 1300;
 const STAGE_PAD = 250;
 
-type Phase = 'armed' | 'copying' | 'reveal';
-type Outcome = 'win' | 'loss' | 'tie';
-
-interface Round {
-  text: string;
-  region: 'US' | 'Canada' | 'World';
-  wpm: number;
-  snr: number;
-  dataUri: string;
+export interface Tier {
+  id: 'no-code' | 'technician' | 'general' | 'extra';
+  name: string;
+  snr: number; // dB — the HUMAN clip (higher = easier)
+  wpm: number; // the HUMAN clip
+  icon: LucideIcon;
+  accent: string; // CSS custom property reference
 }
 
-function randomRound(): Round {
-  const wpm = 20 + Math.floor(Math.random() * 11);
-  const snr = -14 + Math.floor(Math.random() * 7);
-  const text = randomCallsign();
-  const region = callsignRegion(text);
-  const sentText = `${text} ${text}`;
-  const out = generateAudio({
+export const TIERS: readonly Tier[] = [
+  {
+    id: 'no-code',
+    name: 'No-Code',
+    snr: 10,
+    wpm: 13,
+    icon: Headphones,
+    accent: 'var(--tier-no-code)',
+  },
+  {
+    id: 'technician',
+    name: 'Technician',
+    snr: 5,
+    wpm: 18,
+    icon: Radio,
+    accent: 'var(--tier-technician)',
+  },
+  {
+    id: 'general',
+    name: 'General',
+    snr: 0,
+    wpm: 22,
+    icon: RadioTower,
+    accent: 'var(--tier-general)',
+  },
+  {
+    id: 'extra',
+    name: 'Extra',
+    snr: -6,
+    wpm: 28,
+    icon: Zap,
+    accent: 'var(--tier-extra)',
+  },
+];
+
+// The bot copies this fixed hard clip every round, regardless of tier.
+// Equal to the Extra human setting, so at Extra the contest is near heads-up.
+export const BOT_REF = { snr: -6, wpm: 28 } as const;
+
+interface TierRecord {
+  bestCER: number | null; // null = no rounds at this tier yet
+  beatCount: number; // strict userCER < botCER
+}
+type Bests = Record<Tier['id'], TierRecord>;
+
+const EMPTY_BESTS: Bests = {
+  'no-code': { bestCER: null, beatCount: 0 },
+  technician: { bestCER: null, beatCount: 0 },
+  general: { bestCER: null, beatCount: 0 },
+  extra: { bestCER: null, beatCount: 0 },
+};
+
+type Phase = 'armed' | 'copying' | 'reveal';
+
+// The round's copy is either a real callsign (keyed twice, with a country) or a
+// random on-air group reused from DecodePage's generator (keyed once, no origin).
+type TextMode = 'callsigns' | 'random';
+
+interface Round {
+  text: string; // the truth — single callsign, or the random string
+  mode: TextMode;
+  region: 'US' | 'Canada' | 'World'; // callsign rounds only; unused for random
+  tier: Tier['id'];
+  human: { wpm: number; snr: number; dataUri: string }; // what the player hears
+  bot: { wpm: number; snr: number; dataUri: string }; // what the bot decodes
+}
+
+// The model envelope tops out at MAX_FRAMES / ENVELOPE_SR = 16 s (see onnx.ts);
+// past that runInference *throws* (it doesn't silently truncate). The slowest
+// tier (No-Code, 13 WPM) produces the LONGEST clip, so if a single send fits the
+// envelope there, it fits at every faster tier — and the bot's fixed 28 WPM
+// decode clip (the only clip actually fed to the model) clears it with room to
+// spare (~7 s vs 16 s). randomCwMessage caps at 40 chars, which at 13 WPM can run
+// to ~24 s, so we reject over-budget candidates and regenerate.
+const SLOWEST_WPM = 13;
+const CLIP_BUDGET_SEC = 15; // 16 s envelope − ~1 s (≈0.4 s generator padding + margin)
+
+// Keyed duration (seconds) of one send of `text` at `wpm`, from the same element
+// timing the generator uses — no audio synthesis needed.
+function keyedDurationSec(text: string, wpm: number): number {
+  return calculateDuration(translate(text, wpm, wpm).timings);
+}
+
+// A random on-air group from DecodePage's generator, length-bounded so its single
+// send stays inside the 16 s envelope at the slowest tier (avg ~2 tries).
+function randomString(): string {
+  for (let i = 0; i < 40; i++) {
+    const msg = randomCwMessage();
+    if (keyedDurationSec(msg, SLOWEST_WPM) <= CLIP_BUDGET_SEC) return msg;
+  }
+  return 'CQ TEST'; // guaranteed-short fallback (~2 s at 13 WPM)
+}
+
+// Format an SNR value with sign: +10, −6, +0, etc. (proper minus sign).
+function formatSnr(snr: number): string {
+  if (snr >= 0) return `+${snr}`;
+  return `−${Math.abs(snr)}`;
+}
+
+// Strip spaces for grading and alignment. CW word gaps are a reading aid — the
+// model's charset has no space, so it never emits one (same rule as DecodePage).
+// Random messages carry spaces; callsigns don't. Grading letters-only keeps both
+// sides fair (the bot isn't dinged for gaps it can't key) and lets the player
+// type word breaks or not. The spaced text is still shown verbatim on reveal.
+function lettersOnly(s: string): string {
+  return s.replace(/\s+/g, '');
+}
+
+function randomRound(tier: Tier, mode: TextMode): Round {
+  // Callsigns are keyed twice (the on-air convention — you send a call twice so
+  // the other op catches it); random groups are sent once, as they would be.
+  const text = mode === 'callsigns' ? randomCallsign() : randomString();
+  const region = mode === 'callsigns' ? callsignRegion(text) : 'World';
+  const sentText = mode === 'callsigns' ? `${text} ${text}` : text;
+  const human = generateAudio({
     text: sentText,
-    wpm,
-    snrDb: snr,
+    wpm: tier.wpm,
+    snrDb: tier.snr,
     frequency: TONE_FREQ,
   });
-  return { text, region, wpm, snr, dataUri: out.dataUri };
+  const bot = generateAudio({
+    text: sentText,
+    wpm: BOT_REF.wpm,
+    snrDb: BOT_REF.snr,
+    frequency: TONE_FREQ,
+  });
+  return {
+    text,
+    mode,
+    region,
+    tier: tier.id,
+    human: { wpm: tier.wpm, snr: tier.snr, dataUri: human.dataUri },
+    bot: { wpm: BOT_REF.wpm, snr: BOT_REF.snr, dataUri: bot.dataUri },
+  };
 }
 
 const REGION_LABEL: Record<Round['region'], string> = {
@@ -108,14 +224,29 @@ export default function BeatTheBotPage() {
   useDocumentHead({
     title: 'Beat the Bot',
     description:
-      'One callsign buried in static, keyed twice in a single pass — the same audio you and the model both get. Out-copy a neural CW decoder by ear, if you can.',
+      'One callsign buried in static — pick your license class, copy an eased signal, and out-copy a neural CW decoder working from a brutal one.',
     path: '/beat-the-bot',
   });
 
   const reduce = usePrefersReducedMotion();
 
+  const [activeTier, setActiveTier] = usePersistedState<Tier['id']>(
+    'morse:btb:tier',
+    'technician'
+  );
+  const [bests, setBests] = usePersistedState<Bests>(
+    'morse:btb:bests',
+    EMPTY_BESTS
+  );
+  const [textMode, setTextMode] = usePersistedState<TextMode>(
+    'morse:btb:textmode',
+    'callsigns'
+  );
+
+  const tierObj = TIERS.find((t) => t.id === activeTier) ?? TIERS[2];
+
   const [phase, setPhase] = useState<Phase>('armed');
-  const [round, setRound] = useState<Round>(() => randomRound());
+  const [round, setRound] = useState<Round | null>(null);
   const [guess, setGuess] = useState('');
   const [played, setPlayed] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -124,18 +255,16 @@ export default function BeatTheBotPage() {
   const [modelReady, setModelReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const [botResult, setBotResult] = useState<DualDecodeResult | null>(null);
-  const [outcome, setOutcome] = useState<Outcome | null>(null);
+  // Callsign rounds dual-decode (two looks merged); random rounds single-decode.
+  // Both shapes expose `.text` and `.envelopeBars`, which is all the reveal needs.
+  const [botResult, setBotResult] = useState<
+    DualDecodeResult | PipelineResult | null
+  >(null);
+  const [isNewBest, setIsNewBest] = useState(false);
   // 0 = nothing, 1 = your copy typed, 2 = bot copy typed, 3 = bars race,
-  // 4 = verdict + score + glow.
+  // 4 = gap + best.
   const [revealStep, setRevealStep] = useState(0);
 
-  const [score, setScore] = usePersistedState('beat.score', {
-    wins: 0,
-    losses: 0,
-    ties: 0,
-  });
-  const [streak, setStreak] = usePersistedState('beat.streak', 0);
   const [volume, setVolume] = useState(() => {
     const stored = parseFloat(localStorage.getItem('audioVolume') ?? '');
     return Number.isNaN(stored) ? 1 : stored;
@@ -145,7 +274,9 @@ export default function BeatTheBotPage() {
   const inputRef = useRef<HTMLInputElement | null>(null);
   // The bot's decode lives only here until submit — never in state during the
   // copying phase, so its text can't leak into the DOM (anti-cheat).
-  const botPromiseRef = useRef<Promise<DualDecodeResult> | null>(null);
+  const botPromiseRef = useRef<Promise<
+    DualDecodeResult | PipelineResult
+  > | null>(null);
   const timers = useRef<number[]>([]);
 
   function clearTimers() {
@@ -153,10 +284,30 @@ export default function BeatTheBotPage() {
     timers.current = [];
   }
 
+  // One-time cleanup of retired persisted keys from the old win/loss model.
+  useEffect(() => {
+    clearPersisted('beat.score', 'beat.streak');
+  }, []);
+
   useEffect(() => {
     loadSession()
       .then(() => setModelReady(true))
       .catch((e) => setError(String(e)));
+  }, []);
+
+  // biome-ignore lint/correctness/useExhaustiveDependencies: mount-only round init — double-rAF guarantees the browser paints the skeleton before the synchronous audio generation blocks the main thread
+  useEffect(() => {
+    let r1: number;
+    let r2: number;
+    r1 = requestAnimationFrame(() => {
+      r2 = requestAnimationFrame(() =>
+        setRound(randomRound(tierObj, textMode))
+      );
+    });
+    return () => {
+      cancelAnimationFrame(r1);
+      cancelAnimationFrame(r2);
+    };
   }, []);
 
   // Clear any pending reveal timers on unmount.
@@ -180,7 +331,8 @@ export default function BeatTheBotPage() {
   }
 
   function onPlay() {
-    if (!audioRef.current || !modelReady || played || isPlaying) return;
+    if (!audioRef.current || !round || !modelReady || played || isPlaying)
+      return;
     setPlayed(true);
     setIsPlaying(true);
     const audio = audioRef.current;
@@ -202,36 +354,31 @@ export default function BeatTheBotPage() {
     // in the copying state — lock immediately so the round can still proceed.
     if (playResult?.catch) playResult.catch(lockIn);
 
-    // Seal the bot's copy now, on the same audio. Store only the promise; its
+    // Seal the bot's copy against its harder clip. Store only the promise; its
     // text never reaches state (and so never the DOM) until the player submits.
-    const p = decodeDualCallsignDataUri(round.dataUri, TONE_FREQ);
+    // Callsigns are sent twice → dual-look merge; random groups are sent once →
+    // a single decode, the same copy a human gets.
+    const p =
+      round.mode === 'callsigns'
+        ? decodeDualCallsignDataUri(round.bot.dataUri, TONE_FREQ)
+        : decodeDataUri(round.bot.dataUri, TONE_FREQ);
     botPromiseRef.current = p;
     p.catch(() => {});
 
     setPhase('copying');
   }
 
-  function applyOutcome(out: Outcome) {
-    setScore((s) =>
-      out === 'win'
-        ? { ...s, wins: s.wins + 1 }
-        : out === 'loss'
-          ? { ...s, losses: s.losses + 1 }
-          : { ...s, ties: s.ties + 1 }
-    );
-    setStreak((st) => (out === 'win' ? st + 1 : 0));
-    if (out === 'win') fireConfetti();
-  }
-
-  function startReveal(userText: string, botText: string, out: Outcome) {
+  function startReveal(userText: string, botText: string, newBest: boolean) {
+    if (!round) return;
     clearTimers();
     if (reduce) {
       setRevealStep(4);
-      applyOutcome(out);
+      if (newBest) fireConfetti();
       return;
     }
-    const userLen = alignChars(userText, round.text).length;
-    const botLen = alignChars(botText, round.text).length;
+    const truth = lettersOnly(round.text);
+    const userLen = alignChars(userText, truth).length;
+    const botLen = alignChars(botText, truth).length;
     setRevealStep(1);
     const id1 = window.setTimeout(
       () => {
@@ -241,7 +388,7 @@ export default function BeatTheBotPage() {
             setRevealStep(3);
             const id3 = window.setTimeout(() => {
               setRevealStep(4);
-              applyOutcome(out);
+              if (newBest) fireConfetti();
             }, BAR_MS + STAGE_PAD);
             timers.current.push(id3);
           },
@@ -255,7 +402,7 @@ export default function BeatTheBotPage() {
   }
 
   async function submitGuess() {
-    if (phase !== 'copying' || !guess.trim() || submitting) return;
+    if (phase !== 'copying' || !round || !guess.trim() || submitting) return;
     // Cut the audio the instant they commit — the listen is over.
     audioRef.current?.pause();
     setIsPlaying(false);
@@ -263,17 +410,37 @@ export default function BeatTheBotPage() {
     try {
       const res =
         (await botPromiseRef.current) ??
-        (await decodeDualCallsignDataUri(round.dataUri, TONE_FREQ));
-      const userText = guess.toUpperCase().trim();
-      const userAcc = accuracy(round.text, userText);
-      const botAcc = accuracy(round.text, res.text);
-      const out: Outcome =
-        userAcc > botAcc ? 'win' : userAcc < botAcc ? 'loss' : 'tie';
+        (await (round.mode === 'callsigns'
+          ? decodeDualCallsignDataUri(round.bot.dataUri, TONE_FREQ)
+          : decodeDataUri(round.bot.dataUri, TONE_FREQ)));
+      const truth = lettersOnly(round.text);
+      const userText = lettersOnly(guess.toUpperCase().trim());
+      const userCER = 1 - accuracy(truth, userText);
+      const botCER = 1 - accuracy(truth, res.text);
+      const rec = bests[round.tier];
+      const newBestFlag =
+        userCER < 1 && (rec.bestCER === null || userCER < rec.bestCER);
+      setIsNewBest(newBestFlag);
+      setBests((prev) => {
+        const r = prev[round.tier];
+        // A 0% score (userCER = 1) doesn't count as a best — keep null until
+        // the user copies at least one character correctly.
+        const newBestVal =
+          userCER >= 1
+            ? r.bestCER
+            : r.bestCER === null
+              ? userCER
+              : Math.min(r.bestCER, userCER);
+        const beat = userCER < botCER ? 1 : 0; // STRICT < — a tie does NOT count
+        return {
+          ...prev,
+          [round.tier]: { bestCER: newBestVal, beatCount: r.beatCount + beat },
+        };
+      });
       setBotResult(res);
-      setOutcome(out);
       setPhase('reveal');
       setSubmitting(false);
-      startReveal(userText, res.text, out);
+      startReveal(userText, res.text, newBestFlag);
     } catch (e) {
       setError(String(e));
       setSubmitting(false);
@@ -288,120 +455,135 @@ export default function BeatTheBotPage() {
     setIsPlaying(false);
     setBotLocked(false);
     setBotResult(null);
-    setOutcome(null);
+    setIsNewBest(false);
     setRevealStep(0);
     botPromiseRef.current = null;
-    setRound(randomRound());
+    setRound(randomRound(tierObj, textMode));
     setPhase('armed');
   }
 
-  function resetScore() {
-    setScore({ wins: 0, losses: 0, ties: 0 });
-    setStreak(0);
-    nextRound();
+  function onTierChange(id: Tier['id']) {
+    if (phase === 'reveal' && id === activeTier) return;
+    const newTier = TIERS.find((t) => t.id === id) ?? TIERS[2];
+    setActiveTier(id);
+    if (phase === 'reveal') {
+      clearTimers();
+      setError(null);
+      setGuess('');
+      setPlayed(false);
+      setIsPlaying(false);
+      setBotLocked(false);
+      setBotResult(null);
+      setIsNewBest(false);
+      setRevealStep(0);
+      botPromiseRef.current = null;
+      setPhase('armed');
+    }
+    setRound(randomRound(newTier, textMode));
   }
 
-  const userText = guess.toUpperCase().trim();
-  const userAcc = botResult ? accuracy(round.text, userText) : 0;
-  const botAcc = botResult ? accuracy(round.text, botResult.text) : 0;
+  // The toggle only shows in the armed phase, so flipping it just re-arms the
+  // round with the new text mode (same idea as changing tier).
+  function onTextModeChange(mode: TextMode) {
+    if (mode === textMode) return;
+    setTextMode(mode);
+    setRound(randomRound(tierObj, mode));
+  }
+
+  const userText = lettersOnly(guess.toUpperCase().trim());
+  const truth = round ? lettersOnly(round.text) : '';
+  const userAcc = botResult && round ? accuracy(truth, userText) : 0;
+  const botAcc = botResult && round ? accuracy(truth, botResult.text) : 0;
   const userPct = Math.round(userAcc * 100);
   const botPct = Math.round(botAcc * 100);
-  const glow: Outcome | null = revealStep >= 4 ? outcome : null;
-  const played_total = score.wins + score.losses + score.ties;
-
   return (
     <div>
       <PageHeader
         eyebrow="Human vs. machine"
-        icon={Swords}
+        icon={BoxingGloveIcon}
         title="Beat the Bot"
         wideIntro
       >
-        The machine has out-copied humans down to −12 dB. Now it's your turn.
-        One callsign, buried in static, keyed twice in a single pass — same
-        audio you both get. Cleaner copy wins.
+        The machine has out-copied humans down to −12 dB. Pick your class. We
+        hand you an easier signal than the bot — less and less of one as you
+        climb, until Extra, where you&apos;re both copying the same brutal clip.
+        Out-copy it anyway.
       </PageHeader>
 
       <Card>
         <CardContent className="flex flex-col gap-5">
-          <Scoreboard score={score} streak={streak} glow={glow} />
-
-          <div className="-mt-2 flex flex-col items-center gap-2 text-[12px] text-muted-foreground">
-            <span className="text-center">
-              Cleaner copy wins · same audio, sealed copies
-            </span>
-            {played_total > 0 && (
-              <AlertDialog>
-                <AlertDialogTrigger className="inline-flex items-center gap-1 rounded-md border border-border px-2 py-0.5 text-foreground/70 hover:text-foreground hover:bg-muted transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring/50">
-                  <RotateCcw className="size-3" />
-                  Reset
-                </AlertDialogTrigger>
-                <AlertDialogContent>
-                  <AlertDialogHeader>
-                    <AlertDialogTitle>Reset the scoreboard?</AlertDialogTitle>
-                    <AlertDialogDescription>
-                      This clears your wins, the bot's wins, ties, and your
-                      streak — {played_total}{' '}
-                      {played_total === 1 ? 'round' : 'rounds'} of history. This
-                      can't be undone.
-                    </AlertDialogDescription>
-                  </AlertDialogHeader>
-                  <AlertDialogFooter>
-                    <AlertDialogCancel>Keep my scores</AlertDialogCancel>
-                    <AlertDialogAction
-                      variant="destructive"
-                      onClick={resetScore}
-                    >
-                      Reset scores
-                    </AlertDialogAction>
-                  </AlertDialogFooter>
-                </AlertDialogContent>
-              </AlertDialog>
-            )}
-          </div>
+          <TierRow
+            bests={bests}
+            activeTier={activeTier}
+            phase={phase}
+            onTierChange={onTierChange}
+            disabled={phase === 'copying'}
+          />
 
           <div className="border-t border-border" />
 
-          {/* Audio is rendered once and reused across phases. */}
-          {/* biome-ignore lint/a11y/useMediaCaption: programmatically generated audio */}
-          <audio ref={audioRef} src={round.dataUri} preload="auto" />
+          {/* Audio + phase panels — skeleton shown while the initial clip generates
+              after the first paint, then swapped for the real content. */}
+          {round ? (
+            <>
+              {/* biome-ignore lint/a11y/useMediaCaption: programmatically generated audio */}
+              <audio ref={audioRef} src={round.human.dataUri} preload="auto" />
 
-          {phase === 'armed' && (
-            <ArmedPanel
-              round={round}
-              modelReady={modelReady}
-              isPlaying={isPlaying}
-              volume={volume}
-              onVolumeChange={onVolumeChange}
-              onPlay={onPlay}
-            />
-          )}
+              {phase === 'armed' && (
+                <ArmedPanel
+                  round={round}
+                  tierObj={tierObj}
+                  textMode={textMode}
+                  onTextModeChange={onTextModeChange}
+                  modelReady={modelReady}
+                  isPlaying={isPlaying}
+                  volume={volume}
+                  onVolumeChange={onVolumeChange}
+                  onPlay={onPlay}
+                />
+              )}
 
-          {phase === 'copying' && (
-            <CopyingPanel
-              guess={guess}
-              setGuess={setGuess}
-              botLocked={botLocked}
-              submitting={submitting}
-              inputRef={inputRef}
-              onSubmit={submitGuess}
-              reduce={reduce}
-            />
-          )}
+              {phase === 'copying' && (
+                <CopyingPanel
+                  guess={guess}
+                  setGuess={setGuess}
+                  botLocked={botLocked}
+                  submitting={submitting}
+                  inputRef={inputRef}
+                  onSubmit={submitGuess}
+                  reduce={reduce}
+                  devTruth={
+                    import.meta.env.MODE === 'development' ? round.text : null
+                  }
+                />
+              )}
 
-          {phase === 'reveal' && botResult && (
-            <RevealPanel
-              round={round}
-              guess={userText}
-              botResult={botResult}
-              outcome={outcome}
-              streak={streak}
-              revealStep={revealStep}
-              userPct={userPct}
-              botPct={botPct}
-              reduce={reduce}
-              onNext={nextRound}
-            />
+              {phase === 'reveal' && botResult && (
+                <RevealPanel
+                  round={round}
+                  guess={userText}
+                  botResult={botResult}
+                  isNewBest={isNewBest}
+                  tierName={tierObj.name}
+                  revealStep={revealStep}
+                  userPct={userPct}
+                  botPct={botPct}
+                  reduce={reduce}
+                  onNext={nextRound}
+                />
+              )}
+            </>
+          ) : (
+            /* Skeleton: disabled play button shown while the clip is being generated */
+            <div className="flex flex-col items-center gap-4">
+              <div className="size-[60px] sm:size-[72px] rounded-full bg-primary flex items-center justify-center opacity-50">
+                <Loader2 className="size-7 sm:size-8 animate-spin text-primary-foreground" />
+              </div>
+              <span className="inline-flex items-center gap-1.5 text-[13px] text-muted-foreground">
+                <Cpu className="size-3.5" />
+                Generating signal…
+              </span>
+            </div>
           )}
 
           {error && (
@@ -415,73 +597,156 @@ export default function BeatTheBotPage() {
   );
 }
 
-function Scoreboard({
-  score,
-  streak,
-  glow,
+function TierRow({
+  bests,
+  activeTier,
+  phase,
+  onTierChange,
+  disabled = false,
 }: {
-  score: { wins: number; losses: number; ties: number };
-  streak: number;
-  glow: Outcome | null;
+  bests: Bests;
+  activeTier: Tier['id'];
+  phase: Phase;
+  onTierChange: (id: Tier['id']) => void;
+  disabled?: boolean;
 }) {
-  const glowRing =
-    glow === 'win'
-      ? 'ring-2 ring-inset ring-you/70'
-      : glow === 'loss'
-        ? 'ring-2 ring-inset ring-bot/70'
-        : glow === 'tie'
-          ? 'ring-2 ring-inset ring-muted-foreground/50'
-          : 'ring-0';
   return (
-    <div
-      className={`rounded-xl border border-border/50 bg-background p-4 transition-shadow ${glowRing}`}
-    >
-      <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2">
-        <div className="flex flex-col items-center gap-1">
-          <span className="inline-flex items-center gap-1.5 text-[15px] font-medium text-you">
-            <User className="size-[18px]" />
-            YOU
-          </span>
-          <span className="font-dseg7 text-[44px] leading-none text-you tabular-nums">
-            {score.wins}
-          </span>
-        </div>
-        <div className="flex flex-col items-center gap-1 px-2 text-muted-foreground">
-          <span className="text-sm font-medium">VS</span>
-          <span className="text-[13px]">
-            {score.ties} {score.ties === 1 ? 'tie' : 'ties'}
-          </span>
-          {streak >= 2 && (
-            <span className="text-[11px] text-you">{streak} streak</span>
-          )}
-        </div>
-        <div className="flex flex-col items-center gap-1">
-          <span className="inline-flex items-center gap-1.5 text-[15px] font-medium text-bot">
-            <Bot className="size-[18px]" />
-            BOT
-            {glow === 'loss' && (
-              <Crown className="size-4 text-dial animate-crown-drop" />
+    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+      {TIERS.map((tier) => {
+        const rec = bests[tier.id];
+        const isActive = tier.id === activeTier;
+        const Icon = tier.icon;
+        const bestPct =
+          rec.bestCER === null
+            ? null
+            : Math.max(0, Math.round((1 - rec.bestCER) * 100));
+        return (
+          <button
+            key={tier.id}
+            type="button"
+            onClick={() => onTierChange(tier.id)}
+            aria-pressed={isActive}
+            disabled={disabled}
+            style={
+              isActive
+                ? {
+                    borderColor: tier.accent,
+                    boxShadow: `0 0 0 1px ${tier.accent}`,
+                    backgroundColor: `color-mix(in oklch, ${tier.accent} 8%, transparent)`,
+                  }
+                : undefined
+            }
+            className={`flex flex-col items-center gap-1 rounded-xl border px-3 py-2 sm:p-3 transition-all outline-none focus-visible:ring-2 focus-visible:ring-ring/50 ${
+              isActive && phase === 'reveal'
+                ? 'cursor-default'
+                : 'cursor-pointer'
+            } ${
+              isActive
+                ? ''
+                : 'border-border/50 bg-background hover:border-border hover:bg-muted/30'
+            } disabled:opacity-50 disabled:pointer-events-none disabled:cursor-default`}
+          >
+            <span className="flex items-center gap-1.5">
+              <Icon
+                className="size-4 shrink-0"
+                style={{ color: tier.accent }}
+              />
+              <span className="text-[13px] font-medium text-foreground">
+                {tier.name}
+              </span>
+            </span>
+            <span className="text-[11px] text-muted-foreground font-mono">
+              {formatSnr(tier.snr)} dB · {tier.wpm} wpm
+            </span>
+            {bestPct === null ? (
+              <span className="text-[28px] leading-none text-muted-foreground/40 mt-0.5 sm:mt-1 select-none">
+                —
+              </span>
+            ) : (
+              <span
+                className="font-mono text-[22px] font-semibold leading-none tabular-nums mt-0.5 sm:mt-1"
+                style={{
+                  color: isActive ? tier.accent : 'var(--muted-foreground)',
+                }}
+              >
+                {bestPct}%
+              </span>
             )}
-          </span>
-          <span className="font-dseg7 text-[44px] leading-none text-bot tabular-nums">
-            {score.losses}
-          </span>
-        </div>
-      </div>
+            {rec.beatCount >= 1 && (
+              <span className="inline-flex items-center gap-1 text-[12px] text-dial mt-0.5">
+                <Trophy className="size-3" />
+                {rec.beatCount}
+              </span>
+            )}
+          </button>
+        );
+      })}
     </div>
   );
 }
 
-function Chip({ children }: { children: React.ReactNode }) {
+// Quiet, non-interactive readout pill. Deliberately borderless and hover-free so
+// it reads as metadata, not a control — the play button and the mode toggle are
+// the only things meant to look pressable. Two-tone: faint label, bright value.
+function SpecPill({ children }: { children: React.ReactNode }) {
   return (
-    <span className="inline-flex items-center gap-1 rounded-md border border-border bg-background/60 px-3 py-1.5 text-[13px] text-muted-foreground">
+    <span className="inline-flex items-center gap-1 rounded-full bg-muted/50 px-2 py-0.5 text-[11px] text-muted-foreground">
       {children}
     </span>
   );
 }
 
+// Single-select segmented control for the round's text mode. A real radio group
+// (role="radiogroup" + role="radio") so keyboard / assistive tech announce
+// "1 of 2 selected" rather than two independent toggles.
+function TextModeToggle({
+  value,
+  onChange,
+}: {
+  value: TextMode;
+  onChange: (m: TextMode) => void;
+}) {
+  const options: { id: TextMode; label: string; icon: LucideIcon }[] = [
+    { id: 'callsigns', label: 'Callsigns', icon: RadioTower },
+    { id: 'random', label: 'Random', icon: Shuffle },
+  ];
+  return (
+    <div
+      role="radiogroup"
+      aria-label="Round text"
+      className="flex w-full sm:inline-flex sm:w-auto items-stretch gap-0.5 rounded-lg border border-border bg-background/60 p-0.5"
+    >
+      {options.map((o) => {
+        const active = value === o.id;
+        const Icon = o.icon;
+        return (
+          // biome-ignore lint/a11y/useSemanticElements: a segmented single-select control — role="radio" buttons in a radiogroup give the "1 of 2 selected" semantics without native radios' default styling/layout
+          <button
+            key={o.id}
+            type="button"
+            role="radio"
+            aria-checked={active}
+            onClick={() => onChange(o.id)}
+            className={`flex-1 sm:flex-initial inline-flex items-center justify-center gap-1.5 rounded-md px-3 py-2 sm:py-1.5 text-[14px] font-medium transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring/50 ${
+              active
+                ? 'bg-primary text-primary-foreground'
+                : 'text-muted-foreground hover:text-foreground'
+            }`}
+          >
+            <Icon className="size-3.5" />
+            {o.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 function ArmedPanel({
   round,
+  tierObj,
+  textMode,
+  onTextModeChange,
   modelReady,
   isPlaying,
   volume,
@@ -489,6 +754,9 @@ function ArmedPanel({
   onPlay,
 }: {
   round: Round;
+  tierObj: Tier;
+  textMode: TextMode;
+  onTextModeChange: (m: TextMode) => void;
   modelReady: boolean;
   isPlaying: boolean;
   volume: number;
@@ -503,22 +771,45 @@ function ArmedPanel({
         <VolumeControl value={volume} onChange={onVolumeChange} />
       </div>
 
-      <div className="flex flex-wrap items-center justify-center gap-2 font-mono">
-        <Chip>
+      {/* The interactive control sits above the quiet spec readout, centered in
+          the same column as the play button. Its helper line explains the
+          CURRENT mode (not a static caption). */}
+      <div className="flex w-full sm:w-auto flex-col items-center gap-1.5">
+        <TextModeToggle value={textMode} onChange={onTextModeChange} />
+        <span className="text-[12px] text-muted-foreground/80 text-center">
+          {textMode === 'callsigns' ? (
+            'Real callsigns — lean on the format.'
+          ) : (
+            <>
+              Random groups — no patterns to lean on. Sent once;{' '}
+              <strong className="font-semibold">
+                spaces don&apos;t count.
+              </strong>
+            </>
+          )}
+        </span>
+      </div>
+
+      <div className="flex flex-wrap items-center justify-center gap-1.5 font-mono">
+        <SpecPill>
           {/* Sign kept in the same span as the value so it reads tight
-              ("~20", "−10"), with chip gaps only around the unit labels. */}
-          <span className="text-foreground">~{round.wpm}</span>
+              ("~13", "~28"), with gaps only around the unit labels. */}
+          <span className="text-foreground">~{round.human.wpm}</span>
           <span>WPM</span>
-        </Chip>
-        <Chip>
+        </SpecPill>
+        <SpecPill>
           <span>SNR</span>
-          <span className="text-foreground">−{Math.abs(round.snr)}</span>
+          <span className="text-foreground">{formatSnr(round.human.snr)}</span>
           <span>dB</span>
-        </Chip>
-        <Chip>
-          <span>KEYED</span>
-          <span className="text-foreground">2X</span>
-        </Chip>
+        </SpecPill>
+        {/* Callsigns are keyed twice; random groups are sent once, so the chip
+            only applies to callsign rounds. */}
+        {round.mode === 'callsigns' && (
+          <SpecPill>
+            <span>KEYED</span>
+            <span className="text-foreground">2X</span>
+          </SpecPill>
+        )}
       </div>
 
       <button
@@ -526,18 +817,27 @@ function ArmedPanel({
         onClick={onPlay}
         disabled={!modelReady || isPlaying}
         aria-label="Play the signal once"
-        className="size-[72px] rounded-full bg-primary text-primary-foreground flex items-center justify-center transition-transform enabled:hover:scale-105 enabled:active:scale-95 disabled:opacity-50 outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+        className="size-[60px] sm:size-[72px] rounded-full bg-primary text-primary-foreground flex items-center justify-center transition-transform enabled:hover:scale-105 enabled:active:scale-95 disabled:opacity-50 outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
       >
         {!modelReady || isPlaying ? (
-          <Loader2 className="size-8 animate-spin" />
+          <Loader2 className="size-7 sm:size-8 animate-spin" />
         ) : (
-          <Play className="size-8 translate-x-[2px]" fill="currentColor" />
+          <Play
+            className="size-7 sm:size-8 translate-x-[2px]"
+            fill="currentColor"
+          />
         )}
       </button>
 
       <span className="inline-flex items-center gap-1.5 text-[13px] text-muted-foreground">
-        <Headphones className="size-3.5" />
-        {modelReady ? 'One listen — make it count' : 'Loading model…'}
+        {modelReady ? (
+          <Headphones className="size-3.5" />
+        ) : (
+          <Cpu className="size-3.5" />
+        )}
+        {modelReady
+          ? `One listen — close the gap on ${tierObj.name}`
+          : 'Loading model…'}
       </span>
     </div>
   );
@@ -551,6 +851,7 @@ function CopyingPanel({
   inputRef,
   onSubmit,
   reduce,
+  devTruth,
 }: {
   guess: string;
   setGuess: (v: string) => void;
@@ -559,9 +860,17 @@ function CopyingPanel({
   inputRef: React.RefObject<HTMLInputElement | null>;
   onSubmit: () => void;
   reduce: boolean;
+  devTruth: string | null;
 }) {
   return (
     <div className="flex flex-col gap-4">
+      {/* DEV-ONLY: the round's truth, so you can copy it by hand to test the
+          flow. Gated on import.meta.env.DEV — never rendered in a prod build. */}
+      {devTruth && (
+        <div className="rounded-md border border-dashed border-bad/50 bg-bad/5 px-3 py-1.5 font-mono text-[13px] text-bad">
+          dev · truth: {devTruth}
+        </div>
+      )}
       <div className="flex items-center gap-3 rounded-lg border border-border bg-background/40 p-4">
         {/* Abstract activity only — never any text derived from the bot copy. */}
         <div
@@ -635,12 +944,13 @@ function CopyingPanel({
         >
           {submitting ? (
             <>
-              <Loader2 className="animate-spin size-4" /> Grading…
+              <Loader2 className="animate-spin size-4" />{' '}
+              <span className="hidden sm:inline">Grading…</span>
             </>
           ) : (
             <>
               <Send className="size-4" />
-              Submit
+              <span className="hidden sm:inline">Submit</span>
             </>
           )}
         </Button>
@@ -653,8 +963,8 @@ function RevealPanel({
   round,
   guess,
   botResult,
-  outcome,
-  streak,
+  isNewBest,
+  tierName,
   revealStep,
   userPct,
   botPct,
@@ -663,33 +973,64 @@ function RevealPanel({
 }: {
   round: Round;
   guess: string;
-  botResult: DualDecodeResult;
-  outcome: Outcome | null;
-  streak: number;
+  botResult: DualDecodeResult | PipelineResult;
+  isNewBest: boolean;
+  tierName: string;
   revealStep: number;
   userPct: number;
   botPct: number;
   reduce: boolean;
   onNext: () => void;
 }) {
-  const origin = originDisplay(round);
-  const userCells = alignChars(guess, round.text);
-  const botCells = alignChars(botResult.text, round.text);
+  const bottomRef = useRef<HTMLButtonElement>(null);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: intentional mount-only scroll
+  useEffect(() => {
+    window.setTimeout(
+      () =>
+        window.scrollTo({
+          top: document.body.scrollHeight,
+          behavior: reduce ? 'auto' : 'smooth',
+        }),
+      60
+    );
+  }, []);
+
+  // Random rounds have no country/region, so the origin pill is callsign-only.
+  const origin = round.mode === 'callsigns' ? originDisplay(round) : null;
+  // Grade/align letters-only (see lettersOnly); the spaced text is still shown
+  // verbatim in the "It was" line. `guess` arrives already stripped.
+  const truth = lettersOnly(round.text);
+  const userCells = alignChars(guess, truth);
+  const botCells = alignChars(botResult.text, truth);
+  const userCER = 1 - accuracy(truth, guess);
+  const botCER = 1 - accuracy(truth, botResult.text);
   return (
     <div className="flex flex-col gap-4">
       <div className="flex flex-wrap items-center justify-center gap-2.5">
         <span className="text-[13px] text-muted-foreground">It was</span>
-        <span className="font-mono text-[22px] text-foreground tracking-[2px]">
-          {round.text}
+        <span className="font-mono text-[22px] text-foreground tracking-[2px] break-all">
+          {/* Render word breaks as subtle dots so a random message reads as
+              distinct groups ("AJ2KKM · 2A · AL"); callsigns have no spaces. */}
+          {round.text.split(/\s+/).map((word, i) => (
+            // biome-ignore lint/suspicious/noArrayIndexKey: positional word cells; regenerated each render
+            <Fragment key={i}>
+              {i > 0 && (
+                <span className="mx-1 text-muted-foreground/40">·</span>
+              )}
+              {word}
+            </Fragment>
+          ))}
         </span>
-        <span className="inline-flex items-center gap-1.5 text-[12px] bg-secondary text-secondary-foreground rounded-md px-2 py-0.5">
-          {origin.flag && (
-            <span aria-hidden="true" className="text-[15px] leading-none">
-              {origin.flag}
-            </span>
-          )}
-          {origin.name}
-        </span>
+        {origin && (
+          <span className="inline-flex items-center gap-1.5 text-[12px] bg-secondary text-secondary-foreground rounded-md px-2 py-0.5">
+            {origin.flag && (
+              <span aria-hidden="true" className="text-[15px] leading-none">
+                {origin.flag}
+              </span>
+            )}
+            {origin.name}
+          </span>
+        )}
       </div>
 
       {/* One line per competitor: name · accuracy bar (grows to fill) · copy.
@@ -703,9 +1044,9 @@ function RevealPanel({
           icon={<User className="size-5" />}
           cells={userCells}
           typePlay={revealStep >= 1}
-          barShow={revealStep >= 3}
+          barShow={revealStep >= 1}
           pct={userPct}
-          win={revealStep >= 4 && outcome === 'win'}
+          win={false}
           reduce={reduce}
         />
         <CompetitorRow
@@ -714,24 +1055,65 @@ function RevealPanel({
           icon={<Bot className="size-5" />}
           cells={botCells}
           typePlay={revealStep >= 2}
-          barShow={revealStep >= 3}
+          barShow={revealStep >= 1}
           pct={botPct}
-          win={revealStep >= 4 && outcome === 'loss'}
+          win={false}
           reduce={reduce}
         />
       </div>
 
-      {revealStep >= 4 && <Verdict outcome={outcome} streak={streak} />}
+      <div className="flex flex-col items-center gap-1.5 text-center">
+        {/* Result line — loudest element of the zone */}
+        {isNewBest ? (
+          <span className="inline-flex items-center gap-1.5 text-[18px] font-semibold text-good">
+            <Trophy className="size-5" />
+            New best at {tierName}
+          </span>
+        ) : userCER < botCER ? (
+          <span className="inline-flex items-center gap-2 text-[18px] font-semibold text-good">
+            <Trophy className="size-5" />
+            You out-copied the bot
+          </span>
+        ) : userCER === botCER ? (
+          <span className="text-[18px] font-semibold text-foreground">
+            You matched the bot
+          </span>
+        ) : (
+          // TODO(john): final wording undecided — placeholder
+          <span className="text-[18px] font-semibold text-foreground">
+            You copied {userPct}%
+          </span>
+        )}
+        {/* Context line — one quiet tertiary line below the result */}
+        {round.tier === 'extra' ? (
+          <span className="text-[12px] text-muted-foreground">
+            Even ground — same clip
+          </span>
+        ) : (
+          <span className="text-[12px] text-muted-foreground">
+            Your clip {formatSnr(round.human.snr)} dB · the bot&apos;s{' '}
+            {formatSnr(round.bot.snr)} dB
+          </span>
+        )}
+      </div>
 
-      {revealStep >= 4 && (
-        <>
-          <StaticEnvelope bars={botResult.envelopeBars} />
-          <TwoLookDetail result={botResult} />
-        </>
+      {/* Callsigns get the full two-looks merge story (sent twice); random rounds
+          were sent once — there's no second look to explain, so we show just the
+          signal envelope under a plainer disclosure. */}
+      {round.mode === 'callsigns' ? (
+        <TwoLookDetail result={botResult as DualDecodeResult} />
+      ) : (
+        <SignalEnvelopeDetail bars={botResult.envelopeBars} />
       )}
 
-      <Button variant="default" onClick={onNext} className="w-full mt-1">
-        <BoxingGloveIcon className="size-4" /> Next round
+      <Button
+        ref={bottomRef}
+        variant="default"
+        onClick={onNext}
+        disabled={revealStep < 4}
+        className="w-full mt-1"
+      >
+        <BoxingGloveIcon className="size-4" /> Another round
       </Button>
     </div>
   );
@@ -786,12 +1168,11 @@ function alignChars(
   return cells;
 }
 
-// Per-competitor identity color (chart palette). Kept distinct from green
-// (which means "correct character") and from the app's primary purple (which is
-// everywhere). You = blue, Bot = pink.
+// Per-competitor identity. You = blue, Bot = orange.
+// Bars are thin pill tracks; percentage shown to the right of the track.
 const TONE = {
-  you: { text: 'text-you', fill: 'bg-you' },
-  bot: { text: 'text-bot', fill: 'bg-bot' },
+  you: { text: 'text-you' },
+  bot: { text: 'text-bot' },
 } as const;
 
 // One competitor on a single line: name + icon (left), the accuracy bar growing
@@ -868,20 +1249,27 @@ function CompetitorRow({
         {win && <Crown className="size-4 text-dial" />}
       </span>
 
-      <div className="relative h-9 overflow-hidden rounded-lg bg-background/60">
-        {/* The % label rides the fill's trailing edge so it reads on the light
-            fill (which also gives axe a correct background to measure). */}
-        <div
-          className={`absolute inset-y-0 left-0 flex items-center justify-end rounded-lg pr-2.5 ${color.fill}`}
-          style={{
-            width: `${w}%`,
-            transition: reduce ? 'none' : `width ${BAR_MS}ms ease-out`,
-          }}
-        >
-          <span className="font-mono text-[12px] font-semibold tabular-nums whitespace-nowrap text-background">
-            {pct}%
-          </span>
+      {/* Thin pill track. Both fills use dashed segments; You = blue, Bot = orange. */}
+      <div className="flex items-center gap-2">
+        <div className="relative flex-1 h-1.5 rounded-full bg-muted overflow-hidden">
+          <div
+            className="absolute inset-y-0 left-0"
+            style={{
+              width: `${w}%`,
+              background:
+                tone === 'you'
+                  ? 'repeating-linear-gradient(90deg, var(--you) 0, var(--you) 5px, color-mix(in oklch, var(--you) 35%, transparent) 5px, color-mix(in oklch, var(--you) 35%, transparent) 6px)'
+                  : 'repeating-linear-gradient(90deg, var(--bot) 0, var(--bot) 5px, color-mix(in oklch, var(--bot) 35%, transparent) 5px, color-mix(in oklch, var(--bot) 35%, transparent) 6px)',
+              transition: reduce ? 'none' : `width ${BAR_MS}ms ease-out`,
+            }}
+          />
         </div>
+        <span
+          aria-hidden={barShow ? undefined : true}
+          className={`font-mono text-[11px] font-semibold tabular-nums w-8 text-right shrink-0 ${barShow ? color.text : 'opacity-0'}`}
+        >
+          {pct}%
+        </span>
       </div>
 
       {/* All cells render up front (un-typed ones invisible) so width is
@@ -913,117 +1301,124 @@ function CompetitorRow({
   );
 }
 
-function Verdict({
-  outcome,
-  streak,
-}: {
-  outcome: Outcome | null;
-  streak: number;
-}) {
-  if (outcome === 'win')
-    return (
-      <div className="flex items-center justify-center gap-2 text-[18px] font-semibold text-good">
-        <Trophy className="size-5" />
-        {streak >= 3
-          ? `You out-copied the bot — ${streak} in a row`
-          : 'You out-copied the bot'}
-      </div>
-    );
-  if (outcome === 'loss')
-    return (
-      <div className="flex items-center justify-center gap-2 text-[18px] font-semibold text-primary">
-        <Bot className="size-5" />
-        The bot copied it cleaner
-      </div>
-    );
+// On opening a reveal disclosure, ease the newly-revealed content into view.
+function scrollDisclosureIntoView(e: React.SyntheticEvent<HTMLDetailsElement>) {
+  if (!e.currentTarget.open) return;
+  const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  window.setTimeout(
+    () =>
+      window.scrollTo({
+        top: document.body.scrollHeight,
+        behavior: reduce ? 'auto' : 'smooth',
+      }),
+    60
+  );
+}
+
+// Envelope bar strip shared by both disclosures: the keying the bot copied.
+function EnvelopeBars({ bars }: { bars: number[] }) {
+  const max = bars.length > 0 ? Math.max(...bars, 0.0001) : 1;
   return (
-    <div className="flex items-center justify-center gap-2 text-[18px] font-semibold text-foreground">
-      Dead heat — same copy
+    <div className="flex items-end gap-[2px] h-9 bg-background rounded-md px-2 py-1.5">
+      {bars.map((v, i) => (
+        <div
+          // biome-ignore lint/suspicious/noArrayIndexKey: positional waveform bar; bars are recomputed each render
+          key={i}
+          className="flex-1 rounded-[1px] bg-primary/70"
+          style={{ height: `${Math.max(6, (v / max) * 100)}%` }}
+        />
+      ))}
     </div>
   );
 }
 
-function TwoLookDetail({ result }: { result: DualDecodeResult }) {
-  const ref = useRef<HTMLDetailsElement>(null);
-  const looks = [
-    { n: 1, text: result.firstHalf.text, conf: result.firstHalf.confidence },
-    { n: 2, text: result.secondHalf.text, conf: result.secondHalf.confidence },
-  ];
-  function onToggle(e: React.SyntheticEvent<HTMLDetailsElement>) {
-    if (!e.currentTarget.open) return;
-    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
-    window.setTimeout(
-      () => ref.current?.scrollIntoView({ behavior: 'smooth', block: 'end' }),
-      60
-    );
-  }
+// Random rounds are a single send — no second look, no merge to explain. Show
+// only the signal envelope (the noisy clip the bot copied, same as the human).
+function SignalEnvelopeDetail({ bars }: { bars: number[] }) {
   return (
-    <details ref={ref} onToggle={onToggle} className="group">
+    <details onToggle={scrollDisclosureIntoView} className="group">
       <summary className="flex items-center gap-1.5 text-xs text-muted-foreground cursor-pointer select-none list-none">
-        <GitMerge className="size-3.5" />
-        How the bot got two looks
-        <span className="text-muted-foreground/50 group-open:rotate-90 transition-transform">
+        <ScanEye className="size-3.5" />
+        What you were up against
+        <span className="text-[16px] leading-none text-muted-foreground/50 group-open:rotate-90 transition-transform">
           ›
         </span>
       </summary>
-      <div className="mt-2.5 rounded-lg border border-border bg-background/40 p-3">
-        <p className="text-[12px] text-muted-foreground leading-relaxed mb-3">
-          The call is sent twice, so the bot decodes each send separately — two
-          independent shots at the same noise — then combines them. Same trick
-          as asking “again?” on the air.
-        </p>
-        <div className="flex flex-col gap-2">
-          {looks.map((l) => (
-            <div key={l.n} className="flex items-center gap-2.5">
-              <span className="inline-flex items-center gap-1.5 text-[11px] text-muted-foreground w-14 shrink-0">
-                <Eye className="size-3.5" />
-                look {l.n}
-              </span>
-              <span className="font-mono text-[13px] text-foreground flex-1 tracking-[1px] break-all">
-                {l.text || <span className="text-muted-foreground/50">—</span>}
-              </span>
-              <span className="font-mono text-[11px] text-muted-foreground tabular-nums shrink-0">
-                {(l.conf * 100).toFixed(0)}%
-              </span>
-            </div>
-          ))}
-          <div className="flex items-center gap-2.5 border-t border-border pt-2 mt-0.5">
-            <span className="inline-flex items-center gap-1.5 text-[11px] text-foreground w-14 shrink-0">
-              <GitMerge className="size-3.5" />
-              final
-            </span>
-            <span className="font-mono text-[13px] text-foreground flex-1 tracking-[1px] break-all">
-              {result.text || '—'}
-            </span>
-            <span className="text-[11px] text-muted-foreground shrink-0">
-              {result.agreement ? 'both agreed' : 'merged'}
-            </span>
-          </div>
+      {bars.length > 0 && (
+        <div className="mt-2.5">
+          <EnvelopeBars bars={bars} />
+          <p className="mt-1.5 text-[12px] text-muted-foreground">
+            The signal you both copied — a random group, sent once. The bot
+            decoded this same noisy clip in one pass, just like you.
+          </p>
         </div>
-      </div>
+      )}
     </details>
   );
 }
 
-function StaticEnvelope({ bars }: { bars: number[] }) {
-  if (!bars || bars.length === 0) return null;
-  const max = Math.max(...bars, 0.0001);
+function TwoLookDetail({ result }: { result: DualDecodeResult }) {
+  const looks = [
+    { n: 1, text: result.firstHalf.text, conf: result.firstHalf.confidence },
+    { n: 2, text: result.secondHalf.text, conf: result.secondHalf.confidence },
+  ];
   return (
-    <div>
-      <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground mb-1.5">
-        <Headphones className="size-3.5" />
-        what you were up against
+    <details onToggle={scrollDisclosureIntoView} className="group">
+      <summary className="flex items-center gap-1.5 text-xs text-muted-foreground cursor-pointer select-none list-none">
+        <ScanEye className="size-3.5" />
+        How the bot got two looks
+        <span className="text-[16px] leading-none text-muted-foreground/50 group-open:rotate-90 transition-transform">
+          ›
+        </span>
+      </summary>
+      <div className="mt-2.5 flex flex-col gap-3">
+        {result.envelopeBars.length > 0 && (
+          <div>
+            <EnvelopeBars bars={result.envelopeBars} />
+            <p className="mt-1.5 text-[12px] text-muted-foreground">
+              The signal you both copied — the call is keyed twice, with a gap
+              between.
+            </p>
+          </div>
+        )}
+        <div className="rounded-lg border border-border bg-background/40 p-3">
+          <p className="text-[12px] text-muted-foreground leading-relaxed mb-3">
+            The call is sent twice, so the bot decodes each send separately —
+            two independent shots at the same noise — then combines them. Same
+            trick as asking "again?" on the air.
+          </p>
+          <div className="flex flex-col gap-2">
+            {looks.map((l) => (
+              <div key={l.n} className="flex items-center gap-2.5">
+                <span className="inline-flex items-center gap-1.5 text-[11px] text-muted-foreground w-14 shrink-0">
+                  <Eye className="size-3.5" />
+                  look {l.n}
+                </span>
+                <span className="font-mono text-[13px] text-foreground flex-1 tracking-[1px] break-all">
+                  {l.text || (
+                    <span className="text-muted-foreground/50">—</span>
+                  )}
+                </span>
+                <span className="font-mono text-[11px] text-muted-foreground tabular-nums shrink-0">
+                  {(l.conf * 100).toFixed(0)}%
+                </span>
+              </div>
+            ))}
+            <div className="flex items-center gap-2.5 border-t border-border pt-2 mt-0.5">
+              <span className="inline-flex items-center gap-1.5 text-[11px] text-foreground w-14 shrink-0">
+                <GitMerge className="size-3.5" />
+                final
+              </span>
+              <span className="font-mono text-[13px] text-foreground flex-1 tracking-[1px] break-all">
+                {result.text || '—'}
+              </span>
+              <span className="text-[11px] text-muted-foreground shrink-0">
+                {result.agreement ? 'both agreed' : 'merged'}
+              </span>
+            </div>
+          </div>
+        </div>
       </div>
-      <div className="flex items-end gap-[2px] h-9 bg-background rounded-md px-2 py-1.5">
-        {bars.map((v, i) => (
-          <div
-            // biome-ignore lint/suspicious/noArrayIndexKey: positional waveform bar; bars are recomputed each render
-            key={i}
-            className="flex-1 rounded-[1px] bg-primary/70"
-            style={{ height: `${Math.max(6, (v / max) * 100)}%` }}
-          />
-        ))}
-      </div>
-    </div>
+    </details>
   );
 }

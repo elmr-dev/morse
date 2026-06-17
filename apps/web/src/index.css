@@ -11,17 +11,6 @@
 @import "@fontsource-variable/inter";
 @import "@fontsource-variable/jetbrains-mono";
 
-/* Seven-segment face for the Beat-the-Bot scoreboard numerals (digits only).
-   Self-hosted under public/fonts so it's same-origin (COEP-safe) and precached
-   by the service worker. `block` swap avoids a flash of fallback glyphs on a
-   segment display. MIT. */
-@font-face {
-  font-family: "DSEG7 Classic";
-  src: url("/fonts/DSEG7Classic-Regular.woff2") format("woff2");
-  font-weight: 400;
-  font-style: normal;
-  font-display: block;
-}
 
 @custom-variant dark (&:is(.dark *));
 
@@ -78,7 +67,6 @@
   --font-serif: var(--font-serif);
   /* Seven-segment display for the scoreboard numerals. Digits only — never
      for prose. */
-  --font-dseg7: "DSEG7 Classic", var(--font-mono);
   --shadow-2xs: var(--shadow-2xs);
   --shadow-xs: var(--shadow-xs);
   --shadow-sm: var(--shadow-sm);
@@ -220,11 +208,18 @@
   --input: oklch(0.9115 0.0216 285.9625);
   --ring: oklch(0.5417 0.179 288.0332);
   --success: oklch(0.55 0.17 145);
-  /* Competitor identity (light mode — darker so the white bar label reads). */
+  /* Competitor identity (light mode — darker so the white bar label reads).
+     --you = blue, --bot = orange (distinct from pink Extra and amber dial). */
   --you: oklch(0.48 0.17 252);
-  --bot: oklch(0.48 0.2 350);
+  --bot: oklch(0.54 0.21 40);
   /* Radio-dial pointer: warm amber, like a backlit analog tuner needle. */
   --dial: oklch(0.72 0.17 60);
+  /* Beat-the-Bot tier identity — cool→warm as difficulty climbs.
+     Extra is hardcoded pink so it stays pink even though --bot is now orange. */
+  --tier-no-code: oklch(0.52 0.15 195);
+  --tier-technician: var(--you);
+  --tier-general: var(--primary);
+  --tier-extra: oklch(0.48 0.2 350);
   --chart-1: oklch(0.5417 0.179 288.0332);
   --chart-2: oklch(0.7042 0.1602 288.988);
   --chart-3: oklch(0.5679 0.2113 276.7065);
@@ -287,11 +282,18 @@
   --input: oklch(0.3261 0.0597 282.5832);
   --ring: oklch(0.7162 0.1597 290.3962);
   --success: oklch(0.7 0.17 145);
-  /* Competitor identity (dark mode — lighter so the dark bar label reads). */
+  /* Competitor identity (dark mode — lighter so the dark bar label reads).
+     --you = blue, --bot = orange (distinct from pink Extra and amber dial). */
   --you: oklch(0.72 0.15 252);
-  --bot: oklch(0.75 0.18 347);
+  --bot: oklch(0.80 0.18 40);
   /* Brighter in dark mode so the needle reads as glowing against the bars. */
   --dial: oklch(0.8 0.16 70);
+  /* Beat-the-Bot tier identity — cool→warm as difficulty climbs.
+     Extra is hardcoded pink so it stays pink even though --bot is now orange. */
+  --tier-no-code: oklch(0.72 0.14 195);
+  --tier-technician: var(--you);
+  --tier-general: var(--primary);
+  --tier-extra: oklch(0.75 0.18 347);
   --chart-1: oklch(0.7162 0.1597 290.3962);
   --chart-2: oklch(0.6382 0.1047 274.9117);
   --chart-3: oklch(0.7482 0.1235 244.7492);
@@ -342,6 +344,16 @@
        shift (and the page doesn't "jump") when content grows past the viewport
        and the scrollbar appears — e.g. when a tall result card renders. */
     scrollbar-gutter: stable;
+    /* Keep scrollIntoView() calls from landing behind the fixed mobile tab bar.
+       Matches the pb-20 sm:pb-0 clearance on the root content wrapper. */
+    scroll-padding-bottom: 5rem;
+    @media (min-width: 640px) {
+      scroll-padding-bottom: 0;
+    }
+    /* Standalone PWA: the tab bar shows at all widths, so keep the padding. */
+    @media (display-mode: standalone) {
+      scroll-padding-bottom: 5rem;
+    }
   }
   body {
     @apply bg-background text-foreground;
