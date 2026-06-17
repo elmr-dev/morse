@@ -23,6 +23,7 @@ import {
 } from 'lucide-react';
 import { calculateDuration, translate } from 'morse-audio';
 import { Fragment, useEffect, useRef, useState } from 'react';
+import { NavLink } from 'react-router-dom';
 import { BoxingGloveIcon } from '@/components/boxing-glove-icon';
 import PageHeader from '@/components/page-header';
 import { usePrefersReducedMotion } from '@/components/presence';
@@ -253,11 +254,30 @@ export default function BeatTheBotPage() {
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: mount-only round init — double-rAF guarantees the browser paints the skeleton before the synchronous audio generation blocks the main thread
   useEffect(() => {
+    // Honor a `?tier=` deep-link (e.g. from the leaderboard's "rank here"
+    // CTA) before the first round generates, so the user lands on the
+    // requested tier with no flicker. We strip the param after consuming it
+    // so a reload doesn't keep overriding the user's later tier choices.
+    let startTier = tierObj;
+    try {
+      const url = new URL(window.location.href);
+      const param = url.searchParams.get('tier');
+      const match = param ? TIERS.find((t) => t.id === param) : null;
+      if (match) {
+        startTier = match;
+        if (match.id !== activeTier) setActiveTier(match.id);
+        url.searchParams.delete('tier');
+        window.history.replaceState({}, '', url.toString());
+      }
+    } catch {
+      // Bad URL / no window — fall through to the persisted tier.
+    }
+
     let r1: number;
     let r2: number;
     r1 = requestAnimationFrame(() => {
       r2 = requestAnimationFrame(() =>
-        setRound(randomRound(tierObj, textMode))
+        setRound(randomRound(startTier, textMode))
       );
     });
     return () => {
@@ -373,20 +393,20 @@ export default function BeatTheBotPage() {
       const userText = lettersOnly(guess.toUpperCase().trim());
       const userCopyPct = Math.round(accuracy(truth, userText) * 100);
       const botCopyPct = Math.round(accuracy(truth, res.text) * 100);
-      const { isNewBest: newBestFlag } = applyRound(
+      const { bests: nextBests, isNewBest: newBestFlag } = applyRound(
         bests,
         round.tier,
         userCopyPct,
         botCopyPct
       );
       setIsNewBest(newBestFlag);
-      setBests(
-        (prev) => applyRound(prev, round.tier, userCopyPct, botCopyPct).bests
-      );
+      setBests(nextBests);
       // Publish the fresh best to the cloud immediately rather than waiting
-      // for the next online/visibility trigger. Fire-and-forget — gameplay
-      // must not block on or fail from the network.
-      if (newBestFlag) syncNow();
+      // for the next online/visibility trigger. We pass nextBests explicitly
+      // — useBestsSync's ref hasn't re-rendered yet, so without the override
+      // it would push the PRE-round bests and the new score would be lost
+      // until the next visibility/online trigger. Fire-and-forget.
+      if (newBestFlag) syncNow(nextBests);
       setBotResult(res);
       setPhase('reveal');
       setSubmitting(false);
@@ -470,7 +490,19 @@ export default function BeatTheBotPage() {
             disabled={phase === 'copying'}
           />
 
-          <SyncStatus />
+          <div className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1 text-[13px]">
+            <SyncStatus />
+            <span aria-hidden="true" className="text-muted-foreground/50">
+              ·
+            </span>
+            <NavLink
+              to="/leaderboard"
+              className="inline-flex items-center gap-1 text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
+            >
+              <Trophy className="size-[14px]" aria-hidden="true" />
+              View leaderboard
+            </NavLink>
+          </div>
 
           <div className="border-t border-border" />
 

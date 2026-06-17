@@ -86,7 +86,7 @@ describe('pullBests', () => {
     });
     const { pullBests } = await load();
     const rows = await pullBests('user-1');
-    expect(fromMock).toHaveBeenCalledWith('bests');
+    expect(fromMock).toHaveBeenCalledWith('btb_bests');
     expect(eqMock).toHaveBeenCalledWith('user_id', 'user-1');
     expect(rows).toEqual([
       { tier: 'technician', bestCopyPct: 80, botCopyPctAtBest: 60 },

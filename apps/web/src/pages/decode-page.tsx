@@ -216,7 +216,12 @@ export default function DecodePage() {
 
   return (
     <div>
-      <PageHeader eyebrow="Generate & decode" icon={Radio} title="Decode">
+      <PageHeader
+        eyebrow="Generate & decode"
+        icon={Radio}
+        title="Decode"
+        wideIntro
+      >
         Generate a Morse clip from 12–50 WPM at any SNR, then watch the model
         copy it — entirely in your browser.
       </PageHeader>

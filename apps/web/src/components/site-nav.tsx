@@ -9,6 +9,7 @@ import {
   type LucideIcon,
   Menu,
   Radio,
+  Trophy,
 } from 'lucide-react';
 import { type ComponentType, useState } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
@@ -38,6 +39,17 @@ interface NavItem {
 const NAV_ITEMS: NavItem[] = [
   { to: '/decode', label: 'Decode', icon: Radio },
   { to: '/beat-the-bot', label: 'Beat the Bot', icon: BoxingGloveIcon },
+  { to: '/faq', label: 'FAQ', icon: HelpCircle },
+];
+
+// Desktop header nav — same primary destinations as the mobile bottom bar,
+// plus Leaderboard inserted before FAQ. The mobile bottom bar can't fit
+// another route (it's already at its slot cap with NAV_ITEMS + Home + More),
+// so Leaderboard surfaces on mobile via the MoreSheet instead.
+const DESKTOP_NAV_ITEMS: NavItem[] = [
+  { to: '/decode', label: 'Decode', icon: Radio },
+  { to: '/beat-the-bot', label: 'Beat the Bot', icon: BoxingGloveIcon },
+  { to: '/leaderboard', label: 'Leaderboard', icon: Trophy },
   { to: '/faq', label: 'FAQ', icon: HelpCircle },
 ];
 
@@ -90,7 +102,7 @@ export function SiteHeader() {
 
         <div className="flex items-center gap-1">
           <nav className="hidden sm:flex items-center gap-1">
-            {NAV_ITEMS.map(({ to, label, icon: Icon }) => (
+            {DESKTOP_NAV_ITEMS.map(({ to, label, icon: Icon }) => (
               <NavLink
                 key={to}
                 to={to}

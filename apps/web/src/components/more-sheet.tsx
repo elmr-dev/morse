@@ -13,6 +13,7 @@ import {
   Share,
   SquarePlus,
   Sun,
+  Trophy,
 } from 'lucide-react';
 import { useState } from 'react';
 import { NavLink } from 'react-router-dom';
@@ -127,7 +128,33 @@ export function MoreSheet({
             Appearance, source code, and app info.
           </DrawerDescription>
 
+          {/* Destinations first — the main reason to open this sheet on
+              mobile is to navigate to a page that doesn't fit the bottom bar. */}
           <div>
+            <p className="px-3 pb-1 text-muted-foreground text-xs font-medium uppercase tracking-wide">
+              Pages
+            </p>
+            <NavLink
+              to="/leaderboard"
+              onClick={() => onOpenChange(false)}
+              className={rowClass}
+            >
+              <Trophy className="size-5 text-muted-foreground" />
+              <span className="flex-1 text-left">Leaderboard</span>
+            </NavLink>
+            {isAuthConfigured && (
+              <NavLink
+                to="/account"
+                onClick={() => onOpenChange(false)}
+                className={rowClass}
+              >
+                <CircleUser className="size-5 text-muted-foreground" />
+                <span className="flex-1 text-left">{accountLabel}</span>
+              </NavLink>
+            )}
+          </div>
+
+          <div className="border-t border-border pt-3">
             <p className="px-3 pb-1 text-muted-foreground text-xs font-medium uppercase tracking-wide">
               Appearance
             </p>
@@ -160,25 +187,10 @@ export function MoreSheet({
             </fieldset>
           </div>
 
+          {/* App-level affordances: install on mobile, or provisioning the
+              offline model once installed. Each is conditional on platform. */}
           {!standalone && <InstallSection />}
-
-          {/* Offline provisioning is the step after install: installed PWAs get
-              durable storage, so the cached 16MB survives — in a plain tab it's
-              evictable, so we don't make a promise we can't keep. */}
           {standalone && <OfflineSection />}
-
-          {isAuthConfigured && (
-            <div className="border-t border-border pt-1">
-              <NavLink
-                to="/account"
-                onClick={() => onOpenChange(false)}
-                className={rowClass}
-              >
-                <CircleUser className="size-5 text-muted-foreground" />
-                <span className="flex-1 text-left">{accountLabel}</span>
-              </NavLink>
-            </div>
-          )}
 
           <div className="border-t border-border pt-1">
             <a

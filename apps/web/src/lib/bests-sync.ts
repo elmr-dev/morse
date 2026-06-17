@@ -51,7 +51,7 @@ export async function pushBests(bests: Bests): Promise<void> {
 export async function pullBests(userId: string): Promise<CloudBest[]> {
   if (!supabase) return [];
   const { data, error } = await supabase
-    .from('bests')
+    .from('btb_bests')
     .select('tier, best_copy_pct, bot_copy_pct_at_best')
     .eq('user_id', userId);
   if (error || !data) {

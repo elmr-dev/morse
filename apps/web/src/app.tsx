@@ -10,6 +10,7 @@ import BeatTheBotPage from './pages/beat-the-bot-page';
 import DecodePage from './pages/decode-page';
 import FaqPage from './pages/faq-page';
 import LandingPage from './pages/landing-page';
+import LeaderboardPage from './pages/leaderboard-page';
 
 export default function App() {
   const standalone = useIsStandalone();
@@ -28,6 +29,7 @@ export default function App() {
         <Route path="/decode" element={<DecodePage />} />
         <Route path="/beat" element={<Navigate to="/beat-the-bot" replace />} />
         <Route path="/beat-the-bot" element={<BeatTheBotPage />} />
+        <Route path="/leaderboard" element={<LeaderboardPage />} />
         <Route path="/faq" element={<FaqPage />} />
         <Route path="/account" element={<AccountPage />} />
       </Routes>

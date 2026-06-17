@@ -25,7 +25,7 @@ import { reconcile } from './bests-sync';
 export function useBestsSync(
   bests: Bests,
   setBests: (next: Bests) => void
-): { syncNow: () => void } {
+): { syncNow: (override?: Bests) => void } {
   const { status, user } = useAuth();
 
   const bestsRef = useRef(bests);
@@ -40,14 +40,17 @@ export function useBestsSync(
   const userIdRef = useRef(user?.id ?? null);
   userIdRef.current = user?.id ?? null;
 
-  const runReconcile = useCallback(async () => {
+  const runReconcile = useCallback(async (override?: Bests) => {
     if (statusRef.current !== 'ready') return;
     const userId = userIdRef.current;
     if (!userId) return;
     if (runningRef.current) return;
     runningRef.current = true;
     try {
-      const merged = await reconcile(bestsRef.current, userId);
+      // Callers may pass a fresh snapshot (e.g. the just-applied new best)
+      // because bestsRef tracks the previous render's value and React state
+      // updates queued in the same tick haven't committed yet.
+      const merged = await reconcile(override ?? bestsRef.current, userId);
       setBestsRef.current(merged);
     } catch (err) {
       console.error('[bests-sync] reconcile failed', err);
@@ -80,9 +83,12 @@ export function useBestsSync(
     };
   }, [status, user, runReconcile]);
 
-  const syncNow = useCallback(() => {
-    void runReconcile();
-  }, [runReconcile]);
+  const syncNow = useCallback(
+    (override?: Bests) => {
+      void runReconcile(override);
+    },
+    [runReconcile]
+  );
 
   return { syncNow };
 }

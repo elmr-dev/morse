@@ -9,6 +9,7 @@ import {
   screen,
   waitFor,
 } from '@testing-library/react';
+import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { axe } from 'vitest-axe';
 import type { DualDecodeResult } from '../inference/dual-decode';
@@ -157,7 +158,11 @@ afterEach(() => {
 
 // Wait for loadSession so the play button enables.
 async function renderArmed() {
-  const result = render(<BeatTheBotPage />);
+  const result = render(
+    <MemoryRouter>
+      <BeatTheBotPage />
+    </MemoryRouter>
+  );
   await waitFor(() =>
     expect(screen.getByLabelText('Play the signal once')).toBeEnabled()
   );
