@@ -2,9 +2,17 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { CircleUser, Loader2, LogOut, Shield, ShieldCheck } from 'lucide-react';
+import {
+  CircleUser,
+  Copy,
+  Loader2,
+  LogOut,
+  Shield,
+  ShieldCheck,
+} from 'lucide-react';
 import type { ComponentType } from 'react';
 import { useState } from 'react';
+import { Link } from 'react-router-dom';
 import { toast } from 'sonner';
 import { GithubIcon } from '@/components/github';
 import PageHeader from '@/components/page-header';
@@ -13,8 +21,13 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 import { type AuthProvider, useAuth } from '@/lib/auth';
-import { isAuthConfigured } from '@/lib/supabase';
+import { isAuthConfigured, supabase } from '@/lib/supabase';
 import { useDocumentHead } from '@/lib/use-document-head';
 
 interface ProviderEntry {
@@ -37,7 +50,15 @@ export default function AccountPage() {
     path: '/account',
   });
 
-  const { status, user, profile, signIn, signOut, claimCallsign } = useAuth();
+  const {
+    status,
+    user,
+    profile,
+    signIn,
+    signOut,
+    claimCallsign,
+    refreshProfile,
+  } = useAuth();
 
   if (!isAuthConfigured) {
     return (
@@ -90,6 +111,7 @@ export default function AccountPage() {
         verified={profile?.verified ?? false}
         email={user?.email ?? null}
         onSignOut={signOut}
+        onRefreshProfile={refreshProfile}
       />
     </Shell>
   );
@@ -234,11 +256,13 @@ function ReadyView({
   verified,
   email,
   onSignOut,
+  onRefreshProfile,
 }: {
   callsign: string;
   verified: boolean;
   email: string | null;
   onSignOut: () => Promise<void>;
+  onRefreshProfile: () => Promise<void>;
 }) {
   return (
     <Card>
@@ -247,22 +271,48 @@ function ReadyView({
           <span className="font-mono text-2xl font-bold tracking-wider text-foreground">
             {callsign}
           </span>
-          {verified ? (
-            <span className="inline-flex items-center gap-1.5 text-sm text-primary">
-              <ShieldCheck className="size-4" aria-hidden="true" />
-              Verified
-            </span>
-          ) : (
-            <span className="inline-flex items-center gap-1.5 text-sm text-muted-foreground">
-              <Shield className="size-4" aria-hidden="true" />
-              Not yet verified
-            </span>
-          )}
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                type="button"
+                aria-label={
+                  verified ? 'Verified callsign' : 'Callsign not yet verified'
+                }
+                className={`inline-flex items-center gap-1.5 text-sm rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-ring/50 ${
+                  verified ? 'text-verified' : 'text-muted-foreground'
+                }`}
+              >
+                {verified ? (
+                  <>
+                    <ShieldCheck className="size-4" aria-hidden="true" />
+                    Verified
+                  </>
+                ) : (
+                  <>
+                    <Shield className="size-4" aria-hidden="true" />
+                    Not yet verified
+                  </>
+                )}
+              </button>
+            </TooltipTrigger>
+            <TooltipContent>
+              <span>
+                {verified
+                  ? 'Verified via your QRZ bio. '
+                  : 'Optional — verify your callsign via your QRZ bio. '}
+                <Link
+                  to="/faq#verified-badge"
+                  className="underline underline-offset-2"
+                >
+                  Learn more
+                </Link>
+                .
+              </span>
+            </TooltipContent>
+          </Tooltip>
         </div>
         {!verified && (
-          <p className="text-xs text-muted-foreground">
-            Verification coming soon.
-          </p>
+          <VerifySection callsign={callsign} onVerified={onRefreshProfile} />
         )}
         {email && (
           <p className="text-sm text-muted-foreground">
@@ -278,4 +328,245 @@ function ReadyView({
       </CardContent>
     </Card>
   );
+}
+
+type MintResponse = { token: string; expiresAt: string; callSign: string };
+
+type VerifyState =
+  | 'verified'
+  | 'present-now-remove'
+  | 'still-present'
+  | 'not-checked-yet'
+  | 'token-not-found'
+  | 'no-pending-token'
+  | 'expired'
+  | 'callsign-changed'
+  | 'qrz-fetch-failed'
+  | 'present-stamp-failed'
+  | 'verified-write-failed'
+  | 'verification-read-failed';
+
+type VerifyResponse = { state: VerifyState; token?: string };
+
+const STATE_COPY: Record<VerifyState, string> = {
+  verified: 'Callsign verified.',
+  'present-now-remove': '',
+  'still-present':
+    "The token's still on your QRZ page. Remove it from your bio, save, then click Confirm.",
+  'not-checked-yet': 'Click Check first so we can confirm the token is there.',
+  'token-not-found':
+    "We couldn't find the token on your QRZ page. Did you paste it into your bio and save?",
+  'no-pending-token':
+    'No pending token. Click "Get token" to start, paste it into your QRZ bio, then check.',
+  expired: 'That token expired. Get a new one and try again.',
+  'callsign-changed':
+    'Your callsign changed since you got that token. Get a new one for your current callsign.',
+  'qrz-fetch-failed':
+    "We couldn't reach qrz.com right now. Try again in a moment.",
+  'present-stamp-failed': "Something didn't line up. Try again?",
+  'verified-write-failed': "Something didn't line up. Try again?",
+  'verification-read-failed': "Something didn't line up. Try again?",
+};
+
+type Phase = 'idle' | 'token-shown' | 'needs-removal';
+
+function VerifySection({
+  callsign,
+  onVerified,
+}: {
+  callsign: string;
+  onVerified: () => Promise<void>;
+}) {
+  const [token, setToken] = useState<string | null>(null);
+  const [phase, setPhase] = useState<Phase>('idle');
+  const [minting, setMinting] = useState(false);
+  const [checking, setChecking] = useState(false);
+  const [confirming, setConfirming] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function handleMint() {
+    if (!supabase || minting) return;
+    setMinting(true);
+    setError(null);
+    try {
+      const { data, error: invokeErr } =
+        await supabase.functions.invoke<MintResponse>('qrz-verify', {
+          body: { action: 'mint' },
+        });
+      if (invokeErr || !data?.token) {
+        setError("Couldn't generate a token. Try again?");
+        return;
+      }
+      setToken(data.token);
+      setPhase('token-shown');
+    } finally {
+      setMinting(false);
+    }
+  }
+
+  async function handleCheck() {
+    if (!supabase || checking) return;
+    setChecking(true);
+    setError(null);
+    try {
+      const { data, error: invokeErr } =
+        await supabase.functions.invoke<VerifyResponse>('qrz-verify', {
+          body: { action: 'check' },
+        });
+      if (invokeErr || !data) {
+        setError("Couldn't reach the verifier. Try again?");
+        return;
+      }
+      if (data.state === 'present-now-remove') {
+        setPhase('needs-removal');
+        return;
+      }
+      setError(STATE_COPY[data.state]);
+    } finally {
+      setChecking(false);
+    }
+  }
+
+  async function handleConfirm() {
+    if (!supabase || confirming) return;
+    setConfirming(true);
+    setError(null);
+    try {
+      const { data, error: invokeErr } =
+        await supabase.functions.invoke<VerifyResponse>('qrz-verify', {
+          body: { action: 'confirm-removed' },
+        });
+      if (invokeErr || !data) {
+        setError("Couldn't reach the verifier. Try again?");
+        return;
+      }
+      if (data.state === 'verified') {
+        toast.success('Callsign verified.');
+        await onRefreshProfileSafely(onVerified);
+        return;
+      }
+      setError(STATE_COPY[data.state]);
+    } finally {
+      setConfirming(false);
+    }
+  }
+
+  async function handleCopy() {
+    if (!token) return;
+    try {
+      await navigator.clipboard.writeText(token);
+      toast.success('Token copied.');
+    } catch {
+      toast.error("Couldn't copy. Select and copy it manually.");
+    }
+  }
+
+  return (
+    <div className="flex flex-col gap-3 rounded-md border border-border bg-muted/30 p-3">
+      <div>
+        <p className="text-sm font-medium text-foreground">
+          Verify your callsign
+        </p>
+        <p className="text-xs text-muted-foreground">
+          We mint a token, you paste it into your{' '}
+          <span className="font-mono">{callsign}</span> QRZ bio and save. We
+          confirm it's there, then ask you to remove it. Once it's gone, you're
+          verified — your bio stays clean.
+        </p>
+      </div>
+
+      {phase === 'idle' && (
+        <Button
+          type="button"
+          variant="outline"
+          onClick={handleMint}
+          disabled={minting}
+          className="self-start"
+        >
+          {minting && (
+            <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+          )}
+          Get token
+        </Button>
+      )}
+
+      {phase !== 'idle' && token && (
+        <div className="flex flex-col gap-2">
+          <Label htmlFor="verify-token" className="text-xs">
+            Your token
+          </Label>
+          <div className="flex items-center gap-2">
+            <Input
+              id="verify-token"
+              value={token}
+              readOnly
+              className="font-mono text-sm"
+            />
+            <Button
+              type="button"
+              variant="outline"
+              size="icon"
+              onClick={handleCopy}
+              aria-label="Copy token"
+            >
+              <Copy className="size-4" aria-hidden="true" />
+            </Button>
+          </div>
+          {phase === 'token-shown' && (
+            <p className="text-xs text-muted-foreground">
+              Paste it anywhere in your QRZ bio, save the bio, then click Check.
+            </p>
+          )}
+          {phase === 'needs-removal' && (
+            <p className="text-xs text-foreground">
+              Found it. Now <strong>remove the token</strong> from your QRZ bio,
+              save the bio, then click Confirm.
+            </p>
+          )}
+        </div>
+      )}
+
+      {phase === 'token-shown' && (
+        <Button
+          type="button"
+          onClick={handleCheck}
+          disabled={checking}
+          className="self-start"
+        >
+          {checking && (
+            <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+          )}
+          Check
+        </Button>
+      )}
+
+      {phase === 'needs-removal' && (
+        <Button
+          type="button"
+          onClick={handleConfirm}
+          disabled={confirming}
+          className="self-start"
+        >
+          {confirming && (
+            <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+          )}
+          Confirm removed
+        </Button>
+      )}
+
+      {error && (
+        <p className="text-sm text-destructive" role="alert">
+          {error}
+        </p>
+      )}
+    </div>
+  );
+}
+
+async function onRefreshProfileSafely(fn: () => Promise<void>): Promise<void> {
+  try {
+    await fn();
+  } catch (err) {
+    console.error('[account] refresh profile failed', err);
+  }
 }

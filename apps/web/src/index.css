@@ -50,6 +50,7 @@
   --color-good: var(--success);
   --color-bad: var(--destructive);
   --color-dial: var(--dial);
+  --color-verified: var(--color-primary);
   /* Beat-the-Bot competitor identity. Distinct hues in BOTH themes (blue vs
      pink) — kept clear of green (=correct char), red (=wrong), and the app's
      primary purple. Darker in light mode so a near-white % label reads on the

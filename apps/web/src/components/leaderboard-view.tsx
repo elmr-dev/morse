@@ -4,13 +4,21 @@
 
 import { Loader2, Search, ShieldCheck, X } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
-import { NavLink } from 'react-router-dom';
+import { Link, NavLink } from 'react-router-dom';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 import type {
   LeaderboardBoard,
   LeaderboardRow,
   LeaderboardRowTag,
   LeaderboardSegment,
 } from '@/lib/leaderboard';
+
+const qrzUrl = (call: string) =>
+  `https://www.qrz.com/db/${encodeURIComponent(call)}`;
 
 interface Props {
   board: LeaderboardBoard;
@@ -398,12 +406,65 @@ function Row({
         {pinned ? `You · #${row.rank}` : `#${row.rank}`}
       </span>
       <span className="flex-1 min-w-0 inline-flex items-center gap-1.5 font-mono text-[15px] font-medium text-foreground">
-        <span className="truncate">{row.callSign}</span>
+        {row.verified ? (
+          <a
+            href={qrzUrl(row.callSign)}
+            target="_blank"
+            rel="noreferrer"
+            className="truncate outline-none rounded-sm hover:underline focus-visible:ring-2 focus-visible:ring-ring/50"
+            title={`View ${row.callSign} on QRZ`}
+          >
+            {row.callSign}
+          </a>
+        ) : (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                type="button"
+                aria-label={`${row.callSign} — not verified`}
+                className="truncate text-left font-mono font-medium text-foreground outline-none rounded-sm decoration-dotted decoration-muted-foreground/60 underline-offset-4 hover:underline focus-visible:ring-2 focus-visible:ring-ring/50"
+              >
+                {row.callSign}
+              </button>
+            </TooltipTrigger>
+            <TooltipContent>
+              <span>
+                This callsign hasn't been verified yet.{' '}
+                <Link
+                  to="/faq#verified-badge"
+                  className="underline underline-offset-2"
+                >
+                  Learn more
+                </Link>
+                .
+              </span>
+            </TooltipContent>
+          </Tooltip>
+        )}
         {row.verified && (
-          <ShieldCheck
-            className="size-4 shrink-0 text-primary"
-            aria-hidden="true"
-          />
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                type="button"
+                aria-label="Verified callsign"
+                className="shrink-0 inline-flex outline-none rounded-sm text-verified focus-visible:ring-2 focus-visible:ring-ring/50"
+              >
+                <ShieldCheck className="size-4.5" aria-hidden="true" />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent>
+              <span>
+                Verified callsign via QRZ bio.{' '}
+                <Link
+                  to="/faq#verified-badge"
+                  className="underline underline-offset-2"
+                >
+                  Learn more
+                </Link>
+                .
+              </span>
+            </TooltipContent>
+          </Tooltip>
         )}
       </span>
       {row.tag && <TagPill tag={row.tag} />}

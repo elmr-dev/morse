@@ -23,17 +23,22 @@ const { signIn, signOut, claimCallsign, refreshProfile, getState } = vi.hoisted(
       verified: boolean;
       created_at: string;
     };
+    type Supa = {
+      functions: { invoke: ReturnType<typeof vi.fn> };
+    } | null;
     type State = {
       status: 'loading' | 'signed-out' | 'needs-callsign' | 'ready';
       profile: Profile | null;
       user: { email?: string } | null;
       configured: boolean;
+      supabase: Supa;
     };
     const state: State = {
       status: 'signed-out',
       profile: null,
       user: null,
       configured: true,
+      supabase: null,
     };
     return {
       signIn: vi.fn(async () => {}),
@@ -51,7 +56,9 @@ vi.mock('@/lib/supabase', () => ({
   get isAuthConfigured() {
     return getState().configured;
   },
-  supabase: null,
+  get supabase() {
+    return getState().supabase;
+  },
 }));
 
 vi.mock('@/lib/auth', () => ({
@@ -96,6 +103,7 @@ beforeEach(() => {
   s.profile = null;
   s.user = null;
   s.configured = true;
+  s.supabase = null;
 });
 
 afterEach(() => {
@@ -152,7 +160,7 @@ describe('AccountPage', () => {
         <AccountPage />
       </MemoryRouter>
     );
-    await screen.findByText('W1AW');
+    await screen.findAllByText('W1AW');
     expect(screen.getByText(/not yet verified/i)).toBeInTheDocument();
   });
 
@@ -205,7 +213,7 @@ describe('AccountPage', () => {
     expect(screen.queryByText(/not yet verified/i)).toBeNull();
   });
 
-  it('ready: verified=false shows the muted shield + hint', () => {
+  it('ready: verified=false shows the muted shield + verify section', () => {
     const s = getState();
     s.status = 'ready';
     s.user = { email: 'op@example.com' };
@@ -217,7 +225,166 @@ describe('AccountPage', () => {
     } satisfies Profile;
     renderPage();
     expect(screen.getByText(/not yet verified/i)).toBeInTheDocument();
-    expect(screen.getByText(/verification coming soon/i)).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: /get token/i })
+    ).toBeInTheDocument();
+  });
+
+  describe('verify flow', () => {
+    function arrangeReadyUnverified(invoke: ReturnType<typeof vi.fn>) {
+      const s = getState();
+      s.status = 'ready';
+      s.user = { email: 'op@example.com' };
+      s.profile = {
+        id: 'u1',
+        call_sign: 'W1AW',
+        verified: false,
+        created_at: '2026-06-17T00:00:00Z',
+      };
+      s.supabase = { functions: { invoke } };
+    }
+
+    it('mint: clicking "Get token" shows the token + copy button', async () => {
+      const invoke = vi.fn(async (_name: string, _opts: unknown) => ({
+        data: {
+          token: 'MORSE-VERIFY-ABCDEFGHIJ',
+          expiresAt: '2026-06-18T00:00:00Z',
+          callSign: 'W1AW',
+        },
+        error: null,
+      }));
+      arrangeReadyUnverified(invoke);
+      renderPage();
+      fireEvent.click(screen.getByRole('button', { name: /get token/i }));
+      await waitFor(() =>
+        expect(invoke).toHaveBeenCalledWith('qrz-verify', {
+          body: { action: 'mint' },
+        })
+      );
+      expect(
+        await screen.findByDisplayValue('MORSE-VERIFY-ABCDEFGHIJ')
+      ).toBeInTheDocument();
+      expect(
+        screen.getByRole('button', { name: /copy token/i })
+      ).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /^check$/i })).toBeEnabled();
+    });
+
+    function mintResponse() {
+      return {
+        data: {
+          token: 'MORSE-VERIFY-ABCDEFGHIJ',
+          expiresAt: '2026-06-18T00:00:00Z',
+          callSign: 'W1AW',
+        },
+        error: null,
+      };
+    }
+
+    it('check success: prompts to remove the token, does NOT flip to verified yet', async () => {
+      const invoke = vi.fn(
+        async (_name: string, opts: { body: { action: string } }) => {
+          if (opts.body.action === 'mint') return mintResponse();
+          return { data: { state: 'present-now-remove' }, error: null };
+        }
+      );
+      arrangeReadyUnverified(invoke);
+      renderPage();
+      fireEvent.click(screen.getByRole('button', { name: /get token/i }));
+      await screen.findByDisplayValue('MORSE-VERIFY-ABCDEFGHIJ');
+      fireEvent.click(screen.getByRole('button', { name: /^check$/i }));
+      await screen.findByText(/remove the token/i);
+      expect(
+        screen.getByRole('button', { name: /confirm removed/i })
+      ).toBeInTheDocument();
+      expect(refreshProfile).not.toHaveBeenCalled();
+    });
+
+    it('confirm removed: flips to verified and refreshes the profile', async () => {
+      const invoke = vi.fn(
+        async (_name: string, opts: { body: { action: string } }) => {
+          if (opts.body.action === 'mint') return mintResponse();
+          if (opts.body.action === 'check') {
+            return { data: { state: 'present-now-remove' }, error: null };
+          }
+          // confirm-removed
+          const s = getState();
+          if (s.profile) s.profile = { ...s.profile, verified: true };
+          return { data: { state: 'verified' }, error: null };
+        }
+      );
+      arrangeReadyUnverified(invoke);
+      const { rerender } = renderPage();
+      fireEvent.click(screen.getByRole('button', { name: /get token/i }));
+      await screen.findByDisplayValue('MORSE-VERIFY-ABCDEFGHIJ');
+      fireEvent.click(screen.getByRole('button', { name: /^check$/i }));
+      await screen.findByRole('button', { name: /confirm removed/i });
+      fireEvent.click(screen.getByRole('button', { name: /confirm removed/i }));
+      await waitFor(() => expect(refreshProfile).toHaveBeenCalled());
+
+      rerender(
+        <MemoryRouter>
+          <AccountPage />
+        </MemoryRouter>
+      );
+      expect(screen.getByText(/^verified$/i)).toBeInTheDocument();
+    });
+
+    it('confirm: still-present nudges the user to actually remove it', async () => {
+      const invoke = vi.fn(
+        async (_name: string, opts: { body: { action: string } }) => {
+          if (opts.body.action === 'mint') return mintResponse();
+          if (opts.body.action === 'check') {
+            return { data: { state: 'present-now-remove' }, error: null };
+          }
+          return { data: { state: 'still-present' }, error: null };
+        }
+      );
+      arrangeReadyUnverified(invoke);
+      renderPage();
+      fireEvent.click(screen.getByRole('button', { name: /get token/i }));
+      await screen.findByDisplayValue('MORSE-VERIFY-ABCDEFGHIJ');
+      fireEvent.click(screen.getByRole('button', { name: /^check$/i }));
+      await screen.findByRole('button', { name: /confirm removed/i });
+      fireEvent.click(screen.getByRole('button', { name: /confirm removed/i }));
+      await screen.findByText(/still on your QRZ page/i);
+      expect(refreshProfile).not.toHaveBeenCalled();
+    });
+
+    it('check failure: token-not-found shows a clear reason and stays in token-shown phase', async () => {
+      const invoke = vi.fn(
+        async (_name: string, opts: { body: { action: string } }) => {
+          if (opts.body.action === 'mint') return mintResponse();
+          return { data: { state: 'token-not-found' }, error: null };
+        }
+      );
+      arrangeReadyUnverified(invoke);
+      renderPage();
+      fireEvent.click(screen.getByRole('button', { name: /get token/i }));
+      await screen.findByDisplayValue('MORSE-VERIFY-ABCDEFGHIJ');
+      fireEvent.click(screen.getByRole('button', { name: /^check$/i }));
+      await screen.findByText(/couldn't find the token/i);
+      // Still in token-shown phase, the Check button stays available.
+      expect(
+        screen.getByRole('button', { name: /^check$/i })
+      ).toBeInTheDocument();
+      expect(refreshProfile).not.toHaveBeenCalled();
+    });
+
+    it('check failure: expired shows the expired reason', async () => {
+      const invoke = vi.fn(
+        async (_name: string, opts: { body: { action: string } }) => {
+          if (opts.body.action === 'mint') return mintResponse();
+          return { data: { state: 'expired' }, error: null };
+        }
+      );
+      arrangeReadyUnverified(invoke);
+      renderPage();
+      fireEvent.click(screen.getByRole('button', { name: /get token/i }));
+      await screen.findByDisplayValue('MORSE-VERIFY-ABCDEFGHIJ');
+      fireEvent.click(screen.getByRole('button', { name: /^check$/i }));
+      await screen.findByText(/expired/i);
+    });
   });
 
   it('renders the "accounts aren\'t enabled" state when !isAuthConfigured', () => {

@@ -282,6 +282,29 @@ const SECTIONS: FaqSection[] = [
     ],
   },
   {
+    heading: 'Accounts & the leaderboard',
+    items: [
+      {
+        q: 'How does the leaderboard work?',
+        anchor: 'leaderboard',
+        a: [
+          'Every time you finish a Beat-the-Bot round while signed in with a claimed callsign, your best copy percentage for that tier is saved. The leaderboard shows the top operators per tier — No-Code, Technician, General, Extra — plus an All board that ranks everyone together. You only see one row per operator per tier (your best), so the board is bests, not attempts.',
+          'Ranking is straightforward: highest copy percentage wins, with ties broken by when the best was set (earlier first). The bot is included only as a frozen per-tier baseline you can compare against; it does not occupy a leaderboard slot.',
+          "If you play without signing in, your scores live only in your browser and don't appear on the leaderboard. Sign in, claim a callsign, and your next personal-best is on the board the moment you set it.",
+        ],
+      },
+      {
+        q: "What's the verified badge?",
+        anchor: 'verified-badge',
+        a: [
+          "A small shield next to a callsign on the leaderboard means we've confirmed the person playing actually controls that callsign. Anyone signed in can claim any callsign; the badge is what tells you a claim has been verified against the operator's public QRZ bio.",
+          "To get one: go to your account page, click Get token, and we'll generate a one-time string starting with MORSE-VERIFY-. Paste it anywhere in your QRZ bio (qrz.com/db/YOURCALL), save, and click Check. We re-fetch your QRZ page and confirm the token is there. You then remove the token from your bio, save, and click Confirm — we re-fetch one more time, confirm it's gone, and flip the badge on. Two steps so your bio never has to keep our verification clutter. Tokens are good for 24 hours; you can re-mint any time.",
+          'Verification is optional — playing, claiming a callsign, and the leaderboard all work without it. The badge is just a higher signal-to-noise marker for other operators looking at the board.',
+        ],
+      },
+    ],
+  },
+  {
     heading: 'Beat the Bot',
     items: [
       {

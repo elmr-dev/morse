@@ -11,7 +11,13 @@
     "useIgnoreFile": true
   },
   "files": {
-    "includes": ["**/*.ts", "**/*.tsx", "!archive/**", "!**/*.generated.ts"]
+    "includes": [
+      "**/*.ts",
+      "**/*.tsx",
+      "!archive/**",
+      "!**/*.generated.ts",
+      "!apps/web/supabase/functions/**"
+    ]
   },
   "formatter": {
     "enabled": true,
