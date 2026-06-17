@@ -13,7 +13,6 @@ import {
   Loader2,
   Lock,
   Play,
-  Radio,
   RadioTower,
   ScanEye,
   Send,
@@ -21,7 +20,6 @@ import {
   TriangleAlert,
   Trophy,
   User,
-  Zap,
 } from 'lucide-react';
 import { calculateDuration, translate } from 'morse-audio';
 import { Fragment, useEffect, useRef, useState } from 'react';
@@ -36,6 +34,15 @@ import { fireConfetti } from '@/lib/confetti';
 import { randomCwMessage } from '@/lib/cw-message';
 import { useDocumentHead } from '@/lib/use-document-head';
 import { clearPersisted, usePersistedState } from '@/lib/use-persisted-state';
+import {
+  applyRound,
+  BESTS_STORAGE_KEY,
+  type Bests,
+  BOT_REF,
+  EMPTY_BESTS,
+  TIERS,
+  type Tier,
+} from '../inference/beat-the-bot';
 import {
   callsignCountry,
   callsignRegion,
@@ -56,67 +63,6 @@ const TONE_FREQ = 700;
 const CHAR_MS = 95;
 const BAR_MS = 1300;
 const STAGE_PAD = 250;
-
-export interface Tier {
-  id: 'no-code' | 'technician' | 'general' | 'extra';
-  name: string;
-  snr: number; // dB — the HUMAN clip (higher = easier)
-  wpm: number; // the HUMAN clip
-  icon: LucideIcon;
-  accent: string; // CSS custom property reference
-}
-
-export const TIERS: readonly Tier[] = [
-  {
-    id: 'no-code',
-    name: 'No-Code',
-    snr: 10,
-    wpm: 13,
-    icon: Headphones,
-    accent: 'var(--tier-no-code)',
-  },
-  {
-    id: 'technician',
-    name: 'Technician',
-    snr: 5,
-    wpm: 18,
-    icon: Radio,
-    accent: 'var(--tier-technician)',
-  },
-  {
-    id: 'general',
-    name: 'General',
-    snr: 0,
-    wpm: 22,
-    icon: RadioTower,
-    accent: 'var(--tier-general)',
-  },
-  {
-    id: 'extra',
-    name: 'Extra',
-    snr: -6,
-    wpm: 28,
-    icon: Zap,
-    accent: 'var(--tier-extra)',
-  },
-];
-
-// The bot copies this fixed hard clip every round, regardless of tier.
-// Equal to the Extra human setting, so at Extra the contest is near heads-up.
-export const BOT_REF = { snr: -6, wpm: 28 } as const;
-
-interface TierRecord {
-  bestCER: number | null; // null = no rounds at this tier yet
-  beatCount: number; // strict userCER < botCER
-}
-type Bests = Record<Tier['id'], TierRecord>;
-
-const EMPTY_BESTS: Bests = {
-  'no-code': { bestCER: null, beatCount: 0 },
-  technician: { bestCER: null, beatCount: 0 },
-  general: { bestCER: null, beatCount: 0 },
-  extra: { bestCER: null, beatCount: 0 },
-};
 
 type Phase = 'armed' | 'copying' | 'reveal';
 
@@ -235,7 +181,7 @@ export default function BeatTheBotPage() {
     'technician'
   );
   const [bests, setBests] = usePersistedState<Bests>(
-    'morse:btb:bests',
+    BESTS_STORAGE_KEY,
     EMPTY_BESTS
   );
   const [textMode, setTextMode] = usePersistedState<TextMode>(
@@ -415,28 +361,18 @@ export default function BeatTheBotPage() {
           : decodeDataUri(round.bot.dataUri, TONE_FREQ)));
       const truth = lettersOnly(round.text);
       const userText = lettersOnly(guess.toUpperCase().trim());
-      const userCER = 1 - accuracy(truth, userText);
-      const botCER = 1 - accuracy(truth, res.text);
-      const rec = bests[round.tier];
-      const newBestFlag =
-        userCER < 1 && (rec.bestCER === null || userCER < rec.bestCER);
+      const userCopyPct = Math.round(accuracy(truth, userText) * 100);
+      const botCopyPct = Math.round(accuracy(truth, res.text) * 100);
+      const { isNewBest: newBestFlag } = applyRound(
+        bests,
+        round.tier,
+        userCopyPct,
+        botCopyPct
+      );
       setIsNewBest(newBestFlag);
-      setBests((prev) => {
-        const r = prev[round.tier];
-        // A 0% score (userCER = 1) doesn't count as a best — keep null until
-        // the user copies at least one character correctly.
-        const newBestVal =
-          userCER >= 1
-            ? r.bestCER
-            : r.bestCER === null
-              ? userCER
-              : Math.min(r.bestCER, userCER);
-        const beat = userCER < botCER ? 1 : 0; // STRICT < — a tie does NOT count
-        return {
-          ...prev,
-          [round.tier]: { bestCER: newBestVal, beatCount: r.beatCount + beat },
-        };
-      });
+      setBests(
+        (prev) => applyRound(prev, round.tier, userCopyPct, botCopyPct).bests
+      );
       setBotResult(res);
       setPhase('reveal');
       setSubmitting(false);
@@ -616,10 +552,7 @@ function TierRow({
         const rec = bests[tier.id];
         const isActive = tier.id === activeTier;
         const Icon = tier.icon;
-        const bestPct =
-          rec.bestCER === null
-            ? null
-            : Math.max(0, Math.round((1 - rec.bestCER) * 100));
+        const bestPct = rec.bestCopyPct;
         return (
           <button
             key={tier.id}
@@ -1002,8 +935,6 @@ function RevealPanel({
   const truth = lettersOnly(round.text);
   const userCells = alignChars(guess, truth);
   const botCells = alignChars(botResult.text, truth);
-  const userCER = 1 - accuracy(truth, guess);
-  const botCER = 1 - accuracy(truth, botResult.text);
   return (
     <div className="flex flex-col gap-4">
       <div className="flex flex-wrap items-center justify-center gap-2.5">
@@ -1069,12 +1000,12 @@ function RevealPanel({
             <Trophy className="size-5" />
             New best at {tierName}
           </span>
-        ) : userCER < botCER ? (
+        ) : userPct > botPct ? (
           <span className="inline-flex items-center gap-2 text-[18px] font-semibold text-good">
             <Trophy className="size-5" />
             You out-copied the bot
           </span>
-        ) : userCER === botCER ? (
+        ) : userPct === botPct ? (
           <span className="text-[18px] font-semibold text-foreground">
             You matched the bot
           </span>

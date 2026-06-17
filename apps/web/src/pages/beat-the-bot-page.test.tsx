@@ -252,7 +252,7 @@ describe('BeatTheBotPage', () => {
     expect(fireConfetti).toHaveBeenCalledTimes(1); // no additional confetti
   });
 
-  it('increments beatCount only on strict userCER < botCER', async () => {
+  it('increments beatCount only on strict userCopyPct > botCopyPct', async () => {
     decodeDual.mockResolvedValue(botResult('XXXX')); // bot misses → botCER > 0
     await renderArmed();
     await play();
@@ -282,18 +282,22 @@ describe('BeatTheBotPage', () => {
     });
   });
 
-  it('records bestCER after first submission', async () => {
+  it('records bestCopyPct after first submission', async () => {
     decodeDual.mockResolvedValue(botResult('XXXX'));
     await renderArmed();
     await play();
-    await submit(TRUTH); // userCER = 0
+    await submit(TRUTH); // perfect copy → 100%
 
     await screen.findByText(/New best at/); // isNewBest=true on first round
     await waitFor(() => {
       const stored = JSON.parse(
         localStorage.getItem('morse:btb:bests') ?? '{}'
       );
-      expect(stored.technician.bestCER).toBe(0);
+      expect(stored.technician.bestCopyPct).toBe(100);
+      // Bot's copy % is frozen alongside the best from THAT round.
+      expect(stored.technician.botCopyPctAtBest).toBe(0);
+      // Untouched tiers keep botCopyPctAtBest null.
+      expect(stored['no-code'].botCopyPctAtBest).toBeNull();
     });
   });
 
@@ -470,7 +474,7 @@ describe('BeatTheBotPage', () => {
         const stored = JSON.parse(
           localStorage.getItem('morse:btb:bests') ?? '{}'
         );
-        expect(stored.technician.bestCER).toBe(0);
+        expect(stored.technician.bestCopyPct).toBe(100);
       });
       // No mode-dimensioned best key was introduced.
       expect(localStorage.getItem('morse:btb:bests:random')).toBeNull();
