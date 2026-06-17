@@ -40,6 +40,7 @@ import {
   type Bests,
   BOT_REF,
   EMPTY_BESTS,
+  isBests,
   TIERS,
   type Tier,
 } from '../inference/beat-the-bot';
@@ -182,7 +183,8 @@ export default function BeatTheBotPage() {
   );
   const [bests, setBests] = usePersistedState<Bests>(
     BESTS_STORAGE_KEY,
-    EMPTY_BESTS
+    EMPTY_BESTS,
+    isBests
   );
   const [textMode, setTextMode] = usePersistedState<TextMode>(
     'morse:btb:textmode',

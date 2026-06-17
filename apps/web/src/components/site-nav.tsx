@@ -2,9 +2,18 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { HelpCircle, House, type LucideIcon, Menu, Radio } from 'lucide-react';
+import {
+  CircleUser,
+  HelpCircle,
+  House,
+  type LucideIcon,
+  Menu,
+  Radio,
+} from 'lucide-react';
 import { type ComponentType, useState } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
+import { useAuth } from '@/lib/auth';
+import { isAuthConfigured } from '@/lib/supabase';
 import { useIsStandalone } from '@/lib/use-standalone';
 import { cn } from '@/lib/utils';
 import { BoxingGloveIcon } from './boxing-glove-icon';
@@ -48,7 +57,9 @@ const tabClass =
  * carries it); wordmark, GitHub, and theme remain up top.
  */
 export function SiteHeader() {
-  if (useIsStandalone()) return null;
+  const standalone = useIsStandalone();
+  const { status, profile } = useAuth();
+  if (standalone) return null;
 
   return (
     <header className="mb-5">
@@ -102,6 +113,30 @@ export function SiteHeader() {
           {/* GitHub + theme live up top on desktop only; on mobile they move
               into the bottom bar's "More" menu. */}
           <div className="hidden sm:flex items-center gap-1">
+            {isAuthConfigured && (
+              <NavLink
+                to="/account"
+                onClick={scrollToTop}
+                aria-label={
+                  status === 'ready' && profile
+                    ? `Account: ${profile.call_sign}`
+                    : 'Account'
+                }
+                title="Account"
+                className={({ isActive }) =>
+                  cn(
+                    'inline-flex items-center justify-center gap-1.5 h-9 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring/50',
+                    status === 'ready' && profile ? 'px-2.5' : 'size-9',
+                    isActive && 'bg-muted text-foreground'
+                  )
+                }
+              >
+                <CircleUser className="size-4" />
+                {status === 'ready' && profile && (
+                  <span className="font-mono text-xs">{profile.call_sign}</span>
+                )}
+              </NavLink>
+            )}
             <a
               href={GITHUB_URL}
               target="_blank"

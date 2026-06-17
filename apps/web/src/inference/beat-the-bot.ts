@@ -74,6 +74,29 @@ export const EMPTY_BESTS: Bests = {
 export const BESTS_STORAGE_KEY = 'morse:btb:bests';
 
 /**
+ * Shape guard for a parsed `morse:btb:bests` payload. The record shape changed
+ * when we moved from CER to copy %; any pre-migration payload is missing
+ * `bestCopyPct` / `botCopyPctAtBest` / `beatCount` and must be discarded
+ * rather than silently rendered (a missing `bestCopyPct` is `undefined`, not
+ * `null`, and slips past the empty-state check).
+ */
+export function isBests(value: unknown): value is Bests {
+  if (typeof value !== 'object' || value === null) return false;
+  const v = value as Record<string, unknown>;
+  return TIERS.every((tier) => {
+    const r = v[tier.id];
+    if (typeof r !== 'object' || r === null) return false;
+    const rec = r as Record<string, unknown>;
+    return (
+      (rec.bestCopyPct === null || typeof rec.bestCopyPct === 'number') &&
+      (rec.botCopyPctAtBest === null ||
+        typeof rec.botCopyPctAtBest === 'number') &&
+      typeof rec.beatCount === 'number'
+    );
+  });
+}
+
+/**
  * Compute the next bests map after a graded round. Pure: no storage, no React.
  *
  * Inputs are copy percentages in [0, 100]. A round only sets a new best when

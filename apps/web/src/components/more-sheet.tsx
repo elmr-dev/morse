@@ -5,6 +5,7 @@
 import {
   Check,
   ChevronDown,
+  CircleUser,
   Download,
   ExternalLink,
   Monitor,
@@ -14,12 +15,15 @@ import {
   Sun,
 } from 'lucide-react';
 import { useState } from 'react';
+import { NavLink } from 'react-router-dom';
 import {
   Drawer,
   DrawerContent,
   DrawerDescription,
   DrawerTitle,
 } from '@/components/ui/drawer';
+import { useAuth } from '@/lib/auth';
+import { isAuthConfigured } from '@/lib/supabase';
 import { useInstall } from '@/lib/use-install';
 import { useIsStandalone } from '@/lib/use-standalone';
 import { type Theme, useTheme } from '@/lib/use-theme';
@@ -110,6 +114,9 @@ export function MoreSheet({
 }) {
   const { theme, setTheme } = useTheme();
   const standalone = useIsStandalone();
+  const { status, profile } = useAuth();
+  const accountLabel =
+    status === 'ready' && profile ? profile.call_sign : 'Account';
 
   return (
     <Drawer open={open} onOpenChange={onOpenChange}>
@@ -159,6 +166,19 @@ export function MoreSheet({
               durable storage, so the cached 16MB survives — in a plain tab it's
               evictable, so we don't make a promise we can't keep. */}
           {standalone && <OfflineSection />}
+
+          {isAuthConfigured && (
+            <div className="border-t border-border pt-1">
+              <NavLink
+                to="/account"
+                onClick={() => onOpenChange(false)}
+                className={rowClass}
+              >
+                <CircleUser className="size-5 text-muted-foreground" />
+                <span className="flex-1 text-left">{accountLabel}</span>
+              </NavLink>
+            </div>
+          )}
 
           <div className="border-t border-border pt-1">
             <a
