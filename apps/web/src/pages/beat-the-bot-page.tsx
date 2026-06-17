@@ -26,12 +26,14 @@ import { Fragment, useEffect, useRef, useState } from 'react';
 import { BoxingGloveIcon } from '@/components/boxing-glove-icon';
 import PageHeader from '@/components/page-header';
 import { usePrefersReducedMotion } from '@/components/presence';
+import SyncStatus from '@/components/sync-status';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import VolumeControl from '@/components/volume-control';
 import { fireConfetti } from '@/lib/confetti';
 import { randomCwMessage } from '@/lib/cw-message';
+import { useBestsSync } from '@/lib/use-bests-sync';
 import { useDocumentHead } from '@/lib/use-document-head';
 import { clearPersisted, usePersistedState } from '@/lib/use-persisted-state';
 import {
@@ -190,6 +192,12 @@ export default function BeatTheBotPage() {
     'morse:btb:textmode',
     'callsigns'
   );
+
+  // Cloud sync (slice 4). Page-scoped: the only triggers that fire while this
+  // page is mounted are sign-in / online / visibilitychange. That's fine — bests
+  // are only earned here, and the sign-in reconcile catches anything missed
+  // next visit. A future leaderboard route should also call syncNow() on entry.
+  const { syncNow } = useBestsSync(bests, setBests);
 
   const tierObj = TIERS.find((t) => t.id === activeTier) ?? TIERS[2];
 
@@ -375,6 +383,10 @@ export default function BeatTheBotPage() {
       setBests(
         (prev) => applyRound(prev, round.tier, userCopyPct, botCopyPct).bests
       );
+      // Publish the fresh best to the cloud immediately rather than waiting
+      // for the next online/visibility trigger. Fire-and-forget — gameplay
+      // must not block on or fail from the network.
+      if (newBestFlag) syncNow();
       setBotResult(res);
       setPhase('reveal');
       setSubmitting(false);
@@ -457,6 +469,8 @@ export default function BeatTheBotPage() {
             onTierChange={onTierChange}
             disabled={phase === 'copying'}
           />
+
+          <SyncStatus />
 
           <div className="border-t border-border" />
 

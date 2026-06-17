@@ -105,6 +105,58 @@ export function isBests(value: unknown): value is Bests {
  * is frozen alongside it. beatCount increments on a STRICT win
  * (userCopyPct > botCopyPct); a tie does not count.
  */
+/** A single tier's publishable row — the shape publish_best takes. */
+export interface PublishableBest {
+  tier: Tier['id'];
+  bestCopyPct: number;
+  botCopyPctAtBest: number;
+}
+
+/**
+ * The local bests that are worth publishing: tiers with a non-null bestCopyPct.
+ * botCopyPctAtBest may be null on a best set before slice 1's freeze shipped (or
+ * any legacy/edge row) — coerce a null bot value to 0 so the row is still
+ * publishable and honest-ish (0 = "unknown/none", never blocks the human's %).
+ */
+export function publishableBests(bests: Bests): PublishableBest[] {
+  const out: PublishableBest[] = [];
+  for (const t of TIERS) {
+    const r = bests[t.id];
+    if (r.bestCopyPct !== null) {
+      out.push({
+        tier: t.id,
+        bestCopyPct: r.bestCopyPct,
+        botCopyPctAtBest: r.botCopyPctAtBest ?? 0,
+      });
+    }
+  }
+  return out;
+}
+
+/**
+ * Merge cloud rows into local bests, taking the higher bestCopyPct per tier.
+ * When the cloud's best is higher, adopt its bot pairing too (so You/Bot stays
+ * the pair from the round that actually set the winning best). beatCount is
+ * LOCAL-ONLY and never touched here.
+ */
+export function mergeCloudBests(
+  local: Bests,
+  cloud: { tier: Tier['id']; bestCopyPct: number; botCopyPctAtBest: number }[]
+): Bests {
+  const next: Bests = structuredClone(local);
+  for (const row of cloud) {
+    const cur = next[row.tier];
+    if (cur.bestCopyPct === null || row.bestCopyPct > cur.bestCopyPct) {
+      next[row.tier] = {
+        bestCopyPct: row.bestCopyPct,
+        botCopyPctAtBest: row.botCopyPctAtBest,
+        beatCount: cur.beatCount,
+      };
+    }
+  }
+  return next;
+}
+
 export function applyRound(
   prev: Bests,
   tier: Tier['id'],

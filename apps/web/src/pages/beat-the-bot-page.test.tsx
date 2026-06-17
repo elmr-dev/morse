@@ -61,6 +61,25 @@ vi.mock('@/lib/cw-message', () => ({
   MAX_CW_MESSAGE: 40,
 }));
 vi.mock('@/lib/confetti', () => ({ fireConfetti: () => fireConfetti() }));
+vi.mock('@/lib/use-bests-sync', () => ({
+  useBestsSync: () => ({ syncNow: () => {} }),
+}));
+vi.mock('@/lib/auth', () => ({
+  useAuth: () => ({
+    status: 'signed-out',
+    session: null,
+    user: null,
+    profile: null,
+    signIn: () => Promise.resolve(),
+    signOut: () => Promise.resolve(),
+    claimCallsign: () => Promise.resolve({ ok: true }),
+    refreshProfile: () => Promise.resolve(),
+  }),
+}));
+vi.mock('@/lib/supabase', () => ({
+  supabase: null,
+  isAuthConfigured: false,
+}));
 
 import BeatTheBotPage from './beat-the-bot-page';
 
