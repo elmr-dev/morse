@@ -213,8 +213,8 @@ describe('BeatTheBotPage', () => {
 
   it('walks armed → copying → reveal → next round', async () => {
     await renderArmed();
-    // Armed: chips + play button.
-    expect(screen.getByText('WPM')).toBeInTheDocument();
+    // Armed: YOU/BOT spec lines + play button.
+    expect(screen.getAllByText('WPM').length).toBeGreaterThan(0);
     expect(
       screen.getByText(/One listen — close the gap on/)
     ).toBeInTheDocument();

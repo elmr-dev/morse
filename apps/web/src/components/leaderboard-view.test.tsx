@@ -201,9 +201,9 @@ describe('LeaderboardView', () => {
     });
     const { container } = renderView(board, 'K1ABC');
     await screen.findByText('K1ABC');
-    const items = container.querySelectorAll('li');
-    expect(items[1].className).toMatch(/primary/);
-    expect(items[0].className).not.toMatch(/ring-primary/);
+    const rows = container.querySelectorAll('tbody tr');
+    expect(rows[1].getAttribute('data-own')).toBe('true');
+    expect(rows[0].getAttribute('data-own')).toBeNull();
   });
 
   it('renders the empty state when the default segment has zero rows', async () => {

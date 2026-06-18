@@ -6,6 +6,14 @@ import { Loader2, Search, ShieldCheck, X } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { Link, NavLink } from 'react-router-dom';
 import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
+import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
@@ -72,7 +80,6 @@ export default function LeaderboardView({
         search={search}
         ownCallSign={ownCallSign}
         reloadToken={reloadToken}
-        segments={segments}
       />
     </div>
   );
@@ -100,7 +107,7 @@ function SearchInput({
         autoComplete="off"
         autoCapitalize="characters"
         spellCheck={false}
-        className="w-full rounded-lg border border-border bg-background px-9 py-2 font-mono text-[14px] uppercase tracking-wider outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+        className="w-full rounded-lg border border-border bg-card px-9 py-2 font-mono text-[14px] uppercase tracking-wider outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
       />
       {value && (
         <button
@@ -125,48 +132,51 @@ function SegmentSelector({
   activeId: string | undefined;
   onChange: (id: string) => void;
 }) {
+  const activeLabel = segments.find((s) => s.id === activeId)?.label;
   return (
     <div
       role="radiogroup"
       aria-label="Board segment"
-      className="grid grid-cols-2 sm:grid-cols-5 gap-2"
+      className="flex w-full items-center gap-1 rounded-lg border border-border bg-muted p-1"
     >
-      {segments.map((seg) => {
-        const active = seg.id === activeId;
-        const Icon = seg.icon;
-        return (
-          // biome-ignore lint/a11y/useSemanticElements: segmented single-select; role="radio" buttons give the right "1 of N selected" semantics without native radio styling
-          <button
-            key={seg.id}
-            type="button"
-            role="radio"
-            aria-checked={active}
-            onClick={() => onChange(seg.id)}
-            style={
-              active && seg.accent
-                ? {
-                    borderColor: seg.accent,
-                    boxShadow: `0 0 0 1px ${seg.accent}`,
-                    backgroundColor: `color-mix(in oklch, ${seg.accent} 8%, transparent)`,
-                  }
-                : undefined
-            }
-            className={`inline-flex items-center justify-center gap-1.5 rounded-xl border px-3 py-2 text-[13px] font-medium transition-all outline-none focus-visible:ring-2 focus-visible:ring-ring/50 ${
-              active
-                ? 'text-foreground'
-                : 'border-border/50 bg-background text-muted-foreground hover:border-border hover:bg-muted/30 hover:text-foreground'
-            }`}
-          >
-            {Icon && (
-              <Icon
-                className="size-4 shrink-0"
-                style={seg.accent ? { color: seg.accent } : undefined}
-              />
-            )}
-            {seg.label}
-          </button>
-        );
-      })}
+      <div className="flex items-stretch gap-1 sm:flex-1">
+        {segments.map((seg) => {
+          const active = seg.id === activeId;
+          const Icon = seg.icon;
+          return (
+            // biome-ignore lint/a11y/useSemanticElements: segmented single-select; role="radio" buttons give the right "1 of N selected" semantics without native radio styling
+            <button
+              key={seg.id}
+              type="button"
+              role="radio"
+              aria-checked={active}
+              aria-label={seg.label}
+              onClick={() => onChange(seg.id)}
+              className={`sm:flex-1 inline-flex items-center justify-center gap-1.5 rounded-md px-3 py-2 text-[13px] font-medium transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring/50 ${
+                active
+                  ? 'bg-card text-foreground shadow-sm'
+                  : 'text-muted-foreground hover:text-foreground'
+              }`}
+            >
+              {Icon && (
+                <Icon
+                  className="size-4 shrink-0"
+                  style={seg.accent ? { color: seg.accent } : undefined}
+                />
+              )}
+              <span className="hidden sm:inline">{seg.label}</span>
+            </button>
+          );
+        })}
+      </div>
+      {activeLabel && (
+        <span
+          aria-hidden="true"
+          className="sm:hidden ml-auto pr-3 pl-1 text-[13px] font-medium text-foreground"
+        >
+          {activeLabel}
+        </span>
+      )}
     </div>
   );
 }
@@ -177,14 +187,12 @@ function PagedList({
   search,
   ownCallSign,
   reloadToken,
-  segments,
 }: {
   board: LeaderboardBoard;
   segmentId: string | undefined;
   search: string;
   ownCallSign: string | null;
   reloadToken: number;
-  segments?: LeaderboardSegment[];
 }) {
   const [rows, setRows] = useState<LeaderboardRow[]>([]);
   const [ownRow, setOwnRow] = useState<LeaderboardRow | null>(null);
@@ -238,8 +246,6 @@ function PagedList({
     };
   }, [board, ownCallSign, segmentId, search, reloadToken]);
 
-  const activeSegment = segments?.find((s) => s.id === segmentId);
-
   // Pin the own-row above the list only when it isn't already in the visible
   // top-N. An inline highlight is enough when it is.
   const ownVisible =
@@ -249,11 +255,6 @@ function PagedList({
 
   return (
     <div className="flex flex-col gap-3">
-      {activeSegment?.context && !search && (
-        <p className="text-center text-[12px] text-muted-foreground">
-          {activeSegment.context}
-        </p>
-      )}
       {loading ? (
         <Spinner label="Loading standings" />
       ) : (
@@ -338,21 +339,38 @@ function Rows({
   }
 
   return (
-    <div className="flex flex-col gap-2">
-      {pinnedRow && (
-        <ol className="list-none p-0 m-0" aria-label="Your rank (pinned)">
-          <Row row={pinnedRow} isOwn pinned />
-        </ol>
-      )}
-      <ol className="list-none p-0 m-0 flex flex-col gap-1">
-        {rows.map((row) => (
-          <Row
-            key={`${row.callSign}-${row.rank}-${row.updatedAt}`}
-            row={row}
-            isOwn={row.callSign === ownCallSign}
-          />
-        ))}
-      </ol>
+    <div className="rounded-lg border border-border bg-card overflow-hidden">
+      <Table>
+        <TableHeader>
+          <TableRow className="hover:bg-transparent">
+            <TableHead className="w-16 text-muted-foreground text-[11px] font-medium uppercase tracking-wide">
+              Rank
+            </TableHead>
+            <TableHead className="text-muted-foreground text-[11px] font-medium uppercase tracking-wide">
+              Callsign
+            </TableHead>
+            <TableHead className="text-muted-foreground text-[11px] font-medium uppercase tracking-wide">
+              Tier
+            </TableHead>
+            <TableHead className="w-20 text-right text-muted-foreground text-[11px] font-medium uppercase tracking-wide">
+              Score
+            </TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {pinnedRow && <Row row={pinnedRow} isOwn pinned />}
+          {rows.map((row) => (
+            <Row
+              key={`${row.callSign}-${row.rank}-${row.updatedAt}`}
+              row={row}
+              isOwn={
+                !!ownCallSign &&
+                row.callSign.toUpperCase() === ownCallSign.toUpperCase()
+              }
+            />
+          ))}
+        </TableBody>
+      </Table>
     </div>
   );
 }
@@ -388,89 +406,92 @@ function Row({
   pinned?: boolean;
 }) {
   return (
-    <li
+    <TableRow
       aria-label={`${pinned ? 'You, ' : ''}rank ${row.rank}, ${row.callSign}${
         row.tag ? `, ${row.tag.label}` : ''
       }${row.verified ? ', verified' : ''}, ${row.scoreLabel}`}
-      className={`flex items-center gap-3 rounded-lg border px-3 py-2 ${
+      data-own={isOwn ? 'true' : undefined}
+      className={
         isOwn
-          ? 'border-primary/60 bg-primary/5 ring-1 ring-primary/30'
-          : 'border-border/50 bg-background'
-      }`}
+          ? 'bg-primary/15 hover:bg-primary/20 data-[own=true]:border-b-primary/20'
+          : undefined
+      }
     >
-      <span
-        className={`shrink-0 text-right font-mono text-[13px] tabular-nums ${
-          pinned ? 'text-primary w-auto' : 'text-muted-foreground w-10'
+      <TableCell
+        className={`font-mono text-[13px] tabular-nums ${
+          pinned ? 'text-primary font-semibold' : 'text-muted-foreground'
         }`}
       >
         {pinned ? `You · #${row.rank}` : `#${row.rank}`}
-      </span>
-      <span className="flex-1 min-w-0 inline-flex items-center gap-1.5 font-mono text-[15px] font-medium text-foreground">
-        {row.verified ? (
-          <a
-            href={qrzUrl(row.callSign)}
-            target="_blank"
-            rel="noreferrer"
-            className="truncate outline-none rounded-sm hover:underline focus-visible:ring-2 focus-visible:ring-ring/50"
-            title={`View ${row.callSign} on QRZ`}
-          >
-            {row.callSign}
-          </a>
-        ) : (
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <button
-                type="button"
-                aria-label={`${row.callSign} — not verified`}
-                className="truncate text-left font-mono font-medium text-foreground outline-none rounded-sm decoration-dotted decoration-muted-foreground/60 underline-offset-4 hover:underline focus-visible:ring-2 focus-visible:ring-ring/50"
-              >
-                {row.callSign}
-              </button>
-            </TooltipTrigger>
-            <TooltipContent>
-              <span>
-                This callsign hasn't been verified yet.{' '}
-                <Link
-                  to="/faq#verified-badge"
-                  className="underline underline-offset-2"
+      </TableCell>
+      <TableCell>
+        <span className="inline-flex items-center gap-1.5 font-mono text-[15px] font-medium text-foreground">
+          {row.verified ? (
+            <a
+              href={qrzUrl(row.callSign)}
+              target="_blank"
+              rel="noreferrer"
+              className="truncate outline-none rounded-sm hover:underline focus-visible:ring-2 focus-visible:ring-ring/50"
+              title={`View ${row.callSign} on QRZ`}
+            >
+              {row.callSign}
+            </a>
+          ) : (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  type="button"
+                  aria-label={`${row.callSign} — not verified`}
+                  className="truncate text-left font-mono font-medium text-foreground outline-none rounded-sm decoration-dotted decoration-muted-foreground/60 underline-offset-4 hover:underline focus-visible:ring-2 focus-visible:ring-ring/50"
                 >
-                  Learn more
-                </Link>
-                .
-              </span>
-            </TooltipContent>
-          </Tooltip>
-        )}
-        {row.verified && (
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <button
-                type="button"
-                aria-label="Verified callsign"
-                className="shrink-0 inline-flex outline-none rounded-sm text-verified focus-visible:ring-2 focus-visible:ring-ring/50"
-              >
-                <ShieldCheck className="size-4.5" aria-hidden="true" />
-              </button>
-            </TooltipTrigger>
-            <TooltipContent>
-              <span>
-                Verified callsign via QRZ bio.{' '}
-                <Link
-                  to="/faq#verified-badge"
-                  className="underline underline-offset-2"
+                  {row.callSign}
+                </button>
+              </TooltipTrigger>
+              <TooltipContent>
+                <span>
+                  This callsign hasn't been verified yet.{' '}
+                  <Link
+                    to="/faq#verified-badge"
+                    className="underline underline-offset-2"
+                  >
+                    Learn more
+                  </Link>
+                  .
+                </span>
+              </TooltipContent>
+            </Tooltip>
+          )}
+          {row.verified && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  type="button"
+                  aria-label="Verified callsign"
+                  className="shrink-0 inline-flex outline-none rounded-sm text-verified focus-visible:ring-2 focus-visible:ring-ring/50"
                 >
-                  Learn more
-                </Link>
-                .
-              </span>
-            </TooltipContent>
-          </Tooltip>
-        )}
-      </span>
-      {row.tag && <TagPill tag={row.tag} />}
-      <span className="w-14 shrink-0 text-right font-mono text-[16px] font-semibold tabular-nums text-foreground">
+                  <ShieldCheck className="size-4.5" aria-hidden="true" />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent>
+                <span>
+                  Verified callsign via QRZ bio.{' '}
+                  <Link
+                    to="/faq#verified-badge"
+                    className="underline underline-offset-2"
+                  >
+                    Learn more
+                  </Link>
+                  .
+                </span>
+              </TooltipContent>
+            </Tooltip>
+          )}
+        </span>
+      </TableCell>
+      <TableCell>{row.tag && <TagPill tag={row.tag} />}</TableCell>
+      <TableCell className="text-right font-mono text-[16px] font-semibold tabular-nums text-foreground">
         {row.scoreLabel}
-      </span>
-    </li>
+      </TableCell>
+    </TableRow>
   );
 }

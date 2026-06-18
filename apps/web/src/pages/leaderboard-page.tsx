@@ -7,7 +7,6 @@ import { useEffect, useMemo, useState } from 'react';
 import { NavLink } from 'react-router-dom';
 import LeaderboardView from '@/components/leaderboard-view';
 import PageHeader from '@/components/page-header';
-import { Card, CardContent } from '@/components/ui/card';
 import { useAuth } from '@/lib/auth';
 import { reconcile } from '@/lib/bests-sync';
 import { beatTheBotBoard } from '@/lib/leaderboard-btb';
@@ -74,25 +73,21 @@ export default function LeaderboardPage() {
         every round — this board ranks humans against each other.
       </PageHeader>
 
-      <Card>
-        <CardContent>
-          <LeaderboardView
-            board={board}
-            ownCallSign={ownCallSign}
-            reloadToken={reloadToken}
-          />
-          {isAuthConfigured && status === 'signed-out' && (
-            <p className="mt-4 text-center text-[12px] text-muted-foreground">
-              <NavLink
-                to="/account"
-                className="underline-offset-2 hover:text-foreground hover:underline"
-              >
-                Sign in to claim your spot
-              </NavLink>
-            </p>
-          )}
-        </CardContent>
-      </Card>
+      <LeaderboardView
+        board={board}
+        ownCallSign={ownCallSign}
+        reloadToken={reloadToken}
+      />
+      {isAuthConfigured && status === 'signed-out' && (
+        <p className="mt-4 text-center text-[12px] text-muted-foreground">
+          <NavLink
+            to="/account"
+            className="underline-offset-2 hover:text-foreground hover:underline"
+          >
+            Sign in to claim your spot
+          </NavLink>
+        </p>
+      )}
     </div>
   );
 }
