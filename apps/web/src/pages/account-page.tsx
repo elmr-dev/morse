@@ -3,16 +3,25 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import {
+  BadgePercent,
   CircleUser,
   Copy,
   Loader2,
   LogOut,
   Shield,
   ShieldCheck,
+  SquareUser,
+  UserCog,
 } from 'lucide-react';
 import type { ComponentType } from 'react';
 import { useState } from 'react';
-import { Link } from 'react-router-dom';
+import {
+  Link,
+  NavLink,
+  Outlet,
+  useLocation,
+  useNavigate,
+} from 'react-router-dom';
 import { toast } from 'sonner';
 import { GithubIcon } from '@/components/github';
 import PageHeader from '@/components/page-header';
@@ -22,6 +31,13 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
@@ -30,6 +46,7 @@ import { type AuthProvider, useAuth } from '@/lib/auth';
 import { SITE_URL } from '@/lib/site';
 import { isAuthConfigured, supabase } from '@/lib/supabase';
 import { useDocumentHead } from '@/lib/use-document-head';
+import { cn } from '@/lib/utils';
 
 interface ProviderEntry {
   id: AuthProvider;
@@ -38,28 +55,35 @@ interface ProviderEntry {
 }
 
 const PROVIDERS: readonly ProviderEntry[] = [
-  { id: 'google', label: 'Continue with Google', icon: GoogleIcon },
-  { id: 'github', label: 'Continue with GitHub', icon: GithubIcon },
-  { id: 'discord', label: 'Continue with Discord', icon: DiscordIcon },
+  { id: 'google', label: 'Sign in with Google', icon: GoogleIcon },
+  { id: 'github', label: 'Sign in with GitHub', icon: GithubIcon },
+  { id: 'discord', label: 'Sign in with Discord', icon: DiscordIcon },
+] as const;
+
+type SectionId = 'identity' | 'badge' | 'session';
+
+interface SectionEntry {
+  id: SectionId;
+  label: string;
+  icon: ComponentType<{ className?: string }>;
+  path: string;
+}
+
+const SECTIONS: readonly SectionEntry[] = [
+  { id: 'identity', label: 'Identity', icon: SquareUser, path: 'identity' },
+  { id: 'badge', label: 'Badge', icon: BadgePercent, path: 'badge' },
+  { id: 'session', label: 'Account', icon: UserCog, path: 'session' },
 ] as const;
 
 export default function AccountPage() {
   useDocumentHead({
-    title: 'Account',
+    title: 'Settings',
     description:
       'Optional sign-in to claim a callsign and publish your Beat the Bot bests.',
     path: '/account',
   });
 
-  const {
-    status,
-    user,
-    profile,
-    signIn,
-    signOut,
-    claimCallsign,
-    refreshProfile,
-  } = useAuth();
+  const { status, signIn, claimCallsign, signOut } = useAuth();
 
   if (!isAuthConfigured) {
     return (
@@ -91,7 +115,7 @@ export default function AccountPage() {
 
   if (status === 'signed-out') {
     return (
-      <Shell>
+      <Shell showIntro>
         <SignedOutView onSignIn={signIn} />
       </Shell>
     );
@@ -107,26 +131,275 @@ export default function AccountPage() {
 
   return (
     <Shell>
-      <ReadyView
-        callsign={profile?.call_sign ?? ''}
-        verified={profile?.verified ?? false}
-        email={user?.email ?? null}
-        onSignOut={signOut}
-        onRefreshProfile={refreshProfile}
-      />
+      <SettingsLayout>
+        <Outlet />
+      </SettingsLayout>
     </Shell>
   );
 }
 
-function Shell({ children }: { children: React.ReactNode }) {
+function Shell({
+  children,
+  showIntro = false,
+}: {
+  children: React.ReactNode;
+  showIntro?: boolean;
+}) {
   return (
     <>
-      <PageHeader eyebrow="Account" icon={CircleUser} title="Your account">
-        Playing is anonymous and needs no account. Sign in only to claim your
-        callsign and put your bests on the leaderboard.
+      <PageHeader
+        eyebrow="Account"
+        icon={CircleUser}
+        title="Settings"
+        wideIntro
+      >
+        {showIntro
+          ? 'Playing is anonymous and needs no account. Sign in only to claim your callsign and put your bests on the leaderboard.'
+          : undefined}
       </PageHeader>
-      <div className="max-w-md">{children}</div>
+      <hr className="mb-6 hidden border-border md:block" />
+      {children}
     </>
+  );
+}
+
+function SettingsLayout({ children }: { children: React.ReactNode }) {
+  const { pathname } = useLocation();
+  const navigate = useNavigate();
+  const current =
+    SECTIONS.find((s) => pathname.endsWith(`/${s.path}`))?.id ?? 'identity';
+
+  return (
+    <div className="grid gap-6 md:grid-cols-[200px_1fr]">
+      {/* Desktop sidebar */}
+      <nav
+        aria-label="Settings sections"
+        className="hidden md:flex flex-col gap-1"
+      >
+        {SECTIONS.map(({ id, label, icon: Icon, path }) => (
+          <NavLink
+            key={id}
+            to={path}
+            className={({ isActive }) =>
+              cn(
+                'inline-flex items-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring/50',
+                isActive
+                  ? 'bg-accent text-accent-foreground ring-1 ring-inset ring-primary/60'
+                  : 'text-muted-foreground hover:bg-muted hover:text-foreground'
+              )
+            }
+          >
+            <Icon className="size-4" />
+            {label}
+          </NavLink>
+        ))}
+      </nav>
+
+      <div className="flex flex-col gap-4">
+        {/* Mobile section picker */}
+        <div className="md:hidden">
+          <Select
+            value={current}
+            onValueChange={(v) => {
+              const next = SECTIONS.find((s) => s.id === v);
+              if (next) navigate(next.path);
+            }}
+          >
+            <SelectTrigger
+              aria-label="Settings section"
+              className="h-12 w-full justify-between bg-card text-base dark:bg-card dark:hover:bg-muted [&_svg:not([class*='size-'])]:size-5"
+            >
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {SECTIONS.map(({ id, label, icon: Icon }) => (
+                <SelectItem key={id} value={id}>
+                  <Icon className="size-4" />
+                  {label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
+        {children}
+      </div>
+    </div>
+  );
+}
+
+function SectionIntro({ children }: { children: React.ReactNode }) {
+  return <p className="text-sm text-muted-foreground">{children}</p>;
+}
+
+function KeyValueRow({
+  label,
+  children,
+}: {
+  label: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="flex items-center justify-between gap-3 border-t border-border/60 py-3 text-sm first:border-t-0 first:pt-0 last:pb-0">
+      <span className="text-muted-foreground">{label}</span>
+      <span className="text-foreground text-right">{children}</span>
+    </div>
+  );
+}
+
+export function IdentitySection() {
+  const { profile, refreshProfile } = useAuth();
+  const callsign = profile?.call_sign ?? '';
+  const verified = profile?.verified ?? false;
+
+  return (
+    <section className="flex flex-col gap-4">
+      <SectionIntro>
+        Your callsign is how you show up on the leaderboard. Verify it against
+        your QRZ bio so other operators can trust it's really you.
+      </SectionIntro>
+      <Card>
+        <CardContent className="flex flex-col gap-1">
+          <div className="flex items-center gap-3 pb-3">
+            <span className="font-mono text-2xl font-bold tracking-wider text-foreground">
+              {callsign}
+            </span>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  type="button"
+                  aria-label={
+                    verified ? 'Verified callsign' : 'Callsign not yet verified'
+                  }
+                  className={cn(
+                    'inline-flex items-center gap-1.5 rounded-sm px-2 py-0.5 text-xs font-medium outline-none focus-visible:ring-2 focus-visible:ring-ring/50',
+                    verified
+                      ? 'bg-primary/10 text-verified'
+                      : 'bg-amber-500/10 text-amber-500'
+                  )}
+                >
+                  {verified ? (
+                    <>
+                      <ShieldCheck className="size-3.5" aria-hidden="true" />
+                      Verified
+                    </>
+                  ) : (
+                    <>
+                      <Shield className="size-3.5" aria-hidden="true" />
+                      Not yet verified
+                    </>
+                  )}
+                </button>
+              </TooltipTrigger>
+              <TooltipContent>
+                <span>
+                  {verified
+                    ? 'Verified via your QRZ bio. '
+                    : 'Optional — verify your callsign via your QRZ bio. '}
+                  <Link
+                    to="/faq#verified-badge"
+                    className="underline underline-offset-2"
+                  >
+                    Learn more
+                  </Link>
+                  .
+                </span>
+              </TooltipContent>
+            </Tooltip>
+          </div>
+          <KeyValueRow label="Callsign">
+            <span className="font-mono">{callsign}</span>
+          </KeyValueRow>
+          <KeyValueRow label="QRZ verification">
+            {verified ? (
+              <span className="inline-flex items-center gap-1.5 text-verified">
+                <ShieldCheck className="size-3.5" aria-hidden="true" />
+                Verified via QRZ bio
+              </span>
+            ) : (
+              <span className="inline-flex items-center gap-1.5 text-amber-500">
+                <Shield className="size-3.5" aria-hidden="true" />
+                Not verified
+              </span>
+            )}
+          </KeyValueRow>
+          <KeyValueRow label="Leaderboard">
+            <span className="text-muted-foreground">Bests published</span>
+          </KeyValueRow>
+          {!verified && (
+            <div className="pt-3">
+              <VerifySection callsign={callsign} onVerified={refreshProfile} />
+            </div>
+          )}
+        </CardContent>
+      </Card>
+    </section>
+  );
+}
+
+export function BadgeSectionRoute() {
+  const { profile } = useAuth();
+  const callsign = profile?.call_sign ?? '';
+  return (
+    <section className="flex flex-col gap-4">
+      <SectionIntro>
+        A live snapshot of your best scores. Drop the snippet into your QRZ bio,
+        a blog, or a club page — it refreshes itself every time you set a new
+        best.
+      </SectionIntro>
+      <Card>
+        <CardContent>
+          <BadgeSection callsign={callsign} />
+        </CardContent>
+      </Card>
+    </section>
+  );
+}
+
+const PROVIDER_DISPLAY: Record<
+  string,
+  { label: string; icon: ComponentType<{ className?: string }> }
+> = {
+  github: { label: 'GitHub', icon: GithubIcon },
+  google: { label: 'Google', icon: GoogleIcon },
+  discord: { label: 'Discord', icon: DiscordIcon },
+};
+
+export function SessionSection() {
+  const { user, signOut } = useAuth();
+  const email = user?.email ?? null;
+  const providerId =
+    (user?.app_metadata?.provider as string | undefined) ?? null;
+  const provider = providerId ? PROVIDER_DISPLAY[providerId] : null;
+
+  return (
+    <section className="flex flex-col gap-4">
+      <SectionIntro>
+        The account that owns this callsign. Signing out keeps your bests on the
+        leaderboard — they're tied to the callsign, not the session.
+      </SectionIntro>
+      <Card>
+        <CardContent className="flex flex-col gap-0">
+          <KeyValueRow label="Signed in as">
+            <span>{email ?? '—'}</span>
+          </KeyValueRow>
+          {provider && (
+            <KeyValueRow label="Provider">
+              <span className="inline-flex items-center gap-1.5">
+                <provider.icon className="size-4" />
+                {provider.label}
+              </span>
+            </KeyValueRow>
+          )}
+          <KeyValueRow label="Session">
+            <Button variant="outline" size="sm" onClick={signOut}>
+              <LogOut className="size-4" />
+              Sign out
+            </Button>
+          </KeyValueRow>
+        </CardContent>
+      </Card>
+    </section>
   );
 }
 
@@ -137,33 +410,30 @@ function SignedOutView({
 }) {
   const [pending, setPending] = useState<AuthProvider | null>(null);
   return (
-    <Card>
-      <CardContent className="flex flex-col gap-2">
-        {PROVIDERS.map(({ id, label, icon: Icon }) => (
-          <Button
-            key={id}
-            variant="outline"
-            onClick={async () => {
-              setPending(id);
-              try {
-                await onSignIn(id);
-              } finally {
-                setPending(null);
-              }
-            }}
-            disabled={pending !== null}
-            className="justify-start"
-          >
-            {pending === id ? (
-              <Loader2 className="size-4 animate-spin" aria-hidden="true" />
-            ) : (
-              <Icon className="size-4" />
-            )}
-            {label}
-          </Button>
-        ))}
-      </CardContent>
-    </Card>
+    <div className="flex flex-wrap items-center justify-center gap-3">
+      {PROVIDERS.map(({ id, label, icon: Icon }) => (
+        <Button
+          key={id}
+          variant="outline"
+          size="lg"
+          onClick={async () => {
+            setPending(id);
+            await onSignIn(id);
+            // Leave `pending` set so all buttons stay disabled while the
+            // OAuth redirect is in flight.
+          }}
+          disabled={pending !== null}
+          className="w-full justify-center sm:w-auto"
+        >
+          {pending === id ? (
+            <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+          ) : (
+            <Icon className="size-4" />
+          )}
+          {label}
+        </Button>
+      ))}
+    </div>
   );
 }
 
@@ -203,132 +473,54 @@ function ClaimView({
   }
 
   return (
-    <Card>
-      <CardContent>
-        <form onSubmit={handleSubmit} className="flex flex-col gap-3">
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="callsign">Callsign</Label>
-            <Input
-              id="callsign"
-              value={value}
-              onChange={(e) => {
-                setValue(e.target.value.toUpperCase());
-                if (error) setError(null);
-              }}
-              autoCapitalize="characters"
-              autoComplete="off"
-              spellCheck={false}
-              maxLength={10}
-              placeholder="Your callsign"
-              className="font-mono uppercase tracking-wider"
-              aria-invalid={error != null}
-              aria-describedby={error ? 'callsign-error' : undefined}
-            />
-            {error && (
-              <p
-                id="callsign-error"
-                className="text-sm text-destructive"
-                role="alert"
-              >
-                {error}
-              </p>
-            )}
-          </div>
-          <div className="flex items-center gap-2">
-            <Button type="submit" disabled={pending || value.length === 0}>
-              {pending && (
-                <Loader2 className="size-4 animate-spin" aria-hidden="true" />
-              )}
-              Claim
-            </Button>
-            <Button type="button" variant="ghost" onClick={onSignOut}>
-              <LogOut className="size-4" />
-              Sign out
-            </Button>
-          </div>
-        </form>
-      </CardContent>
-    </Card>
-  );
-}
-
-function ReadyView({
-  callsign,
-  verified,
-  email,
-  onSignOut,
-  onRefreshProfile,
-}: {
-  callsign: string;
-  verified: boolean;
-  email: string | null;
-  onSignOut: () => Promise<void>;
-  onRefreshProfile: () => Promise<void>;
-}) {
-  return (
-    <Card>
-      <CardContent className="flex flex-col gap-4">
-        <div className="flex items-center gap-3">
-          <span className="font-mono text-2xl font-bold tracking-wider text-foreground">
-            {callsign}
-          </span>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <button
-                type="button"
-                aria-label={
-                  verified ? 'Verified callsign' : 'Callsign not yet verified'
-                }
-                className={`inline-flex items-center gap-1.5 text-sm rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-ring/50 ${
-                  verified ? 'text-verified' : 'text-muted-foreground'
-                }`}
-              >
-                {verified ? (
-                  <>
-                    <ShieldCheck className="size-4" aria-hidden="true" />
-                    Verified
-                  </>
-                ) : (
-                  <>
-                    <Shield className="size-4" aria-hidden="true" />
-                    Not yet verified
-                  </>
-                )}
-              </button>
-            </TooltipTrigger>
-            <TooltipContent>
-              <span>
-                {verified
-                  ? 'Verified via your QRZ bio. '
-                  : 'Optional — verify your callsign via your QRZ bio. '}
-                <Link
-                  to="/faq#verified-badge"
-                  className="underline underline-offset-2"
+    <div className="max-w-md">
+      <Card>
+        <CardContent>
+          <form onSubmit={handleSubmit} className="flex flex-col gap-3">
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="callsign">Callsign</Label>
+              <Input
+                id="callsign"
+                value={value}
+                onChange={(e) => {
+                  setValue(e.target.value.toUpperCase());
+                  if (error) setError(null);
+                }}
+                autoCapitalize="characters"
+                autoComplete="off"
+                spellCheck={false}
+                maxLength={10}
+                placeholder="Your callsign"
+                className="font-mono uppercase tracking-wider"
+                aria-invalid={error != null}
+                aria-describedby={error ? 'callsign-error' : undefined}
+              />
+              {error && (
+                <p
+                  id="callsign-error"
+                  className="text-sm text-destructive"
+                  role="alert"
                 >
-                  Learn more
-                </Link>
-                .
-              </span>
-            </TooltipContent>
-          </Tooltip>
-        </div>
-        {!verified && (
-          <VerifySection callsign={callsign} onVerified={onRefreshProfile} />
-        )}
-        <BadgeSection callsign={callsign} />
-        {email && (
-          <p className="text-sm text-muted-foreground">
-            Signed in as <span className="text-foreground">{email}</span>
-          </p>
-        )}
-        <div>
-          <Button variant="ghost" onClick={onSignOut}>
-            <LogOut className="size-4" />
-            Sign out
-          </Button>
-        </div>
-      </CardContent>
-    </Card>
+                  {error}
+                </p>
+              )}
+            </div>
+            <div className="flex items-center gap-2">
+              <Button type="submit" disabled={pending || value.length === 0}>
+                {pending && (
+                  <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+                )}
+                Claim
+              </Button>
+              <Button type="button" variant="ghost" onClick={onSignOut}>
+                <LogOut className="size-4" />
+                Sign out
+              </Button>
+            </div>
+          </form>
+        </CardContent>
+      </Card>
+    </div>
   );
 }
 
@@ -592,16 +784,14 @@ function BadgeSection({ callsign }: { callsign: string }) {
   }
 
   return (
-    <div className="flex flex-col gap-3 rounded-md border border-border bg-muted/30 p-3">
-      <div>
-        <p className="text-sm font-medium text-foreground">Your MORSE badge</p>
-        <p className="text-xs text-muted-foreground">
-          Paste this anywhere on the web — your QRZ bio, a blog, a club page —
-          to show your MORSE standing. It updates automatically as you set new
-          bests.
-        </p>
-      </div>
-      <img src={url} alt={`${callsign} on MORSE`} width={340} height={88} />
+    <div className="flex flex-col gap-3">
+      <img
+        src={url}
+        alt={`${callsign} on MORSE`}
+        width={340}
+        height={88}
+        className="h-auto w-full max-w-[340px]"
+      />
       <div className="flex flex-col gap-2">
         <Label htmlFor="badge-snippet" className="text-xs">
           Snippet
@@ -611,7 +801,7 @@ function BadgeSection({ callsign }: { callsign: string }) {
             id="badge-snippet"
             value={snippet}
             readOnly
-            className="font-mono text-xs"
+            className="min-w-0 flex-1 font-mono text-xs"
           />
           <Button
             type="button"

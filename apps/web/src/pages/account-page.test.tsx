@@ -9,7 +9,7 @@ import {
   screen,
   waitFor,
 } from '@testing-library/react';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter, Navigate, Route, Routes } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { axe } from 'vitest-axe';
 import type { ClaimResult } from '@/lib/auth';
@@ -86,12 +86,29 @@ vi.mock('sonner', () => ({
   },
 }));
 
-import AccountPage from './account-page';
+import AccountPage, {
+  BadgeSectionRoute,
+  IdentitySection,
+  SessionSection,
+} from './account-page';
 
-function renderPage() {
+function AccountRoutes() {
+  return (
+    <Routes>
+      <Route path="/account" element={<AccountPage />}>
+        <Route index element={<Navigate to="identity" replace />} />
+        <Route path="identity" element={<IdentitySection />} />
+        <Route path="badge" element={<BadgeSectionRoute />} />
+        <Route path="session" element={<SessionSection />} />
+      </Route>
+    </Routes>
+  );
+}
+
+function renderPage(initialPath = '/account/identity') {
   return render(
-    <MemoryRouter>
-      <AccountPage />
+    <MemoryRouter initialEntries={[initialPath]}>
+      <AccountRoutes />
     </MemoryRouter>
   );
 }
@@ -116,13 +133,13 @@ describe('AccountPage', () => {
   it('signed-out renders all three provider buttons and signs in with the right id', async () => {
     renderPage();
     const google = screen.getByRole('button', {
-      name: /continue with google/i,
+      name: /sign in with google/i,
     });
     const github = screen.getByRole('button', {
-      name: /continue with github/i,
+      name: /sign in with github/i,
     });
     const discord = screen.getByRole('button', {
-      name: /continue with discord/i,
+      name: /sign in with discord/i,
     });
     expect(google).toBeInTheDocument();
     expect(github).toBeInTheDocument();
@@ -158,8 +175,8 @@ describe('AccountPage', () => {
 
     // Re-render against the updated state — that's the ready view.
     rerender(
-      <MemoryRouter>
-        <AccountPage />
+      <MemoryRouter initialEntries={['/account/identity']}>
+        <AccountRoutes />
       </MemoryRouter>
     );
     await screen.findAllByText('W1AW');
@@ -210,7 +227,7 @@ describe('AccountPage', () => {
       created_at: '2026-06-17T00:00:00Z',
     };
     renderPage();
-    expect(screen.getByText('K1ABC')).toBeInTheDocument();
+    expect(screen.getAllByText('K1ABC').length).toBeGreaterThan(0);
     expect(screen.getByText(/^verified$/i)).toBeInTheDocument();
     expect(screen.queryByText(/not yet verified/i)).toBeNull();
   });
@@ -325,11 +342,11 @@ describe('AccountPage', () => {
       await waitFor(() => expect(refreshProfile).toHaveBeenCalled());
 
       rerender(
-        <MemoryRouter>
-          <AccountPage />
+        <MemoryRouter initialEntries={['/account/identity']}>
+          <AccountRoutes />
         </MemoryRouter>
       );
-      expect(screen.getByText(/^verified$/i)).toBeInTheDocument();
+      expect(screen.getAllByText(/^verified/i).length).toBeGreaterThan(0);
     });
 
     it('confirm: still-present nudges the user to actually remove it', async () => {
@@ -400,7 +417,7 @@ describe('AccountPage', () => {
         verified: false,
         created_at: '2026-06-17T00:00:00Z',
       };
-      renderPage();
+      renderPage('/account/badge');
       const img = screen.getByAltText('W1AW on MORSE') as HTMLImageElement;
       expect(img.src).toContain('/badge/W1AW.svg');
       const snippet = screen.getByLabelText(/^snippet$/i) as HTMLInputElement;
@@ -420,7 +437,7 @@ describe('AccountPage', () => {
         verified: true,
         created_at: '2026-06-17T00:00:00Z',
       };
-      renderPage();
+      renderPage('/account/badge');
       expect(screen.getByAltText('K1ABC on MORSE')).toBeInTheDocument();
     });
   });

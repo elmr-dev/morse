@@ -5,7 +5,11 @@
 import { Navigate, Route, Routes } from 'react-router-dom';
 import { SiteHeader } from './components/site-nav';
 import { useIsStandalone } from './lib/use-standalone';
-import AccountPage from './pages/account-page';
+import AccountPage, {
+  BadgeSectionRoute,
+  IdentitySection,
+  SessionSection,
+} from './pages/account-page';
 import BeatTheBotPage from './pages/beat-the-bot-page';
 import DecodePage from './pages/decode-page';
 import FaqPage from './pages/faq-page';
@@ -31,7 +35,12 @@ export default function App() {
         <Route path="/beat-the-bot" element={<BeatTheBotPage />} />
         <Route path="/leaderboard" element={<LeaderboardPage />} />
         <Route path="/faq" element={<FaqPage />} />
-        <Route path="/account" element={<AccountPage />} />
+        <Route path="/account" element={<AccountPage />}>
+          <Route index element={<Navigate to="identity" replace />} />
+          <Route path="identity" element={<IdentitySection />} />
+          <Route path="badge" element={<BadgeSectionRoute />} />
+          <Route path="session" element={<SessionSection />} />
+        </Route>
       </Routes>
     </>
   );
