@@ -107,7 +107,7 @@ function SearchInput({
         autoComplete="off"
         autoCapitalize="characters"
         spellCheck={false}
-        className="w-full rounded-lg border border-border bg-card px-9 py-2 font-mono text-[14px] uppercase tracking-wider outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+        className="w-full rounded-lg border border-border bg-card px-9 py-2 font-mono text-[16px] sm:text-[14px] uppercase tracking-wider outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
       />
       {value && (
         <button

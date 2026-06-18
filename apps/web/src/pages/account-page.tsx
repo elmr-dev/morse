@@ -805,7 +805,7 @@ function BadgeSection({ callsign }: { callsign: string }) {
             id="badge-snippet"
             value={snippet}
             readOnly
-            className="min-w-0 flex-1 font-mono text-xs"
+            className="min-w-0 flex-1 font-mono text-base sm:text-xs"
           />
           <Button
             type="button"
