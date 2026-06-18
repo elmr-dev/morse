@@ -1,6 +1,11 @@
 {
   "$schema": "https://unpkg.com/knip@6/schema.json",
-  "ignore": ["archive/**", "apps/web/src/components/ui/**"],
+  "ignore": [
+    "archive/**",
+    "apps/web/src/components/ui/**",
+    "apps/web/supabase/functions/**",
+    "apps/web/netlify/edge-functions/**"
+  ],
   "ignoreBinaries": ["flac", "ffmpeg"],
   "ignoreWorkspaces": ["packages/typescript-config"],
   "workspaces": {

@@ -11,7 +11,14 @@
     "useIgnoreFile": true
   },
   "files": {
-    "includes": ["**/*.ts", "**/*.tsx", "!archive/**", "!**/*.generated.ts"]
+    "includes": [
+      "**/*.ts",
+      "**/*.tsx",
+      "!archive/**",
+      "!**/*.generated.ts",
+      "!apps/web/supabase/functions/**",
+      "!apps/web/netlify/edge-functions/**"
+    ]
   },
   "formatter": {
     "enabled": true,

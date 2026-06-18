@@ -11,13 +11,33 @@ import { useEffect, useState } from 'react';
  * booleans, and objects as well as strings. All localStorage access is
  * guarded so a private-mode / quota / parse failure degrades to in-memory
  * state rather than throwing.
+ *
+ * Pass `validate` to reject payloads from an older schema (e.g. a record
+ * shape that changed between releases) — when it returns false, the stored
+ * key is removed and we fall back to `initial`. Without it, any JSON that
+ * parses is trusted, which silently renders wrong on a shape change.
  */
-export function usePersistedState<T>(key: string, initial: T) {
+export function usePersistedState<T>(
+  key: string,
+  initial: T,
+  validate?: (parsed: unknown) => parsed is T
+) {
   const [value, setValue] = useState<T>(() => {
     try {
       const raw = localStorage.getItem(key);
       if (raw === null) return initial;
-      return JSON.parse(raw) as T;
+      const parsed: unknown = JSON.parse(raw);
+      if (validate && !validate(parsed)) {
+        // Stale shape — discard so we don't render undefined fields as if they
+        // were valid data.
+        try {
+          localStorage.removeItem(key);
+        } catch {
+          // Ignore.
+        }
+        return initial;
+      }
+      return parsed as T;
     } catch {
       return initial;
     }

@@ -9,6 +9,7 @@ import {
   Clock,
   Cpu,
   Gauge,
+  Info,
   Loader2,
   MonitorSmartphone,
   Radio,
@@ -216,7 +217,12 @@ export default function DecodePage() {
 
   return (
     <div>
-      <PageHeader eyebrow="Generate & decode" icon={Radio} title="Decode">
+      <PageHeader
+        eyebrow="Generate & decode"
+        icon={Radio}
+        title="Decode"
+        wideIntro
+      >
         Generate a Morse clip from 12–50 WPM at any SNR, then watch the model
         copy it — entirely in your browser.
       </PageHeader>
@@ -286,9 +292,16 @@ export default function DecodePage() {
 
         {(text.includes(' ') || text.length >= 30) && (
           <div className="mt-1.5 flex items-start gap-3 text-[11px] text-muted-foreground">
-            <span className="flex-1">
-              {text.includes(' ') &&
-                'Spaces are keyed as word breaks. The model copies letters only, so they don’t count against it.'}
+            <span className="flex-1 inline-flex items-start gap-1">
+              {text.includes(' ') && (
+                <>
+                  <Info className="size-3.5 shrink-0 mt-0.5" />
+                  <span>
+                    Spaces are keyed as word breaks. The model copies letters
+                    only, so they don’t count against it.
+                  </span>
+                </>
+              )}
             </span>
             {text.length >= 30 && (
               <span className="shrink-0 font-mono">

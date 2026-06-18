@@ -1,6 +1,6 @@
 {
   "name": "morse-web",
-  "version": "2026.6.4",
+  "version": "2026.6.5",
   "type": "module",
   "license": "AGPL-3.0-or-later",
   "scripts": {
@@ -19,6 +19,7 @@
   "dependencies": {
     "@fontsource-variable/inter": "^5.2.8",
     "@fontsource-variable/jetbrains-mono": "^5.2.8",
+    "@supabase/supabase-js": "^2.108.2",
     "@tailwindcss/vite": "^4.3.0",
     "canvas-confetti": "^1.9.4",
     "class-variance-authority": "^0.7.1",
@@ -48,6 +49,7 @@
     "happy-dom": "^20.9.0",
     "onnxruntime-node": "^1.24.3",
     "playwright": "^1.60.0",
+    "supabase": "^2.107.0",
     "tsx": "^4.21.0",
     "typescript": "~6.0.2",
     "typescript-config": "workspace:*",

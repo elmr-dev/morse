@@ -7,19 +7,27 @@ import {
   ChevronDown,
   Download,
   ExternalLink,
+  HelpCircle,
+  LogOut,
   Monitor,
   Moon,
+  Settings,
   Share,
+  ShieldCheck,
   SquarePlus,
   Sun,
 } from 'lucide-react';
 import { useState } from 'react';
+import { NavLink } from 'react-router-dom';
 import {
   Drawer,
   DrawerContent,
   DrawerDescription,
   DrawerTitle,
 } from '@/components/ui/drawer';
+import { useAuth } from '@/lib/auth';
+import { isAuthConfigured } from '@/lib/supabase';
+import { useGravatarUrl } from '@/lib/use-gravatar-url';
 import { useInstall } from '@/lib/use-install';
 import { useIsStandalone } from '@/lib/use-standalone';
 import { type Theme, useTheme } from '@/lib/use-theme';
@@ -46,7 +54,7 @@ function InstallSection() {
 
   if (platform === 'android' && canInstall) {
     return (
-      <div className="border-t border-border pt-1">
+      <div className="border-t border-foreground/15 pt-3">
         <button
           type="button"
           onClick={() => promptInstall()}
@@ -61,7 +69,7 @@ function InstallSection() {
 
   if (platform === 'ios') {
     return (
-      <div className="border-t border-border pt-1">
+      <div className="border-t border-foreground/15 pt-3">
         <button
           type="button"
           onClick={() => setShowSteps((v) => !v)}
@@ -110,17 +118,98 @@ export function MoreSheet({
 }) {
   const { theme, setTheme } = useTheme();
   const standalone = useIsStandalone();
+  const { status, profile, user, signOut } = useAuth();
+  const signedIn = status === 'ready' && profile;
+  const avatarUrl = useGravatarUrl(user?.email, 80);
 
   return (
     <Drawer open={open} onOpenChange={onOpenChange}>
       <DrawerContent>
-        <div className="flex flex-col gap-4 px-5 pt-2 pb-4">
+        <div className="flex flex-col px-5 pt-2 pb-4">
           <DrawerTitle className="sr-only">More</DrawerTitle>
           <DrawerDescription className="sr-only">
             Appearance, source code, and app info.
           </DrawerDescription>
 
-          <div>
+          {/* Signed-in identity banner — anchors the sheet so the user
+              immediately sees who's logged in before the nav rows. */}
+          {isAuthConfigured && signedIn && (
+            <div className="flex items-center gap-3 rounded-lg bg-accent px-3 py-3 ring-1 ring-inset ring-primary/40">
+              <img
+                src={avatarUrl ?? undefined}
+                alt=""
+                aria-hidden="true"
+                crossOrigin="anonymous"
+                width={40}
+                height={40}
+                className="size-10 rounded-full bg-muted"
+              />
+              <div className="flex min-w-0 flex-1 flex-col leading-tight">
+                <span className="flex items-center gap-1.5 font-mono text-base font-semibold text-foreground">
+                  {profile.call_sign}
+                  {profile.verified && (
+                    <ShieldCheck
+                      className="size-4 text-verified"
+                      aria-label="Verified"
+                    />
+                  )}
+                </span>
+                {user?.email && (
+                  <span className="truncate text-xs text-muted-foreground">
+                    {user.email}
+                  </span>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Destinations — the main reason to open this sheet on mobile is
+              to navigate to a page that doesn't fit the bottom bar. */}
+          <div className={cn(isAuthConfigured && signedIn && 'mt-3')}>
+            <NavLink
+              to="/faq"
+              onClick={() => onOpenChange(false)}
+              className={rowClass}
+            >
+              <HelpCircle className="size-5 text-muted-foreground" />
+              <span className="flex-1 text-left">FAQ</span>
+            </NavLink>
+            {isAuthConfigured &&
+              (signedIn ? (
+                <>
+                  <NavLink
+                    to="/account"
+                    onClick={() => onOpenChange(false)}
+                    className={rowClass}
+                  >
+                    <Settings className="size-5 text-muted-foreground" />
+                    <span className="flex-1 text-left">Settings</span>
+                  </NavLink>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onOpenChange(false);
+                      void signOut();
+                    }}
+                    className={cn(rowClass, 'text-destructive')}
+                  >
+                    <LogOut className="size-5 text-destructive" />
+                    <span className="flex-1 text-left">Sign out</span>
+                  </button>
+                </>
+              ) : (
+                <NavLink
+                  to="/account"
+                  onClick={() => onOpenChange(false)}
+                  className={rowClass}
+                >
+                  <Settings className="size-5 text-muted-foreground" />
+                  <span className="flex-1 text-left">Settings</span>
+                </NavLink>
+              ))}
+          </div>
+
+          <div className="border-t border-foreground/15 pt-3">
             <p className="px-3 pb-1 text-muted-foreground text-xs font-medium uppercase tracking-wide">
               Appearance
             </p>
@@ -153,14 +242,12 @@ export function MoreSheet({
             </fieldset>
           </div>
 
+          {/* App-level affordances: install on mobile, or provisioning the
+              offline model once installed. Each is conditional on platform. */}
           {!standalone && <InstallSection />}
-
-          {/* Offline provisioning is the step after install: installed PWAs get
-              durable storage, so the cached 16MB survives — in a plain tab it's
-              evictable, so we don't make a promise we can't keep. */}
           {standalone && <OfflineSection />}
 
-          <div className="border-t border-border pt-1">
+          <div className="border-t border-foreground/15 pt-3">
             <a
               href={GITHUB_URL}
               target="_blank"
@@ -173,7 +260,7 @@ export function MoreSheet({
             </a>
           </div>
 
-          <div className="border-t border-border pt-4">
+          <div className="border-t border-foreground/15 pt-3">
             <FooterContent />
           </div>
         </div>

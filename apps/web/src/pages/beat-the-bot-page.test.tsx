@@ -9,6 +9,7 @@ import {
   screen,
   waitFor,
 } from '@testing-library/react';
+import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { axe } from 'vitest-axe';
 import type { DualDecodeResult } from '../inference/dual-decode';
@@ -61,6 +62,25 @@ vi.mock('@/lib/cw-message', () => ({
   MAX_CW_MESSAGE: 40,
 }));
 vi.mock('@/lib/confetti', () => ({ fireConfetti: () => fireConfetti() }));
+vi.mock('@/lib/use-bests-sync', () => ({
+  useBestsSync: () => ({ syncNow: () => {} }),
+}));
+vi.mock('@/lib/auth', () => ({
+  useAuth: () => ({
+    status: 'signed-out',
+    session: null,
+    user: null,
+    profile: null,
+    signIn: () => Promise.resolve(),
+    signOut: () => Promise.resolve(),
+    claimCallsign: () => Promise.resolve({ ok: true }),
+    refreshProfile: () => Promise.resolve(),
+  }),
+}));
+vi.mock('@/lib/supabase', () => ({
+  supabase: null,
+  isAuthConfigured: false,
+}));
 
 import BeatTheBotPage from './beat-the-bot-page';
 
@@ -138,7 +158,11 @@ afterEach(() => {
 
 // Wait for loadSession so the play button enables.
 async function renderArmed() {
-  const result = render(<BeatTheBotPage />);
+  const result = render(
+    <MemoryRouter>
+      <BeatTheBotPage />
+    </MemoryRouter>
+  );
   await waitFor(() =>
     expect(screen.getByLabelText('Play the signal once')).toBeEnabled()
   );
@@ -189,11 +213,9 @@ describe('BeatTheBotPage', () => {
 
   it('walks armed → copying → reveal → next round', async () => {
     await renderArmed();
-    // Armed: chips + play button.
-    expect(screen.getByText('WPM')).toBeInTheDocument();
-    expect(
-      screen.getByText(/One listen — close the gap on/)
-    ).toBeInTheDocument();
+    // Armed: YOU/BOT spec lines + play button.
+    expect(screen.getAllByText('WPM').length).toBeGreaterThan(0);
+    expect(screen.getByLabelText('Play the signal once')).toBeInTheDocument();
 
     await play();
     // Copying: the play button is gone (one listen) and the copy field is live.
@@ -252,7 +274,7 @@ describe('BeatTheBotPage', () => {
     expect(fireConfetti).toHaveBeenCalledTimes(1); // no additional confetti
   });
 
-  it('increments beatCount only on strict userCER < botCER', async () => {
+  it('increments beatCount only on strict userCopyPct > botCopyPct', async () => {
     decodeDual.mockResolvedValue(botResult('XXXX')); // bot misses → botCER > 0
     await renderArmed();
     await play();
@@ -282,18 +304,22 @@ describe('BeatTheBotPage', () => {
     });
   });
 
-  it('records bestCER after first submission', async () => {
+  it('records bestCopyPct after first submission', async () => {
     decodeDual.mockResolvedValue(botResult('XXXX'));
     await renderArmed();
     await play();
-    await submit(TRUTH); // userCER = 0
+    await submit(TRUTH); // perfect copy → 100%
 
     await screen.findByText(/New best at/); // isNewBest=true on first round
     await waitFor(() => {
       const stored = JSON.parse(
         localStorage.getItem('morse:btb:bests') ?? '{}'
       );
-      expect(stored.technician.bestCER).toBe(0);
+      expect(stored.technician.bestCopyPct).toBe(100);
+      // Bot's copy % is frozen alongside the best from THAT round.
+      expect(stored.technician.botCopyPctAtBest).toBe(0);
+      // Untouched tiers keep botCopyPctAtBest null.
+      expect(stored['no-code'].botCopyPctAtBest).toBeNull();
     });
   });
 
@@ -387,19 +413,19 @@ describe('BeatTheBotPage', () => {
       expect(group).toBeInTheDocument();
       expect(screen.getByRole('radio', { name: 'Callsigns' })).toBeChecked();
       expect(screen.getByRole('radio', { name: 'Random' })).not.toBeChecked();
-      // Callsign mode keys twice; the chip says so.
-      expect(screen.getByText('2X')).toBeInTheDocument();
+      // Callsign mode keys twice; the framing line says so.
+      expect(screen.getByText(/sent twice/)).toBeInTheDocument();
     });
 
-    it('selecting Random re-arms a single-send round (no KEYED 2X chip, mode-specific helper)', async () => {
+    it('selecting Random re-arms a single-send round (framing line swaps)', async () => {
       await renderArmed();
       fireEvent.click(screen.getByRole('radio', { name: 'Random' }));
       expect(screen.getByRole('radio', { name: 'Random' })).toBeChecked();
       expect(
         screen.getByRole('radio', { name: 'Callsigns' })
       ).not.toBeChecked();
-      // Keyed once → no 2X chip; helper reflects the active mode.
-      expect(screen.queryByText('2X')).toBeNull();
+      // Keyed once → framing line reflects the active mode.
+      expect(screen.queryByText(/sent twice/)).toBeNull();
       expect(screen.getByText(/Random groups/)).toBeInTheDocument();
     });
 
@@ -470,7 +496,7 @@ describe('BeatTheBotPage', () => {
         const stored = JSON.parse(
           localStorage.getItem('morse:btb:bests') ?? '{}'
         );
-        expect(stored.technician.bestCER).toBe(0);
+        expect(stored.technician.bestCopyPct).toBe(100);
       });
       // No mode-dimensioned best key was introduced.
       expect(localStorage.getItem('morse:btb:bests:random')).toBeNull();

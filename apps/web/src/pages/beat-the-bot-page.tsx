@@ -9,11 +9,10 @@ import {
   Crown,
   Eye,
   GitMerge,
-  Headphones,
+  Info,
   Loader2,
   Lock,
   Play,
-  Radio,
   RadioTower,
   ScanEye,
   Send,
@@ -21,21 +20,33 @@ import {
   TriangleAlert,
   Trophy,
   User,
-  Zap,
 } from 'lucide-react';
 import { calculateDuration, translate } from 'morse-audio';
 import { Fragment, useEffect, useRef, useState } from 'react';
+import { NavLink } from 'react-router-dom';
 import { BoxingGloveIcon } from '@/components/boxing-glove-icon';
 import PageHeader from '@/components/page-header';
 import { usePrefersReducedMotion } from '@/components/presence';
+import SyncStatus from '@/components/sync-status';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import VolumeControl from '@/components/volume-control';
+import { useAuth } from '@/lib/auth';
 import { fireConfetti } from '@/lib/confetti';
 import { randomCwMessage } from '@/lib/cw-message';
+import { useBestsSync } from '@/lib/use-bests-sync';
 import { useDocumentHead } from '@/lib/use-document-head';
 import { clearPersisted, usePersistedState } from '@/lib/use-persisted-state';
+import {
+  applyRound,
+  BESTS_STORAGE_KEY,
+  type Bests,
+  BOT_REF,
+  EMPTY_BESTS,
+  isBests,
+  TIERS,
+  type Tier,
+} from '../inference/beat-the-bot';
 import {
   callsignCountry,
   callsignRegion,
@@ -56,67 +67,6 @@ const TONE_FREQ = 700;
 const CHAR_MS = 95;
 const BAR_MS = 1300;
 const STAGE_PAD = 250;
-
-export interface Tier {
-  id: 'no-code' | 'technician' | 'general' | 'extra';
-  name: string;
-  snr: number; // dB — the HUMAN clip (higher = easier)
-  wpm: number; // the HUMAN clip
-  icon: LucideIcon;
-  accent: string; // CSS custom property reference
-}
-
-export const TIERS: readonly Tier[] = [
-  {
-    id: 'no-code',
-    name: 'No-Code',
-    snr: 10,
-    wpm: 13,
-    icon: Headphones,
-    accent: 'var(--tier-no-code)',
-  },
-  {
-    id: 'technician',
-    name: 'Technician',
-    snr: 5,
-    wpm: 18,
-    icon: Radio,
-    accent: 'var(--tier-technician)',
-  },
-  {
-    id: 'general',
-    name: 'General',
-    snr: 0,
-    wpm: 22,
-    icon: RadioTower,
-    accent: 'var(--tier-general)',
-  },
-  {
-    id: 'extra',
-    name: 'Extra',
-    snr: -6,
-    wpm: 28,
-    icon: Zap,
-    accent: 'var(--tier-extra)',
-  },
-];
-
-// The bot copies this fixed hard clip every round, regardless of tier.
-// Equal to the Extra human setting, so at Extra the contest is near heads-up.
-export const BOT_REF = { snr: -6, wpm: 28 } as const;
-
-interface TierRecord {
-  bestCER: number | null; // null = no rounds at this tier yet
-  beatCount: number; // strict userCER < botCER
-}
-type Bests = Record<Tier['id'], TierRecord>;
-
-const EMPTY_BESTS: Bests = {
-  'no-code': { bestCER: null, beatCount: 0 },
-  technician: { bestCER: null, beatCount: 0 },
-  general: { bestCER: null, beatCount: 0 },
-  extra: { bestCER: null, beatCount: 0 },
-};
 
 type Phase = 'armed' | 'copying' | 'reveal';
 
@@ -229,19 +179,28 @@ export default function BeatTheBotPage() {
   });
 
   const reduce = usePrefersReducedMotion();
+  const { profile } = useAuth();
+  const ownCallSign = profile?.call_sign ?? null;
 
   const [activeTier, setActiveTier] = usePersistedState<Tier['id']>(
     'morse:btb:tier',
     'technician'
   );
   const [bests, setBests] = usePersistedState<Bests>(
-    'morse:btb:bests',
-    EMPTY_BESTS
+    BESTS_STORAGE_KEY,
+    EMPTY_BESTS,
+    isBests
   );
   const [textMode, setTextMode] = usePersistedState<TextMode>(
     'morse:btb:textmode',
     'callsigns'
   );
+
+  // Cloud sync (slice 4). Page-scoped: the only triggers that fire while this
+  // page is mounted are sign-in / online / visibilitychange. That's fine — bests
+  // are only earned here, and the sign-in reconcile catches anything missed
+  // next visit. A future leaderboard route should also call syncNow() on entry.
+  const { syncNow } = useBestsSync(bests, setBests);
 
   const tierObj = TIERS.find((t) => t.id === activeTier) ?? TIERS[2];
 
@@ -297,11 +256,30 @@ export default function BeatTheBotPage() {
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: mount-only round init — double-rAF guarantees the browser paints the skeleton before the synchronous audio generation blocks the main thread
   useEffect(() => {
+    // Honor a `?tier=` deep-link (e.g. from the leaderboard's "rank here"
+    // CTA) before the first round generates, so the user lands on the
+    // requested tier with no flicker. We strip the param after consuming it
+    // so a reload doesn't keep overriding the user's later tier choices.
+    let startTier = tierObj;
+    try {
+      const url = new URL(window.location.href);
+      const param = url.searchParams.get('tier');
+      const match = param ? TIERS.find((t) => t.id === param) : null;
+      if (match) {
+        startTier = match;
+        if (match.id !== activeTier) setActiveTier(match.id);
+        url.searchParams.delete('tier');
+        window.history.replaceState({}, '', url.toString());
+      }
+    } catch {
+      // Bad URL / no window — fall through to the persisted tier.
+    }
+
     let r1: number;
     let r2: number;
     r1 = requestAnimationFrame(() => {
       r2 = requestAnimationFrame(() =>
-        setRound(randomRound(tierObj, textMode))
+        setRound(randomRound(startTier, textMode))
       );
     });
     return () => {
@@ -415,28 +393,22 @@ export default function BeatTheBotPage() {
           : decodeDataUri(round.bot.dataUri, TONE_FREQ)));
       const truth = lettersOnly(round.text);
       const userText = lettersOnly(guess.toUpperCase().trim());
-      const userCER = 1 - accuracy(truth, userText);
-      const botCER = 1 - accuracy(truth, res.text);
-      const rec = bests[round.tier];
-      const newBestFlag =
-        userCER < 1 && (rec.bestCER === null || userCER < rec.bestCER);
+      const userCopyPct = Math.round(accuracy(truth, userText) * 100);
+      const botCopyPct = Math.round(accuracy(truth, res.text) * 100);
+      const { bests: nextBests, isNewBest: newBestFlag } = applyRound(
+        bests,
+        round.tier,
+        userCopyPct,
+        botCopyPct
+      );
       setIsNewBest(newBestFlag);
-      setBests((prev) => {
-        const r = prev[round.tier];
-        // A 0% score (userCER = 1) doesn't count as a best — keep null until
-        // the user copies at least one character correctly.
-        const newBestVal =
-          userCER >= 1
-            ? r.bestCER
-            : r.bestCER === null
-              ? userCER
-              : Math.min(r.bestCER, userCER);
-        const beat = userCER < botCER ? 1 : 0; // STRICT < — a tie does NOT count
-        return {
-          ...prev,
-          [round.tier]: { bestCER: newBestVal, beatCount: r.beatCount + beat },
-        };
-      });
+      setBests(nextBests);
+      // Publish the fresh best to the cloud immediately rather than waiting
+      // for the next online/visibility trigger. We pass nextBests explicitly
+      // — useBestsSync's ref hasn't re-rendered yet, so without the override
+      // it would push the PRE-round bests and the new score would be lost
+      // until the next visibility/online trigger. Fire-and-forget.
+      if (newBestFlag) syncNow(nextBests);
       setBotResult(res);
       setPhase('reveal');
       setSubmitting(false);
@@ -510,89 +482,100 @@ export default function BeatTheBotPage() {
         Out-copy it anyway.
       </PageHeader>
 
-      <Card>
-        <CardContent className="flex flex-col gap-5">
-          <TierRow
-            bests={bests}
-            activeTier={activeTier}
-            phase={phase}
-            onTierChange={onTierChange}
-            disabled={phase === 'copying'}
-          />
+      <div className="flex flex-col gap-5">
+        <TierRow
+          bests={bests}
+          activeTier={activeTier}
+          phase={phase}
+          onTierChange={onTierChange}
+          disabled={phase === 'copying'}
+        />
 
-          <div className="border-t border-border" />
+        <div className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1 text-[13px]">
+          <SyncStatus />
+          <span aria-hidden="true" className="text-muted-foreground/50">
+            ·
+          </span>
+          <NavLink
+            to="/leaderboard"
+            className="inline-flex items-center gap-1 text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
+          >
+            <Trophy className="size-[14px]" aria-hidden="true" />
+            View leaderboard
+          </NavLink>
+        </div>
 
-          {/* Audio + phase panels — skeleton shown while the initial clip generates
+        {/* Audio + phase panels — skeleton shown while the initial clip generates
               after the first paint, then swapped for the real content. */}
-          {round ? (
-            <>
-              {/* biome-ignore lint/a11y/useMediaCaption: programmatically generated audio */}
-              <audio ref={audioRef} src={round.human.dataUri} preload="auto" />
+        {round ? (
+          <>
+            {/* biome-ignore lint/a11y/useMediaCaption: programmatically generated audio */}
+            <audio ref={audioRef} src={round.human.dataUri} preload="auto" />
 
-              {phase === 'armed' && (
-                <ArmedPanel
-                  round={round}
-                  tierObj={tierObj}
-                  textMode={textMode}
-                  onTextModeChange={onTextModeChange}
-                  modelReady={modelReady}
-                  isPlaying={isPlaying}
-                  volume={volume}
-                  onVolumeChange={onVolumeChange}
-                  onPlay={onPlay}
-                />
-              )}
+            {phase === 'armed' && (
+              <ArmedPanel
+                round={round}
+                tierObj={tierObj}
+                textMode={textMode}
+                onTextModeChange={onTextModeChange}
+                modelReady={modelReady}
+                isPlaying={isPlaying}
+                volume={volume}
+                onVolumeChange={onVolumeChange}
+                onPlay={onPlay}
+                ownCallSign={ownCallSign}
+              />
+            )}
 
-              {phase === 'copying' && (
-                <CopyingPanel
-                  guess={guess}
-                  setGuess={setGuess}
-                  botLocked={botLocked}
-                  submitting={submitting}
-                  inputRef={inputRef}
-                  onSubmit={submitGuess}
-                  reduce={reduce}
-                  devTruth={
-                    import.meta.env.MODE === 'development' ? round.text : null
-                  }
-                />
-              )}
+            {phase === 'copying' && (
+              <CopyingPanel
+                guess={guess}
+                setGuess={setGuess}
+                botLocked={botLocked}
+                submitting={submitting}
+                inputRef={inputRef}
+                onSubmit={submitGuess}
+                reduce={reduce}
+                devTruth={
+                  import.meta.env.MODE === 'development' ? round.text : null
+                }
+              />
+            )}
 
-              {phase === 'reveal' && botResult && (
-                <RevealPanel
-                  round={round}
-                  guess={userText}
-                  botResult={botResult}
-                  isNewBest={isNewBest}
-                  tierName={tierObj.name}
-                  revealStep={revealStep}
-                  userPct={userPct}
-                  botPct={botPct}
-                  reduce={reduce}
-                  onNext={nextRound}
-                />
-              )}
-            </>
-          ) : (
-            /* Skeleton: disabled play button shown while the clip is being generated */
-            <div className="flex flex-col items-center gap-4">
-              <div className="size-[60px] sm:size-[72px] rounded-full bg-primary flex items-center justify-center opacity-50">
-                <Loader2 className="size-7 sm:size-8 animate-spin text-primary-foreground" />
-              </div>
-              <span className="inline-flex items-center gap-1.5 text-[13px] text-muted-foreground">
-                <Cpu className="size-3.5" />
-                Generating signal…
-              </span>
+            {phase === 'reveal' && botResult && (
+              <RevealPanel
+                round={round}
+                guess={userText}
+                botResult={botResult}
+                isNewBest={isNewBest}
+                tierName={tierObj.name}
+                revealStep={revealStep}
+                userPct={userPct}
+                botPct={botPct}
+                reduce={reduce}
+                onNext={nextRound}
+              />
+            )}
+          </>
+        ) : (
+          /* Skeleton: disabled play button shown while the clip is being generated */
+          <div className="flex flex-col items-center gap-4">
+            <div className="size-[60px] sm:size-[72px] rounded-full bg-primary flex items-center justify-center opacity-50">
+              <Loader2 className="size-7 sm:size-8 animate-spin text-primary-foreground" />
             </div>
-          )}
+            <span className="inline-flex items-center gap-1.5 text-[13px] text-muted-foreground">
+              <Cpu className="size-3.5" />
+              Generating signal…
+            </span>
+          </div>
+        )}
 
-          {error && (
-            <div className="flex items-center gap-1.5 text-bad font-mono text-sm">
-              <TriangleAlert className="size-4" /> {error}
-            </div>
-          )}
-        </CardContent>
-      </Card>
+        {error && (
+          <div className="flex items-center gap-1.5 text-bad font-mono text-sm">
+            <TriangleAlert className="size-4" /> {error}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -616,10 +599,7 @@ function TierRow({
         const rec = bests[tier.id];
         const isActive = tier.id === activeTier;
         const Icon = tier.icon;
-        const bestPct =
-          rec.bestCER === null
-            ? null
-            : Math.max(0, Math.round((1 - rec.bestCER) * 100));
+        const bestPct = rec.bestCopyPct;
         return (
           <button
             key={tier.id}
@@ -632,7 +612,7 @@ function TierRow({
                 ? {
                     borderColor: tier.accent,
                     boxShadow: `0 0 0 1px ${tier.accent}`,
-                    backgroundColor: `color-mix(in oklch, ${tier.accent} 8%, transparent)`,
+                    backgroundColor: `color-mix(in oklch, ${tier.accent} 12%, var(--card))`,
                   }
                 : undefined
             }
@@ -643,7 +623,7 @@ function TierRow({
             } ${
               isActive
                 ? ''
-                : 'border-border/50 bg-background hover:border-border hover:bg-muted/30'
+                : 'border-border/50 bg-card hover:border-border hover:bg-muted/30'
             } disabled:opacity-50 disabled:pointer-events-none disabled:cursor-default`}
           >
             <span className="flex items-center gap-1.5">
@@ -685,17 +665,6 @@ function TierRow({
   );
 }
 
-// Quiet, non-interactive readout pill. Deliberately borderless and hover-free so
-// it reads as metadata, not a control — the play button and the mode toggle are
-// the only things meant to look pressable. Two-tone: faint label, bright value.
-function SpecPill({ children }: { children: React.ReactNode }) {
-  return (
-    <span className="inline-flex items-center gap-1 rounded-full bg-muted/50 px-2 py-0.5 text-[11px] text-muted-foreground">
-      {children}
-    </span>
-  );
-}
-
 // Single-select segmented control for the round's text mode. A real radio group
 // (role="radiogroup" + role="radio") so keyboard / assistive tech announce
 // "1 of 2 selected" rather than two independent toggles.
@@ -727,7 +696,7 @@ function TextModeToggle({
             role="radio"
             aria-checked={active}
             onClick={() => onChange(o.id)}
-            className={`flex-1 sm:flex-initial inline-flex items-center justify-center gap-1.5 rounded-md px-3 py-2 sm:py-1.5 text-[14px] font-medium transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring/50 ${
+            className={`flex-1 sm:flex-initial inline-flex items-center justify-center gap-1.5 rounded-md px-3 py-2 sm:px-8 sm:py-1.5 text-[14px] font-medium transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring/50 ${
               active
                 ? 'bg-primary text-primary-foreground'
                 : 'text-muted-foreground hover:text-foreground'
@@ -752,6 +721,7 @@ function ArmedPanel({
   volume,
   onVolumeChange,
   onPlay,
+  ownCallSign,
 }: {
   round: Round;
   tierObj: Tier;
@@ -762,83 +732,124 @@ function ArmedPanel({
   volume: number;
   onVolumeChange: (v: number) => void;
   onPlay: () => void;
+  ownCallSign: string | null;
 }) {
+  const isCallsigns = round.mode === 'callsigns';
   return (
-    <div className="relative flex flex-col items-center gap-4">
-      {/* Volume floats in the corner (fine pointers only) so it never adds a
-          row of dead space above the chips; hidden entirely on touch. */}
-      <div className="absolute right-0 top-0 pointer-coarse:hidden">
-        <VolumeControl value={volume} onChange={onVolumeChange} />
+    <div>
+      {/* Matchup bar: YOU · play · BOT in one horizontal row. Same card shape
+          as CopyingPanel so pressing play swaps contents in place. Stays a
+          single row at all widths — compresses on mobile, never stacks. */}
+      <div className="flex flex-col gap-4 rounded-lg border border-border bg-card p-4 shadow-sm">
+        <div className="flex items-center gap-2 sm:gap-4">
+          <div className="flex-1 min-w-0 flex flex-col gap-1">
+            <span className="text-[10px] sm:text-[11px] font-medium uppercase tracking-wide text-primary">
+              You
+            </span>
+            <span className="font-mono text-[15px] sm:text-[20px] font-semibold text-foreground truncate">
+              {ownCallSign ?? 'This device'}
+            </span>
+            <span
+              className="inline-flex w-fit items-center gap-1 rounded-full border px-1.5 sm:px-2 py-0.5 text-[10px] sm:text-[11px] font-medium"
+              style={{
+                borderColor:
+                  'color-mix(in oklch, var(--tier-no-code) 40%, transparent)',
+                backgroundColor:
+                  'color-mix(in oklch, var(--tier-no-code) 10%, transparent)',
+                color: 'var(--tier-no-code)',
+              }}
+            >
+              your clip
+            </span>
+            <span className="font-mono text-[11px] sm:text-[12px] text-muted-foreground tabular-nums whitespace-nowrap">
+              <span className="text-foreground">{formatSnr(tierObj.snr)}</span>
+              <span> dB</span>
+              <span className="mx-1 sm:mx-1.5 text-muted-foreground/50">·</span>
+              <span className="text-foreground">{tierObj.wpm}</span>
+              <span> WPM</span>
+            </span>
+          </div>
+
+          <div className="flex-none flex flex-col items-center gap-1.5 sm:gap-2 px-1 sm:px-2">
+            <span className="text-[10px] sm:text-[11px] font-medium uppercase tracking-[0.2em] text-muted-foreground">
+              vs
+            </span>
+            <button
+              type="button"
+              onClick={onPlay}
+              disabled={!modelReady || isPlaying}
+              aria-label="Play the signal once"
+              className="size-[64px] sm:size-[88px] rounded-full bg-primary text-primary-foreground flex items-center justify-center transition-transform enabled:hover:scale-105 enabled:active:scale-95 disabled:opacity-50 outline-none focus-visible:ring-2 focus-visible:ring-ring/50 shadow-lg shadow-primary/20"
+            >
+              {!modelReady || isPlaying ? (
+                <Loader2 className="size-7 sm:size-10 animate-spin" />
+              ) : (
+                <Play
+                  className="size-7 sm:size-10 translate-x-[2px]"
+                  fill="currentColor"
+                />
+              )}
+            </button>
+          </div>
+
+          <div className="flex-1 min-w-0 flex flex-col gap-1 items-end text-right">
+            <span className="text-[10px] sm:text-[11px] font-medium uppercase tracking-wide text-muted-foreground truncate max-w-full">
+              Bot · CWNet
+            </span>
+            <span className="font-mono text-[15px] sm:text-[20px] font-semibold text-foreground truncate max-w-full">
+              CWNet
+            </span>
+            <span
+              className="inline-flex w-fit items-center gap-1 rounded-full border px-1.5 sm:px-2 py-0.5 text-[10px] sm:text-[11px] font-medium"
+              style={{
+                borderColor:
+                  'color-mix(in oklch, var(--tier-extra) 40%, transparent)',
+                backgroundColor:
+                  'color-mix(in oklch, var(--tier-extra) 10%, transparent)',
+                color: 'var(--tier-extra)',
+              }}
+            >
+              fixed clip
+            </span>
+            <span className="font-mono text-[11px] sm:text-[12px] text-muted-foreground tabular-nums whitespace-nowrap">
+              <span className="text-foreground">{formatSnr(BOT_REF.snr)}</span>
+              <span> dB</span>
+              <span className="mx-1 sm:mx-1.5 text-muted-foreground/50">·</span>
+              <span className="text-foreground">{BOT_REF.wpm}</span>
+              <span> WPM</span>
+            </span>
+          </div>
+        </div>
+
+        <div className="flex flex-col items-center gap-2 border-t border-border pt-3">
+          <div className="relative flex w-full flex-wrap items-center justify-center gap-2 sm:gap-3">
+            <TextModeToggle value={textMode} onChange={onTextModeChange} />
+            <div className="pointer-coarse:hidden absolute right-0 top-1/2 -translate-y-1/2">
+              <VolumeControl value={volume} onChange={onVolumeChange} />
+            </div>
+          </div>
+          <span className="inline-flex items-start gap-1 text-left text-[12px] text-muted-foreground/80">
+            <Info className="size-3.5 shrink-0 mt-0.5" />
+            {isCallsigns ? (
+              <span>Real callsigns, sent twice — lean on the format.</span>
+            ) : (
+              <span>
+                Random groups, sent once — no patterns to lean on;{' '}
+                <strong className="font-semibold">
+                  spaces don&apos;t count.
+                </strong>
+              </span>
+            )}
+          </span>
+        </div>
       </div>
 
-      {/* The interactive control sits above the quiet spec readout, centered in
-          the same column as the play button. Its helper line explains the
-          CURRENT mode (not a static caption). */}
-      <div className="flex w-full sm:w-auto flex-col items-center gap-1.5">
-        <TextModeToggle value={textMode} onChange={onTextModeChange} />
-        <span className="text-[12px] text-muted-foreground/80 text-center">
-          {textMode === 'callsigns' ? (
-            'Real callsigns — lean on the format.'
-          ) : (
-            <>
-              Random groups — no patterns to lean on. Sent once;{' '}
-              <strong className="font-semibold">
-                spaces don&apos;t count.
-              </strong>
-            </>
-          )}
-        </span>
-      </div>
-
-      <div className="flex flex-wrap items-center justify-center gap-1.5 font-mono">
-        <SpecPill>
-          {/* Sign kept in the same span as the value so it reads tight
-              ("~13", "~28"), with gaps only around the unit labels. */}
-          <span className="text-foreground">~{round.human.wpm}</span>
-          <span>WPM</span>
-        </SpecPill>
-        <SpecPill>
-          <span>SNR</span>
-          <span className="text-foreground">{formatSnr(round.human.snr)}</span>
-          <span>dB</span>
-        </SpecPill>
-        {/* Callsigns are keyed twice; random groups are sent once, so the chip
-            only applies to callsign rounds. */}
-        {round.mode === 'callsigns' && (
-          <SpecPill>
-            <span>KEYED</span>
-            <span className="text-foreground">2X</span>
-          </SpecPill>
-        )}
-      </div>
-
-      <button
-        type="button"
-        onClick={onPlay}
-        disabled={!modelReady || isPlaying}
-        aria-label="Play the signal once"
-        className="size-[60px] sm:size-[72px] rounded-full bg-primary text-primary-foreground flex items-center justify-center transition-transform enabled:hover:scale-105 enabled:active:scale-95 disabled:opacity-50 outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
-      >
-        {!modelReady || isPlaying ? (
-          <Loader2 className="size-7 sm:size-8 animate-spin" />
-        ) : (
-          <Play
-            className="size-7 sm:size-8 translate-x-[2px]"
-            fill="currentColor"
-          />
-        )}
-      </button>
-
-      <span className="inline-flex items-center gap-1.5 text-[13px] text-muted-foreground">
-        {modelReady ? (
-          <Headphones className="size-3.5" />
-        ) : (
+      {!modelReady && (
+        <div className="mt-3 flex items-center justify-center gap-1.5 text-center text-[12px] text-muted-foreground">
           <Cpu className="size-3.5" />
-        )}
-        {modelReady
-          ? `One listen — close the gap on ${tierObj.name}`
-          : 'Loading model…'}
-      </span>
+          Loading model…
+        </div>
+      )}
     </div>
   );
 }
@@ -871,89 +882,91 @@ function CopyingPanel({
           dev · truth: {devTruth}
         </div>
       )}
-      <div className="flex items-center gap-3 rounded-lg border border-border bg-background/40 p-4">
-        {/* Abstract activity only — never any text derived from the bot copy. */}
-        <div
-          className="flex items-end gap-[3px] h-8 w-14 shrink-0"
-          aria-hidden="true"
-        >
-          {[0.1, 0.5, 0.2, 0.7, 0.35, 0.6].map((delay, i) => (
-            <span
-              // biome-ignore lint/suspicious/noArrayIndexKey: fixed decorative equalizer bars
-              key={i}
-              className={`flex-1 rounded-[1px] bg-primary/70 origin-bottom ${reduce ? '' : 'animate-eq-bounce'}`}
-              style={{ height: '100%', animationDelay: `${delay}s` }}
-            />
-          ))}
-        </div>
-        <div className="flex-1 min-w-0">
+      <div className="flex flex-col gap-4 rounded-lg border border-border bg-card p-4 shadow-sm">
+        <div className="flex items-center gap-3">
+          {/* Abstract activity only — never any text derived from the bot copy. */}
           <div
-            className="flex items-center gap-1.5 text-[15px] font-medium text-primary"
-            role="status"
-            aria-live="polite"
+            className="flex items-end gap-[3px] h-8 w-14 shrink-0"
+            aria-hidden="true"
           >
-            {botLocked ? (
+            {[0.1, 0.5, 0.2, 0.7, 0.35, 0.6].map((delay, i) => (
+              <span
+                // biome-ignore lint/suspicious/noArrayIndexKey: fixed decorative equalizer bars
+                key={i}
+                className={`flex-1 rounded-[1px] bg-primary/70 origin-bottom ${reduce ? '' : 'animate-eq-bounce'}`}
+                style={{ height: '100%', animationDelay: `${delay}s` }}
+              />
+            ))}
+          </div>
+          <div className="flex-1 min-w-0">
+            <div
+              className="flex items-center gap-1.5 text-[15px] font-medium text-primary"
+              role="status"
+              aria-live="polite"
+            >
+              {botLocked ? (
+                <>
+                  <Lock className="size-4" />
+                  Bot has locked its copy
+                </>
+              ) : (
+                <>
+                  <Bot className="size-4" />
+                  Bot is copying the signal…
+                </>
+              )}
+            </div>
+            {!botLocked && (
+              <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-muted">
+                <div
+                  className={`h-full w-1/3 rounded-full bg-primary ${reduce ? '' : 'animate-sweep'}`}
+                />
+              </div>
+            )}
+            <div className="mt-1.5 text-[12px] text-muted-foreground">
+              Copy sealed until you submit
+            </div>
+          </div>
+        </div>
+
+        <div className="flex gap-2">
+          <Input
+            ref={inputRef}
+            id="guess"
+            type="text"
+            value={guess}
+            onChange={(e) => setGuess(e.target.value.toUpperCase())}
+            placeholder="Your copy…"
+            aria-label="Your copy"
+            autoCapitalize="characters"
+            autoComplete="off"
+            autoCorrect="off"
+            spellCheck={false}
+            className="flex-1 min-w-0 h-11 font-mono tracking-[2px] uppercase"
+            maxLength={20}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && guess.trim()) onSubmit();
+            }}
+          />
+          <Button
+            variant="default"
+            disabled={!guess.trim() || submitting}
+            onClick={onSubmit}
+            className="shrink-0 h-11"
+          >
+            {submitting ? (
               <>
-                <Lock className="size-4" />
-                Bot has locked its copy
+                <Loader2 className="animate-spin size-4" />{' '}
+                <span className="hidden sm:inline">Grading…</span>
               </>
             ) : (
               <>
-                <Bot className="size-4" />
-                Bot is copying the signal…
+                <Send className="size-4" />
+                <span className="hidden sm:inline">Submit</span>
               </>
             )}
-          </div>
-          {!botLocked && (
-            <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-muted">
-              <div
-                className={`h-full w-1/3 rounded-full bg-primary ${reduce ? '' : 'animate-sweep'}`}
-              />
-            </div>
-          )}
-          <div className="mt-1.5 text-[12px] text-muted-foreground">
-            Copy sealed until you submit
-          </div>
+          </Button>
         </div>
-      </div>
-
-      <div className="flex gap-2">
-        <Input
-          ref={inputRef}
-          id="guess"
-          type="text"
-          value={guess}
-          onChange={(e) => setGuess(e.target.value.toUpperCase())}
-          placeholder="Your copy…"
-          aria-label="Your copy"
-          autoCapitalize="characters"
-          autoComplete="off"
-          autoCorrect="off"
-          spellCheck={false}
-          className="flex-1 min-w-0 h-11 font-mono tracking-[2px] uppercase"
-          maxLength={20}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' && guess.trim()) onSubmit();
-          }}
-        />
-        <Button
-          variant="default"
-          disabled={!guess.trim() || submitting}
-          onClick={onSubmit}
-          className="shrink-0 h-11"
-        >
-          {submitting ? (
-            <>
-              <Loader2 className="animate-spin size-4" />{' '}
-              <span className="hidden sm:inline">Grading…</span>
-            </>
-          ) : (
-            <>
-              <Send className="size-4" />
-              <span className="hidden sm:inline">Submit</span>
-            </>
-          )}
-        </Button>
       </div>
     </div>
   );
@@ -1002,99 +1015,99 @@ function RevealPanel({
   const truth = lettersOnly(round.text);
   const userCells = alignChars(guess, truth);
   const botCells = alignChars(botResult.text, truth);
-  const userCER = 1 - accuracy(truth, guess);
-  const botCER = 1 - accuracy(truth, botResult.text);
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex flex-wrap items-center justify-center gap-2.5">
-        <span className="text-[13px] text-muted-foreground">It was</span>
-        <span className="font-mono text-[22px] text-foreground tracking-[2px] break-all">
-          {/* Render word breaks as subtle dots so a random message reads as
+      <div className="flex flex-col gap-4 rounded-lg border border-border bg-card p-4 shadow-sm">
+        <div className="flex flex-wrap items-center justify-center gap-2.5">
+          <span className="text-[13px] text-muted-foreground">It was</span>
+          <span className="font-mono text-[22px] text-foreground tracking-[2px] break-all">
+            {/* Render word breaks as subtle dots so a random message reads as
               distinct groups ("AJ2KKM · 2A · AL"); callsigns have no spaces. */}
-          {round.text.split(/\s+/).map((word, i) => (
-            // biome-ignore lint/suspicious/noArrayIndexKey: positional word cells; regenerated each render
-            <Fragment key={i}>
-              {i > 0 && (
-                <span className="mx-1 text-muted-foreground/40">·</span>
-              )}
-              {word}
-            </Fragment>
-          ))}
-        </span>
-        {origin && (
-          <span className="inline-flex items-center gap-1.5 text-[12px] bg-secondary text-secondary-foreground rounded-md px-2 py-0.5">
-            {origin.flag && (
-              <span aria-hidden="true" className="text-[15px] leading-none">
-                {origin.flag}
-              </span>
-            )}
-            {origin.name}
+            {round.text.split(/\s+/).map((word, i) => (
+              // biome-ignore lint/suspicious/noArrayIndexKey: positional word cells; regenerated each render
+              <Fragment key={i}>
+                {i > 0 && (
+                  <span className="mx-1 text-muted-foreground/40">·</span>
+                )}
+                {word}
+              </Fragment>
+            ))}
           </span>
-        )}
-      </div>
+          {origin && (
+            <span className="inline-flex items-center gap-1.5 text-[12px] bg-secondary text-secondary-foreground rounded-md px-2 py-0.5">
+              {origin.flag && (
+                <span aria-hidden="true" className="text-[15px] leading-none">
+                  {origin.flag}
+                </span>
+              )}
+              {origin.name}
+            </span>
+          )}
+        </div>
 
-      {/* One line per competitor: name · accuracy bar (grows to fill) · copy.
+        {/* One line per competitor: name · accuracy bar (grows to fill) · copy.
           A shared grid keeps the name/copy columns aligned across both rows
           (so the bars share an axis) while the bar column (1fr) fills the rest
           on any viewport. */}
-      <div className="grid grid-cols-[auto_1fr_auto] items-center gap-x-3 gap-y-3">
-        <CompetitorRow
-          who="You"
-          tone="you"
-          icon={<User className="size-5" />}
-          cells={userCells}
-          typePlay={revealStep >= 1}
-          barShow={revealStep >= 1}
-          pct={userPct}
-          win={false}
-          reduce={reduce}
-        />
-        <CompetitorRow
-          who="Bot"
-          tone="bot"
-          icon={<Bot className="size-5" />}
-          cells={botCells}
-          typePlay={revealStep >= 2}
-          barShow={revealStep >= 1}
-          pct={botPct}
-          win={false}
-          reduce={reduce}
-        />
-      </div>
+        <div className="grid grid-cols-[auto_1fr_auto] items-center gap-x-3 gap-y-3">
+          <CompetitorRow
+            who="You"
+            tone="you"
+            icon={<User className="size-5" />}
+            cells={userCells}
+            typePlay={revealStep >= 1}
+            barShow={revealStep >= 1}
+            pct={userPct}
+            win={false}
+            reduce={reduce}
+          />
+          <CompetitorRow
+            who="Bot"
+            tone="bot"
+            icon={<Bot className="size-5" />}
+            cells={botCells}
+            typePlay={revealStep >= 2}
+            barShow={revealStep >= 1}
+            pct={botPct}
+            win={false}
+            reduce={reduce}
+          />
+        </div>
 
-      <div className="flex flex-col items-center gap-1.5 text-center">
-        {/* Result line — loudest element of the zone */}
-        {isNewBest ? (
-          <span className="inline-flex items-center gap-1.5 text-[18px] font-semibold text-good">
-            <Trophy className="size-5" />
-            New best at {tierName}
-          </span>
-        ) : userCER < botCER ? (
-          <span className="inline-flex items-center gap-2 text-[18px] font-semibold text-good">
-            <Trophy className="size-5" />
-            You out-copied the bot
-          </span>
-        ) : userCER === botCER ? (
-          <span className="text-[18px] font-semibold text-foreground">
-            You matched the bot
-          </span>
-        ) : (
-          // TODO(john): final wording undecided — placeholder
-          <span className="text-[18px] font-semibold text-foreground">
-            You copied {userPct}%
-          </span>
-        )}
-        {/* Context line — one quiet tertiary line below the result */}
-        {round.tier === 'extra' ? (
-          <span className="text-[12px] text-muted-foreground">
-            Even ground — same clip
-          </span>
-        ) : (
-          <span className="text-[12px] text-muted-foreground">
-            Your clip {formatSnr(round.human.snr)} dB · the bot&apos;s{' '}
-            {formatSnr(round.bot.snr)} dB
-          </span>
-        )}
+        <div className="flex flex-col items-center gap-1.5 text-center">
+          {/* Result line — loudest element of the zone */}
+          {isNewBest ? (
+            <span className="inline-flex items-center gap-1.5 text-[18px] font-semibold text-good">
+              <Trophy className="size-5" />
+              New best at {tierName}
+            </span>
+          ) : userPct > botPct ? (
+            <span className="inline-flex items-center gap-2 text-[18px] font-semibold text-good">
+              <Trophy className="size-5" />
+              You out-copied the bot
+            </span>
+          ) : userPct === botPct ? (
+            <span className="text-[18px] font-semibold text-foreground">
+              You matched the bot
+            </span>
+          ) : (
+            // TODO(john): final wording undecided — placeholder
+            <span className="text-[18px] font-semibold text-foreground">
+              You copied {userPct}%
+            </span>
+          )}
+          {/* Context line — one quiet tertiary line below the result */}
+          {round.tier === 'extra' ? (
+            <span className="text-[12px] text-muted-foreground">
+              Even ground — same clip
+            </span>
+          ) : (
+            <span className="text-[12px] text-muted-foreground">
+              Your clip {formatSnr(round.human.snr)} dB · the bot&apos;s{' '}
+              {formatSnr(round.bot.snr)} dB
+            </span>
+          )}
+        </div>
       </div>
 
       {/* Callsigns get the full two-looks merge story (sent twice); random rounds
@@ -1110,7 +1123,6 @@ function RevealPanel({
         ref={bottomRef}
         variant="default"
         onClick={onNext}
-        disabled={revealStep < 4}
         className="w-full mt-1"
       >
         <BoxingGloveIcon className="size-4" /> Another round
