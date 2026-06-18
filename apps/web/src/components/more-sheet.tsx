@@ -5,7 +5,6 @@
 import {
   Check,
   ChevronDown,
-  CircleUser,
   Download,
   ExternalLink,
   HelpCircle,
@@ -28,6 +27,7 @@ import {
 } from '@/components/ui/drawer';
 import { useAuth } from '@/lib/auth';
 import { isAuthConfigured } from '@/lib/supabase';
+import { useGravatarUrl } from '@/lib/use-gravatar-url';
 import { useInstall } from '@/lib/use-install';
 import { useIsStandalone } from '@/lib/use-standalone';
 import { type Theme, useTheme } from '@/lib/use-theme';
@@ -54,7 +54,7 @@ function InstallSection() {
 
   if (platform === 'android' && canInstall) {
     return (
-      <div className="border-t border-border pt-3">
+      <div className="border-t border-foreground/15 pt-3">
         <button
           type="button"
           onClick={() => promptInstall()}
@@ -69,7 +69,7 @@ function InstallSection() {
 
   if (platform === 'ios') {
     return (
-      <div className="border-t border-border pt-3">
+      <div className="border-t border-foreground/15 pt-3">
         <button
           type="button"
           onClick={() => setShowSteps((v) => !v)}
@@ -120,6 +120,7 @@ export function MoreSheet({
   const standalone = useIsStandalone();
   const { status, profile, user, signOut } = useAuth();
   const signedIn = status === 'ready' && profile;
+  const avatarUrl = useGravatarUrl(user?.email, 80);
 
   return (
     <Drawer open={open} onOpenChange={onOpenChange}>
@@ -134,9 +135,15 @@ export function MoreSheet({
               immediately sees who's logged in before the nav rows. */}
           {isAuthConfigured && signedIn && (
             <div className="flex items-center gap-3 rounded-lg bg-accent px-3 py-3 ring-1 ring-inset ring-primary/40">
-              <div className="flex size-10 items-center justify-center rounded-full bg-primary/20 text-primary">
-                <CircleUser className="size-5" />
-              </div>
+              <img
+                src={avatarUrl ?? undefined}
+                alt=""
+                aria-hidden="true"
+                crossOrigin="anonymous"
+                width={40}
+                height={40}
+                className="size-10 rounded-full bg-muted"
+              />
               <div className="flex min-w-0 flex-1 flex-col leading-tight">
                 <span className="flex items-center gap-1.5 font-mono text-base font-semibold text-foreground">
                   {profile.call_sign}
@@ -202,7 +209,7 @@ export function MoreSheet({
               ))}
           </div>
 
-          <div className="border-t border-border pt-3">
+          <div className="border-t border-foreground/15 pt-3">
             <p className="px-3 pb-1 text-muted-foreground text-xs font-medium uppercase tracking-wide">
               Appearance
             </p>
@@ -240,7 +247,7 @@ export function MoreSheet({
           {!standalone && <InstallSection />}
           {standalone && <OfflineSection />}
 
-          <div className="border-t border-border pt-3">
+          <div className="border-t border-foreground/15 pt-3">
             <a
               href={GITHUB_URL}
               target="_blank"
@@ -253,7 +260,7 @@ export function MoreSheet({
             </a>
           </div>
 
-          <div className="border-t border-border pt-3">
+          <div className="border-t border-foreground/15 pt-3">
             <FooterContent />
           </div>
         </div>

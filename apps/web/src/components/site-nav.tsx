@@ -4,22 +4,26 @@
 
 import {
   ChevronDown,
-  CircleUser,
   HelpCircle,
   House,
   LogOut,
   type LucideIcon,
   Menu,
+  Monitor,
+  Moon,
   Radio,
   Settings,
   ShieldCheck,
+  Sun,
   Trophy,
 } from 'lucide-react';
 import { type ComponentType, useState } from 'react';
 import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/lib/auth';
 import { isAuthConfigured } from '@/lib/supabase';
+import { useGravatarUrl } from '@/lib/use-gravatar-url';
 import { useIsStandalone } from '@/lib/use-standalone';
+import { type Theme, useTheme } from '@/lib/use-theme';
 import { cn } from '@/lib/utils';
 import { BoxingGloveIcon } from './boxing-glove-icon';
 import { GITHUB_URL, GithubIcon } from './github';
@@ -31,9 +35,18 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from './ui/dropdown-menu';
+
+const THEME_OPTIONS: { value: Theme; label: string; icon: LucideIcon }[] = [
+  { value: 'light', label: 'Light', icon: Sun },
+  { value: 'dark', label: 'Dark', icon: Moon },
+  { value: 'system', label: 'System', icon: Monitor },
+];
 
 interface NavItem {
   to: string;
@@ -82,7 +95,10 @@ const tabClass =
 export function SiteHeader() {
   const standalone = useIsStandalone();
   const { status, profile, user, signOut } = useAuth();
+  const avatarUrl = useGravatarUrl(user?.email, 80);
+  const { theme, setTheme } = useTheme();
   const navigate = useNavigate();
+  const signedIn = isAuthConfigured && status === 'ready' && !!profile;
   if (standalone) return null;
 
   return (
@@ -139,17 +155,25 @@ export function SiteHeader() {
           <div className="hidden sm:flex items-center gap-1">
             {isAuthConfigured &&
               (status === 'ready' && profile ? (
-                <DropdownMenu>
+                <DropdownMenu modal={false}>
                   <DropdownMenuTrigger
                     aria-label={`Account: ${profile.call_sign}`}
                     title="Account"
                     className={cn(
-                      'inline-flex items-center justify-center gap-1.5 h-9 rounded-md px-2.5 text-muted-foreground hover:text-foreground hover:bg-muted transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring/50',
+                      'inline-flex select-none items-center justify-center gap-1.5 h-9 rounded-md px-2.5 text-muted-foreground hover:text-foreground hover:bg-muted transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring/50',
                       'data-[state=open]:bg-muted data-[state=open]:text-foreground'
                     )}
                   >
-                    <CircleUser className="size-4" />
-                    <span className="font-mono text-xs">
+                    <img
+                      src={avatarUrl ?? undefined}
+                      alt=""
+                      aria-hidden="true"
+                      crossOrigin="anonymous"
+                      width={20}
+                      height={20}
+                      className="size-5 rounded-full bg-muted"
+                    />
+                    <span className="font-mono text-sm">
                       {profile.call_sign}
                     </span>
                     <ChevronDown
@@ -158,21 +182,32 @@ export function SiteHeader() {
                     />
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end" className="min-w-56">
-                    <div className="px-2 py-1.5">
-                      <div className="flex items-center gap-1.5 font-mono text-sm font-semibold text-foreground">
-                        {profile.call_sign}
-                        {profile.verified && (
-                          <ShieldCheck
-                            className="size-3.5 text-verified"
-                            aria-label="Verified"
-                          />
+                    <div className="flex items-center gap-3 px-2 py-1.5">
+                      <img
+                        src={avatarUrl ?? undefined}
+                        alt=""
+                        aria-hidden="true"
+                        crossOrigin="anonymous"
+                        width={40}
+                        height={40}
+                        className="size-10 shrink-0 rounded-full bg-muted"
+                      />
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-1.5 font-mono text-sm font-semibold text-foreground">
+                          {profile.call_sign}
+                          {profile.verified && (
+                            <ShieldCheck
+                              className="size-3.5 text-verified"
+                              aria-label="Verified"
+                            />
+                          )}
+                        </div>
+                        {user?.email && (
+                          <div className="truncate text-xs text-muted-foreground">
+                            {user.email}
+                          </div>
                         )}
                       </div>
-                      {user?.email && (
-                        <div className="truncate text-xs text-muted-foreground">
-                          {user.email}
-                        </div>
-                      )}
                     </div>
                     <DropdownMenuSeparator />
                     <DropdownMenuItem
@@ -184,6 +219,21 @@ export function SiteHeader() {
                       <Settings className="size-4" />
                       Settings
                     </DropdownMenuItem>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuLabel className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                      Theme
+                    </DropdownMenuLabel>
+                    <DropdownMenuRadioGroup
+                      value={theme}
+                      onValueChange={(v) => setTheme(v as Theme)}
+                    >
+                      {THEME_OPTIONS.map(({ value, label, icon: Icon }) => (
+                        <DropdownMenuRadioItem key={value} value={value}>
+                          <Icon className="size-4" />
+                          {label}
+                        </DropdownMenuRadioItem>
+                      ))}
+                    </DropdownMenuRadioGroup>
                     <DropdownMenuSeparator />
                     <DropdownMenuItem
                       variant="destructive"
@@ -222,7 +272,7 @@ export function SiteHeader() {
             >
               <GithubIcon className="size-4" />
             </a>
-            <ThemeSwitcher />
+            {!signedIn && <ThemeSwitcher />}
           </div>
         </div>
       </div>
