@@ -215,9 +215,7 @@ describe('BeatTheBotPage', () => {
     await renderArmed();
     // Armed: YOU/BOT spec lines + play button.
     expect(screen.getAllByText('WPM').length).toBeGreaterThan(0);
-    expect(
-      screen.getByText(/One listen — close the gap on/)
-    ).toBeInTheDocument();
+    expect(screen.getByLabelText('Play the signal once')).toBeInTheDocument();
 
     await play();
     // Copying: the play button is gone (one listen) and the copy field is live.
@@ -415,19 +413,19 @@ describe('BeatTheBotPage', () => {
       expect(group).toBeInTheDocument();
       expect(screen.getByRole('radio', { name: 'Callsigns' })).toBeChecked();
       expect(screen.getByRole('radio', { name: 'Random' })).not.toBeChecked();
-      // Callsign mode keys twice; the chip says so.
-      expect(screen.getByText('2X')).toBeInTheDocument();
+      // Callsign mode keys twice; the framing line says so.
+      expect(screen.getByText(/sent twice/)).toBeInTheDocument();
     });
 
-    it('selecting Random re-arms a single-send round (no KEYED 2X chip, mode-specific helper)', async () => {
+    it('selecting Random re-arms a single-send round (framing line swaps)', async () => {
       await renderArmed();
       fireEvent.click(screen.getByRole('radio', { name: 'Random' }));
       expect(screen.getByRole('radio', { name: 'Random' })).toBeChecked();
       expect(
         screen.getByRole('radio', { name: 'Callsigns' })
       ).not.toBeChecked();
-      // Keyed once → no 2X chip; helper reflects the active mode.
-      expect(screen.queryByText('2X')).toBeNull();
+      // Keyed once → framing line reflects the active mode.
+      expect(screen.queryByText(/sent twice/)).toBeNull();
       expect(screen.getByText(/Random groups/)).toBeInTheDocument();
     });
 
