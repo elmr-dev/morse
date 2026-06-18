@@ -213,7 +213,11 @@ function SettingsLayout({ children }: { children: React.ReactNode }) {
             </SelectTrigger>
             <SelectContent>
               {SECTIONS.map(({ id, label, icon: Icon }) => (
-                <SelectItem key={id} value={id}>
+                <SelectItem
+                  key={id}
+                  value={id}
+                  className="min-h-11 text-base sm:min-h-0 sm:text-sm"
+                >
                   <Icon className="size-4" />
                   {label}
                 </SelectItem>

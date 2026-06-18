@@ -152,7 +152,7 @@ function SegmentSelector({
               aria-checked={active}
               aria-label={seg.label}
               onClick={() => onChange(seg.id)}
-              className={`sm:flex-1 inline-flex items-center justify-center gap-1.5 rounded-md px-3 py-2 text-[13px] font-medium transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring/50 ${
+              className={`sm:flex-1 inline-flex min-h-11 sm:min-h-9 items-center justify-center gap-1.5 rounded-md px-3 py-2 text-[13px] font-medium transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring/50 ${
                 active
                   ? 'bg-card text-foreground shadow-sm'
                   : 'text-muted-foreground hover:text-foreground'
