@@ -8,12 +8,15 @@ import {
   CircleUser,
   Download,
   ExternalLink,
+  HelpCircle,
+  LogOut,
   Monitor,
   Moon,
+  Settings,
   Share,
+  ShieldCheck,
   SquarePlus,
   Sun,
-  Trophy,
 } from 'lucide-react';
 import { useState } from 'react';
 import { NavLink } from 'react-router-dom';
@@ -51,7 +54,7 @@ function InstallSection() {
 
   if (platform === 'android' && canInstall) {
     return (
-      <div className="border-t border-border pt-1">
+      <div className="border-t border-border pt-3">
         <button
           type="button"
           onClick={() => promptInstall()}
@@ -66,7 +69,7 @@ function InstallSection() {
 
   if (platform === 'ios') {
     return (
-      <div className="border-t border-border pt-1">
+      <div className="border-t border-border pt-3">
         <button
           type="button"
           onClick={() => setShowSteps((v) => !v)}
@@ -115,43 +118,88 @@ export function MoreSheet({
 }) {
   const { theme, setTheme } = useTheme();
   const standalone = useIsStandalone();
-  const { status, profile } = useAuth();
-  const accountLabel =
-    status === 'ready' && profile ? profile.call_sign : 'Account';
+  const { status, profile, user, signOut } = useAuth();
+  const signedIn = status === 'ready' && profile;
 
   return (
     <Drawer open={open} onOpenChange={onOpenChange}>
       <DrawerContent>
-        <div className="flex flex-col gap-4 px-5 pt-2 pb-4">
+        <div className="flex flex-col px-5 pt-2 pb-4">
           <DrawerTitle className="sr-only">More</DrawerTitle>
           <DrawerDescription className="sr-only">
             Appearance, source code, and app info.
           </DrawerDescription>
 
-          {/* Destinations first — the main reason to open this sheet on
-              mobile is to navigate to a page that doesn't fit the bottom bar. */}
-          <div>
-            <p className="px-3 pb-1 text-muted-foreground text-xs font-medium uppercase tracking-wide">
-              Pages
-            </p>
+          {/* Signed-in identity banner — anchors the sheet so the user
+              immediately sees who's logged in before the nav rows. */}
+          {isAuthConfigured && signedIn && (
+            <div className="flex items-center gap-3 rounded-lg bg-accent px-3 py-3 ring-1 ring-inset ring-primary/40">
+              <div className="flex size-10 items-center justify-center rounded-full bg-primary/20 text-primary">
+                <CircleUser className="size-5" />
+              </div>
+              <div className="flex min-w-0 flex-1 flex-col leading-tight">
+                <span className="flex items-center gap-1.5 font-mono text-base font-semibold text-foreground">
+                  {profile.call_sign}
+                  {profile.verified && (
+                    <ShieldCheck
+                      className="size-4 text-verified"
+                      aria-label="Verified"
+                    />
+                  )}
+                </span>
+                {user?.email && (
+                  <span className="truncate text-xs text-muted-foreground">
+                    {user.email}
+                  </span>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Destinations — the main reason to open this sheet on mobile is
+              to navigate to a page that doesn't fit the bottom bar. */}
+          <div className={cn(isAuthConfigured && signedIn && 'mt-3')}>
             <NavLink
-              to="/leaderboard"
+              to="/faq"
               onClick={() => onOpenChange(false)}
               className={rowClass}
             >
-              <Trophy className="size-5 text-muted-foreground" />
-              <span className="flex-1 text-left">Leaderboard</span>
+              <HelpCircle className="size-5 text-muted-foreground" />
+              <span className="flex-1 text-left">FAQ</span>
             </NavLink>
-            {isAuthConfigured && (
-              <NavLink
-                to="/account"
-                onClick={() => onOpenChange(false)}
-                className={rowClass}
-              >
-                <CircleUser className="size-5 text-muted-foreground" />
-                <span className="flex-1 text-left">{accountLabel}</span>
-              </NavLink>
-            )}
+            {isAuthConfigured &&
+              (signedIn ? (
+                <>
+                  <NavLink
+                    to="/account"
+                    onClick={() => onOpenChange(false)}
+                    className={rowClass}
+                  >
+                    <Settings className="size-5 text-muted-foreground" />
+                    <span className="flex-1 text-left">Settings</span>
+                  </NavLink>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onOpenChange(false);
+                      void signOut();
+                    }}
+                    className={cn(rowClass, 'text-destructive')}
+                  >
+                    <LogOut className="size-5 text-destructive" />
+                    <span className="flex-1 text-left">Sign out</span>
+                  </button>
+                </>
+              ) : (
+                <NavLink
+                  to="/account"
+                  onClick={() => onOpenChange(false)}
+                  className={rowClass}
+                >
+                  <Settings className="size-5 text-muted-foreground" />
+                  <span className="flex-1 text-left">Settings</span>
+                </NavLink>
+              ))}
           </div>
 
           <div className="border-t border-border pt-3">
@@ -192,7 +240,7 @@ export function MoreSheet({
           {!standalone && <InstallSection />}
           {standalone && <OfflineSection />}
 
-          <div className="border-t border-border pt-1">
+          <div className="border-t border-border pt-3">
             <a
               href={GITHUB_URL}
               target="_blank"
@@ -205,7 +253,7 @@ export function MoreSheet({
             </a>
           </div>
 
-          <div className="border-t border-border pt-4">
+          <div className="border-t border-border pt-3">
             <FooterContent />
           </div>
         </div>

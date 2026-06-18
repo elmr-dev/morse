@@ -3,16 +3,20 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import {
+  ChevronDown,
   CircleUser,
   HelpCircle,
   House,
+  LogOut,
   type LucideIcon,
   Menu,
   Radio,
+  Settings,
+  ShieldCheck,
   Trophy,
 } from 'lucide-react';
 import { type ComponentType, useState } from 'react';
-import { NavLink, useLocation } from 'react-router-dom';
+import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/lib/auth';
 import { isAuthConfigured } from '@/lib/supabase';
 import { useIsStandalone } from '@/lib/use-standalone';
@@ -23,6 +27,13 @@ import Logo from './logo';
 import { MoreSheet } from './more-sheet';
 import { scrollToTop } from './scroll-to-top';
 import ThemeSwitcher from './theme-switcher';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from './ui/dropdown-menu';
 
 interface NavItem {
   to: string;
@@ -39,7 +50,7 @@ interface NavItem {
 const NAV_ITEMS: NavItem[] = [
   { to: '/decode', label: 'Decode', icon: Radio },
   { to: '/beat-the-bot', label: 'Beat the Bot', icon: BoxingGloveIcon },
-  { to: '/faq', label: 'FAQ', icon: HelpCircle },
+  { to: '/leaderboard', label: 'Leaderboard', icon: Trophy },
 ];
 
 // Desktop header nav — same primary destinations as the mobile bottom bar,
@@ -70,7 +81,8 @@ const tabClass =
  */
 export function SiteHeader() {
   const standalone = useIsStandalone();
-  const { status, profile } = useAuth();
+  const { status, profile, user, signOut } = useAuth();
+  const navigate = useNavigate();
   if (standalone) return null;
 
   return (
@@ -125,30 +137,81 @@ export function SiteHeader() {
           {/* GitHub + theme live up top on desktop only; on mobile they move
               into the bottom bar's "More" menu. */}
           <div className="hidden sm:flex items-center gap-1">
-            {isAuthConfigured && (
-              <NavLink
-                to="/account"
-                onClick={scrollToTop}
-                aria-label={
-                  status === 'ready' && profile
-                    ? `Account: ${profile.call_sign}`
-                    : 'Account'
-                }
-                title="Account"
-                className={({ isActive }) =>
-                  cn(
-                    'inline-flex items-center justify-center gap-1.5 h-9 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring/50',
-                    status === 'ready' && profile ? 'px-2.5' : 'size-9',
-                    isActive && 'bg-muted text-foreground'
-                  )
-                }
-              >
-                <CircleUser className="size-4" />
-                {status === 'ready' && profile && (
-                  <span className="font-mono text-xs">{profile.call_sign}</span>
-                )}
-              </NavLink>
-            )}
+            {isAuthConfigured &&
+              (status === 'ready' && profile ? (
+                <DropdownMenu>
+                  <DropdownMenuTrigger
+                    aria-label={`Account: ${profile.call_sign}`}
+                    title="Account"
+                    className={cn(
+                      'inline-flex items-center justify-center gap-1.5 h-9 rounded-md px-2.5 text-muted-foreground hover:text-foreground hover:bg-muted transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring/50',
+                      'data-[state=open]:bg-muted data-[state=open]:text-foreground'
+                    )}
+                  >
+                    <CircleUser className="size-4" />
+                    <span className="font-mono text-xs">
+                      {profile.call_sign}
+                    </span>
+                    <ChevronDown
+                      className="size-3.5 opacity-60"
+                      aria-hidden="true"
+                    />
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="min-w-56">
+                    <div className="px-2 py-1.5">
+                      <div className="flex items-center gap-1.5 font-mono text-sm font-semibold text-foreground">
+                        {profile.call_sign}
+                        {profile.verified && (
+                          <ShieldCheck
+                            className="size-3.5 text-verified"
+                            aria-label="Verified"
+                          />
+                        )}
+                      </div>
+                      {user?.email && (
+                        <div className="truncate text-xs text-muted-foreground">
+                          {user.email}
+                        </div>
+                      )}
+                    </div>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem
+                      onSelect={() => {
+                        scrollToTop();
+                        navigate('/account');
+                      }}
+                    >
+                      <Settings className="size-4" />
+                      Settings
+                    </DropdownMenuItem>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem
+                      variant="destructive"
+                      onSelect={() => {
+                        void signOut();
+                      }}
+                    >
+                      <LogOut className="size-4" />
+                      Sign out
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              ) : (
+                <NavLink
+                  to="/account"
+                  onClick={scrollToTop}
+                  aria-label="Settings"
+                  title="Settings"
+                  className={({ isActive }) =>
+                    cn(
+                      'inline-flex items-center justify-center size-9 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring/50',
+                      isActive && 'bg-muted text-foreground'
+                    )
+                  }
+                >
+                  <Settings className="size-4" />
+                </NavLink>
+              ))}
             <a
               href={GITHUB_URL}
               target="_blank"
