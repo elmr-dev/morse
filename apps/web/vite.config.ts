@@ -96,7 +96,10 @@ export default defineConfig(({ mode }) => {
           // SPA deep links resolve offline. Base is '/', so '/index.html' is
           // correct; the model/ort asset requests must not get the HTML shell.
           navigateFallback: '/index.html',
-          navigateFallbackDenylist: [/^\/model\//, /^\/ort\//],
+          // /badge/* is owned by a Netlify Edge Function (serves SVG); without
+          // this denylist, the SW would shadow it and return the cached
+          // /index.html, leaving same-origin <img> embeds broken.
+          navigateFallbackDenylist: [/^\/model\//, /^\/ort\//, /^\/badge\//],
           // Precache the app shell. woff2 is included so the self-hosted fonts
           // (@fontsource-variable) cache for offline use.
           globPatterns: ['**/*.{js,css,html,svg,png,ico,webmanifest,woff2}'],
