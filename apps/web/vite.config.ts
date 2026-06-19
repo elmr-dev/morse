@@ -50,6 +50,11 @@ export default defineConfig(({ mode }) => {
           name: SITE_TITLE,
           short_name: 'Morse',
           description: SITE_DESCRIPTION,
+          // Non-standard but harmless: lets the post-update toast confirm
+          // "Updated to vX" by reading the *new* SW's precached manifest.
+          // Browsers ignore unknown keys per the manifest spec; the cast
+          // is just to slip past vite-plugin-pwa's strict ManifestOptions.
+          ...({ version } as Record<string, string>),
           start_url: '/',
           scope: '/',
           display: 'standalone',

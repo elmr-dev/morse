@@ -34,6 +34,7 @@ import VolumeControl from '@/components/volume-control';
 import { useAuth } from '@/lib/auth';
 import { fireConfetti } from '@/lib/confetti';
 import { randomCwMessage } from '@/lib/cw-message';
+import { getScrollRoot } from '@/lib/scroll-root';
 import { useBestsSync } from '@/lib/use-bests-sync';
 import { useDocumentHead } from '@/lib/use-document-head';
 import { clearPersisted, usePersistedState } from '@/lib/use-persisted-state';
@@ -998,14 +999,13 @@ function RevealPanel({
   const bottomRef = useRef<HTMLButtonElement>(null);
   // biome-ignore lint/correctness/useExhaustiveDependencies: intentional mount-only scroll
   useEffect(() => {
-    window.setTimeout(
-      () =>
-        window.scrollTo({
-          top: document.body.scrollHeight,
-          behavior: reduce ? 'auto' : 'smooth',
-        }),
-      60
-    );
+    window.setTimeout(() => {
+      const root = getScrollRoot();
+      root.scrollTo({
+        top: root.scrollHeight,
+        behavior: reduce ? 'auto' : 'smooth',
+      });
+    }, 60);
   }, []);
 
   // Random rounds have no country/region, so the origin pill is callsign-only.
@@ -1317,14 +1317,13 @@ function CompetitorRow({
 function scrollDisclosureIntoView(e: React.SyntheticEvent<HTMLDetailsElement>) {
   if (!e.currentTarget.open) return;
   const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-  window.setTimeout(
-    () =>
-      window.scrollTo({
-        top: document.body.scrollHeight,
-        behavior: reduce ? 'auto' : 'smooth',
-      }),
-    60
-  );
+  window.setTimeout(() => {
+    const root = getScrollRoot();
+    root.scrollTo({
+      top: root.scrollHeight,
+      behavior: reduce ? 'auto' : 'smooth',
+    });
+  }, 60);
 }
 
 // Envelope bar strip shared by both disclosures: the keying the bot copied.

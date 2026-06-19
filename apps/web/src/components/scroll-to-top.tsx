@@ -4,12 +4,14 @@
 
 import { useEffect } from 'react';
 import { useLocation } from 'react-router-dom';
+import { scrollRootToTop } from '@/lib/scroll-root';
 
-/** Smoothly scroll the window to the top, jumping instantly under
- *  prefers-reduced-motion. Shared by route changes and nav-link clicks. */
+/** Smoothly scroll the page to the top, jumping instantly under
+ *  prefers-reduced-motion. Targets the inner scroll container — the
+ *  page no longer scrolls on the document. Shared by route changes and
+ *  nav-link clicks. */
 export function scrollToTop() {
-  const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-  window.scrollTo({ top: 0, behavior: reduce ? 'auto' : 'smooth' });
+  scrollRootToTop();
 }
 
 /**
