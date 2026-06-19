@@ -29,6 +29,7 @@ import { BoxingGloveIcon } from './boxing-glove-icon';
 import { GITHUB_URL, GithubIcon } from './github';
 import Logo from './logo';
 import { MoreSheet } from './more-sheet';
+import { OfflineIndicator } from './offline-indicator';
 import { scrollToTop } from './scroll-to-top';
 import ThemeSwitcher from './theme-switcher';
 import {
@@ -153,6 +154,7 @@ export function SiteHeader() {
           {/* GitHub + theme live up top on desktop only; on mobile they move
               into the bottom bar's "More" menu. */}
           <div className="hidden sm:flex items-center gap-1">
+            <OfflineIndicator />
             {isAuthConfigured &&
               (status === 'ready' && profile ? (
                 <DropdownMenu modal={false}>

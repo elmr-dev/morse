@@ -16,6 +16,7 @@ import {
   ShieldCheck,
   SquarePlus,
   Sun,
+  WifiOff,
 } from 'lucide-react';
 import { useState } from 'react';
 import { NavLink } from 'react-router-dom';
@@ -29,6 +30,7 @@ import { useAuth } from '@/lib/auth';
 import { isAuthConfigured } from '@/lib/supabase';
 import { useGravatarUrl } from '@/lib/use-gravatar-url';
 import { useInstall } from '@/lib/use-install';
+import { useOnline } from '@/lib/use-online';
 import { useIsStandalone } from '@/lib/use-standalone';
 import { type Theme, useTheme } from '@/lib/use-theme';
 import { cn } from '@/lib/utils';
@@ -119,6 +121,7 @@ export function MoreSheet({
   const { theme, setTheme } = useTheme();
   const standalone = useIsStandalone();
   const { status, profile, user, signOut } = useAuth();
+  const online = useOnline();
   const signedIn = status === 'ready' && profile;
   const avatarUrl = useGravatarUrl(user?.email, 80);
 
@@ -163,9 +166,40 @@ export function MoreSheet({
             </div>
           )}
 
+          {/* Offline banner. Only renders when the device reports offline; the
+              header icon is desktop-only, so this is the mobile/standalone
+              counterpart so users opening the More sheet see the same signal
+              the transition toast already gave them. */}
+          {!online && (
+            <div
+              role="status"
+              className={cn(
+                'flex items-center gap-2.5 rounded-lg border border-border bg-muted/50 px-3 py-2.5 text-sm',
+                isAuthConfigured && signedIn && 'mt-3'
+              )}
+            >
+              <WifiOff
+                className="size-4 shrink-0 text-muted-foreground"
+                aria-hidden
+              />
+              <div className="flex min-w-0 flex-col leading-tight">
+                <span className="font-medium text-foreground">
+                  You're offline
+                </span>
+                <span className="text-xs text-muted-foreground">
+                  Sign-in and leaderboard need internet
+                </span>
+              </div>
+            </div>
+          )}
+
           {/* Destinations — the main reason to open this sheet on mobile is
               to navigate to a page that doesn't fit the bottom bar. */}
-          <div className={cn(isAuthConfigured && signedIn && 'mt-3')}>
+          <div
+            className={cn(
+              (isAuthConfigured && signedIn) || !online ? 'mt-3' : undefined
+            )}
+          >
             <NavLink
               to="/faq"
               onClick={() => onOpenChange(false)}

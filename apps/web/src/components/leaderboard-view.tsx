@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { Loader2, Search, ShieldCheck, X } from 'lucide-react';
+import { Loader2, Search, ShieldCheck, WifiOff, X } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { Link, NavLink } from 'react-router-dom';
 import {
@@ -24,6 +24,7 @@ import type {
   LeaderboardRowTag,
   LeaderboardSegment,
 } from '@/lib/leaderboard';
+import { useOnline } from '@/lib/use-online';
 
 const qrzUrl = (call: string) =>
   `https://www.qrz.com/db/${encodeURIComponent(call)}`;
@@ -152,7 +153,7 @@ function SegmentSelector({
               aria-checked={active}
               aria-label={seg.label}
               onClick={() => onChange(seg.id)}
-              className={`sm:flex-1 inline-flex min-h-11 sm:min-h-9 items-center justify-center gap-1.5 rounded-md px-3 py-2 text-[13px] font-medium transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring/50 ${
+              className={`sm:flex-1 inline-flex min-h-11 sm:min-h-9 min-w-11 sm:min-w-0 items-center justify-center gap-1.5 rounded-md px-3 py-2 text-[13px] font-medium transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring/50 ${
                 active
                   ? 'bg-card text-foreground shadow-sm'
                   : 'text-muted-foreground hover:text-foreground'
@@ -194,6 +195,7 @@ function PagedList({
   ownCallSign: string | null;
   reloadToken: number;
 }) {
+  const online = useOnline();
   const [rows, setRows] = useState<LeaderboardRow[]>([]);
   const [ownRow, setOwnRow] = useState<LeaderboardRow | null>(null);
   const [loading, setLoading] = useState(true);
@@ -205,6 +207,14 @@ function PagedList({
   hasRowsRef.current = rows.length > 0;
 
   useEffect(() => {
+    // Skip the network round-trip when offline — Supabase would just time
+    // out after 15s and leave the user staring at a spinner. The render
+    // below surfaces an explicit offline state instead. The effect re-runs
+    // when `online` flips back, so reconnecting auto-refetches.
+    if (!online) {
+      setLoading(false);
+      return;
+    }
     // reloadToken is read for its trigger value only — bumping it (e.g.
     // after a sync, or on PWA resume) re-runs this effect.
     void reloadToken;
@@ -245,13 +255,13 @@ function PagedList({
       window.clearTimeout(timeoutId);
       controller.abort();
     };
-  }, [board, segmentId, search, reloadToken]);
+  }, [board, segmentId, search, reloadToken, online]);
 
   // Own-row lookup runs independently. Only fires when we have a callsign
   // and the adapter supports it; skipped during search (the rows themselves
   // are filtered to the viewer's match).
   useEffect(() => {
-    if (!ownCallSign || !board.findRow || search) {
+    if (!ownCallSign || !board.findRow || search || !online) {
       setOwnRow(null);
       return;
     }
@@ -270,7 +280,7 @@ function PagedList({
       window.clearTimeout(timeoutId);
       controller.abort();
     };
-  }, [board, ownCallSign, segmentId, search, reloadToken]);
+  }, [board, ownCallSign, segmentId, search, reloadToken, online]);
 
   // Pin the own-row above the list only when it isn't already in the visible
   // top-N. An inline highlight is enough when it is.
@@ -279,6 +289,9 @@ function PagedList({
     rows.some((r) => r.callSign === ownRow.callSign && r.rank === ownRow.rank);
   const pinnedRow = ownRow && !ownVisible ? ownRow : null;
 
+  if (!online) {
+    return <OfflineEmpty />;
+  }
   return (
     <div className="flex flex-col gap-3">
       {loading ? (
@@ -294,6 +307,23 @@ function PagedList({
       {!loading && !search && ownCallSign && !ownRow && (
         <UnrankedNudge segmentId={segmentId} />
       )}
+    </div>
+  );
+}
+
+function OfflineEmpty() {
+  return (
+    <div
+      role="status"
+      className="flex flex-col items-center gap-2 rounded-lg border border-dashed border-border bg-card px-6 py-10 text-center"
+    >
+      <WifiOff className="size-6 text-muted-foreground" aria-hidden />
+      <p className="font-medium text-sm text-foreground">
+        Standings need an internet connection
+      </p>
+      <p className="text-xs text-muted-foreground">
+        They'll load automatically when you're back online.
+      </p>
     </div>
   );
 }

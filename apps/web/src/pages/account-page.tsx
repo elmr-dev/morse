@@ -12,6 +12,7 @@ import {
   ShieldCheck,
   SquareUser,
   UserCog,
+  WifiOff,
 } from 'lucide-react';
 import type { ComponentType } from 'react';
 import { useState } from 'react';
@@ -46,18 +47,32 @@ import { type AuthProvider, useAuth } from '@/lib/auth';
 import { SITE_URL } from '@/lib/site';
 import { isAuthConfigured, supabase } from '@/lib/supabase';
 import { useDocumentHead } from '@/lib/use-document-head';
+import { useOnline } from '@/lib/use-online';
 import { cn } from '@/lib/utils';
 
 interface ProviderEntry {
   id: AuthProvider;
   label: string;
   icon: ComponentType<{ className?: string }>;
+  /** Disable when the OAuth app isn't configured yet on our side. The
+   *  button still renders so users can see the option exists. */
+  comingSoon?: boolean;
 }
 
 const PROVIDERS: readonly ProviderEntry[] = [
-  { id: 'google', label: 'Sign in with Google', icon: GoogleIcon },
+  {
+    id: 'google',
+    label: 'Sign in with Google',
+    icon: GoogleIcon,
+    comingSoon: true,
+  },
   { id: 'github', label: 'Sign in with GitHub', icon: GithubIcon },
-  { id: 'discord', label: 'Sign in with Discord', icon: DiscordIcon },
+  {
+    id: 'discord',
+    label: 'Sign in with Discord',
+    icon: DiscordIcon,
+    comingSoon: true,
+  },
 ] as const;
 
 type SectionId = 'identity' | 'badge' | 'session';
@@ -413,30 +428,53 @@ function SignedOutView({
   onSignIn: (p: AuthProvider) => Promise<void>;
 }) {
   const [pending, setPending] = useState<AuthProvider | null>(null);
+  const online = useOnline();
   return (
-    <div className="flex flex-wrap items-center justify-center gap-3">
-      {PROVIDERS.map(({ id, label, icon: Icon }) => (
-        <Button
-          key={id}
-          variant="outline"
-          size="lg"
-          onClick={async () => {
-            setPending(id);
-            await onSignIn(id);
-            // Leave `pending` set so all buttons stay disabled while the
-            // OAuth redirect is in flight.
-          }}
-          disabled={pending !== null}
-          className="w-full justify-center sm:w-auto"
+    <div className="flex flex-col items-center gap-4">
+      <div className="flex flex-wrap items-center justify-center gap-3">
+        {PROVIDERS.map(({ id, label, icon: Icon, comingSoon }) => (
+          <Button
+            key={id}
+            // `secondary` reads better than `outline` against the page bg
+            // in light mode (outline buttons sat ~the same lightness as
+            // the background and faded into it).
+            variant="secondary"
+            size="lg"
+            onClick={async () => {
+              setPending(id);
+              await onSignIn(id);
+              // Leave `pending` set so all buttons stay disabled while the
+              // OAuth redirect is in flight.
+            }}
+            // Disable while another provider is in-flight, when offline
+            // (OAuth needs the network round-trip), OR when the provider
+            // isn't configured on our side yet.
+            disabled={pending !== null || !online || comingSoon}
+            className="w-full justify-center sm:w-auto"
+          >
+            {pending === id ? (
+              <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+            ) : (
+              <Icon className="size-4" />
+            )}
+            {label}
+            {comingSoon && (
+              <span className="ml-1 text-xs font-normal text-muted-foreground">
+                (soon)
+              </span>
+            )}
+          </Button>
+        ))}
+      </div>
+      {!online && (
+        <p
+          role="status"
+          className="inline-flex items-center gap-2 text-xs text-muted-foreground"
         >
-          {pending === id ? (
-            <Loader2 className="size-4 animate-spin" aria-hidden="true" />
-          ) : (
-            <Icon className="size-4" />
-          )}
-          {label}
-        </Button>
-      ))}
+          <WifiOff className="size-3.5" aria-hidden />
+          Sign-in needs an internet connection.
+        </p>
+      )}
     </div>
   );
 }

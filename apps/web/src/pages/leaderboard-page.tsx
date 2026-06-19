@@ -12,6 +12,7 @@ import { reconcile } from '@/lib/bests-sync';
 import { beatTheBotBoard } from '@/lib/leaderboard-btb';
 import { isAuthConfigured } from '@/lib/supabase';
 import { useDocumentHead } from '@/lib/use-document-head';
+import { useOnline } from '@/lib/use-online';
 import {
   BESTS_STORAGE_KEY,
   EMPTY_BESTS,
@@ -41,6 +42,7 @@ export default function LeaderboardPage() {
   });
 
   const { status, user, profile } = useAuth();
+  const online = useOnline();
   const ownCallSign = profile?.call_sign ?? null;
 
   const board = useMemo(() => beatTheBotBoard(DEFAULT_SEGMENT), []);
@@ -93,7 +95,7 @@ export default function LeaderboardPage() {
         ownCallSign={ownCallSign}
         reloadToken={reloadToken}
       />
-      {isAuthConfigured && status === 'signed-out' && (
+      {isAuthConfigured && status === 'signed-out' && online && (
         <p className="mt-4 text-center text-[12px] text-muted-foreground">
           <NavLink
             to="/account"
