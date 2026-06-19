@@ -50,6 +50,11 @@ export default defineConfig(({ mode }) => {
           name: SITE_TITLE,
           short_name: 'Morse',
           description: SITE_DESCRIPTION,
+          // Non-standard but harmless: lets the post-update toast confirm
+          // "Updated to vX" by reading the *new* SW's precached manifest.
+          // Browsers ignore unknown keys per the manifest spec; the cast
+          // is just to slip past vite-plugin-pwa's strict ManifestOptions.
+          ...({ version } as Record<string, string>),
           start_url: '/',
           scope: '/',
           display: 'standalone',
@@ -91,16 +96,23 @@ export default defineConfig(({ mode }) => {
           // SPA deep links resolve offline. Base is '/', so '/index.html' is
           // correct; the model/ort asset requests must not get the HTML shell.
           navigateFallback: '/index.html',
-          navigateFallbackDenylist: [/^\/model\//, /^\/ort\//],
+          // /badge/* is owned by a Netlify Edge Function (serves SVG); without
+          // this denylist, the SW would shadow it and return the cached
+          // /index.html, leaving same-origin <img> embeds broken.
+          navigateFallbackDenylist: [/^\/model\//, /^\/ort\//, /^\/badge\//],
           // Precache the app shell. woff2 is included so the self-hosted fonts
           // (@fontsource-variable) cache for offline use.
           globPatterns: ['**/*.{js,css,html,svg,png,ico,webmanifest,woff2}'],
           // Exclude the heavy ONNX binaries (runtime-cached below) and the
           // duplicate hashed wasm that onnxruntime-web/wasm's JS import emits into
           // assets/ — only the /ort/ copy is loaded at runtime via wasmPaths.
+          // splash/ is iOS-launch-screen PNGs (~770KB total) that iOS only
+          // reads once at install time; precaching them would just bloat the
+          // SW for no runtime benefit.
           globIgnores: [
             '**/model/**',
             '**/ort/**',
+            '**/splash/**',
             '**/assets/ort-wasm-*.wasm',
           ],
           // Guard only: the 3MB model and 13MB wasm are runtime-cached, never

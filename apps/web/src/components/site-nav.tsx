@@ -312,9 +312,12 @@ export function MobileTabBar() {
     <>
       <nav
         className={cn(
-          'fixed inset-x-0 bottom-0 z-40 border-t border-border bg-background/95 backdrop-blur-sm',
-          // Standalone clears the iOS home indicator AND adds breathing room
-          // above it so the tabs don't clash with the white bar.
+          // In-flow bottom row of main.tsx's flex column. Opaque (not
+          // translucent) so the page scrollbar — which now stops at this
+          // nav's top edge thanks to the inner scroll container — can't
+          // bleed through. z-40 stays so MoreSheet's overlay sits above
+          // tab labels.
+          'relative z-40 border-t border-border bg-background',
           standalone
             ? 'pb-[calc(env(safe-area-inset-bottom)+1.25rem)]'
             : 'pb-[env(safe-area-inset-bottom)] sm:hidden'

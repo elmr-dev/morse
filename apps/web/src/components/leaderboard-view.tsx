@@ -206,24 +206,45 @@ function PagedList({
 
   useEffect(() => {
     // reloadToken is read for its trigger value only — bumping it (e.g.
-    // after a sync) re-runs this effect even though we don't use the value.
+    // after a sync, or on PWA resume) re-runs this effect.
     void reloadToken;
     const seq = ++requestSeqRef.current;
+    // Cancel the previous in-flight request — on iOS PWA resume the prior
+    // fetch can be permanently suspended; aborting frees the connection
+    // and guarantees the new request isn't queued behind a zombie one.
+    const controller = new AbortController();
+    const timeoutId = window.setTimeout(() => controller.abort(), 15_000);
     if (!hasRowsRef.current) setLoading(true);
     board
-      .load({ segmentId, search, offset: 0, limit: TOP_N })
+      .load({
+        segmentId,
+        search,
+        offset: 0,
+        limit: TOP_N,
+        signal: controller.signal,
+      })
       .then((page) => {
         if (seq !== requestSeqRef.current) return;
         setRows(page.rows);
       })
-      .catch(() => {
+      .catch((err: unknown) => {
         if (seq !== requestSeqRef.current) return;
-        setRows([]);
+        // Preserve the prior rows on abort/timeout — a stale list beats
+        // wiping it to empty while we wait for the next reload trigger.
+        const isAbort =
+          err instanceof Error &&
+          (err.name === 'AbortError' || controller.signal.aborted);
+        if (!isAbort) setRows([]);
       })
       .finally(() => {
+        window.clearTimeout(timeoutId);
         if (seq !== requestSeqRef.current) return;
         setLoading(false);
       });
+    return () => {
+      window.clearTimeout(timeoutId);
+      controller.abort();
+    };
   }, [board, segmentId, search, reloadToken]);
 
   // Own-row lookup runs independently. Only fires when we have a callsign
@@ -237,12 +258,17 @@ function PagedList({
     // reloadToken: refresh own row alongside the list after a sync.
     void reloadToken;
     let cancelled = false;
-    void board.findRow(ownCallSign, segmentId).then((r) => {
+    const controller = new AbortController();
+    const timeoutId = window.setTimeout(() => controller.abort(), 15_000);
+    void board.findRow(ownCallSign, segmentId, controller.signal).then((r) => {
+      window.clearTimeout(timeoutId);
       if (cancelled) return;
       setOwnRow(r);
     });
     return () => {
       cancelled = true;
+      window.clearTimeout(timeoutId);
+      controller.abort();
     };
   }, [board, ownCallSign, segmentId, search, reloadToken]);
 

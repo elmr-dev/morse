@@ -123,9 +123,35 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
     );
 
+    // iOS PWA resume: while the app is suspended, supabase's autoRefresh
+    // timer can fire against a dead network and rotate the refresh token
+    // into a broken state — on wake we'd surface as signed-out until a
+    // hard-kill. Re-asking on `visible` either confirms the session, gets
+    // a fresh one, or cleanly emits SIGNED_OUT via onAuthStateChange.
+    const onVisibility = () => {
+      const sb = supabase;
+      if (!sb || cancelled) return;
+      if (document.visibilityState !== 'visible') return;
+      void sb.auth.refreshSession().then(({ data, error }) => {
+        if (cancelled) return;
+        if (error) {
+          // Refresh failed (no network, rotated token, etc.). Fall back to
+          // whatever's in storage so we don't strand the user as signed-out
+          // when they actually still have a valid session.
+          void sb.auth.getSession().then(({ data: d }) => {
+            if (!cancelled) setSession(d.session);
+          });
+          return;
+        }
+        setSession(data.session);
+      });
+    };
+    document.addEventListener('visibilitychange', onVisibility);
+
     return () => {
       cancelled = true;
       sub.subscription.unsubscribe();
+      document.removeEventListener('visibilitychange', onVisibility);
     };
   }, []);
 

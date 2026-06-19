@@ -340,21 +340,19 @@
   * {
     @apply border-border;
   }
-  html {
+  html,
+  body {
+    /* Page scroll is owned by #app-scroll (see main.tsx) so the
+       scrollbar physically ends at the top of the bottom tab bar
+       instead of running behind it. Lock the document scroll here so
+       no stray overflow falls through to the html element. */
+    overflow: hidden;
+  }
+  #app-scroll {
     /* Always reserve the vertical scrollbar gutter so the layout width doesn't
        shift (and the page doesn't "jump") when content grows past the viewport
        and the scrollbar appears — e.g. when a tall result card renders. */
     scrollbar-gutter: stable;
-    /* Keep scrollIntoView() calls from landing behind the fixed mobile tab bar.
-       Matches the pb-20 sm:pb-0 clearance on the root content wrapper. */
-    scroll-padding-bottom: 5rem;
-    @media (min-width: 640px) {
-      scroll-padding-bottom: 0;
-    }
-    /* Standalone PWA: the tab bar shows at all widths, so keep the padding. */
-    @media (display-mode: standalone) {
-      scroll-padding-bottom: 5rem;
-    }
   }
   body {
     @apply bg-background text-foreground;

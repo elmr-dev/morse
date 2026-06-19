@@ -14,7 +14,7 @@ import ScrollToTop from './components/scroll-to-top';
 import { MobileTabBar } from './components/site-nav';
 import { Toaster } from './components/ui/sonner';
 import { AuthProvider } from './lib/auth';
-import { isStandalone } from './lib/use-standalone';
+import { SCROLL_ROOT_ID } from './lib/scroll-root';
 
 const rootEl = document.getElementById('root');
 if (!rootEl) throw new Error('Root element not found');
@@ -23,25 +23,24 @@ createRoot(rootEl).render(
     <BrowserRouter basename={import.meta.env.BASE_URL}>
       <AuthProvider>
         <ScrollToTop />
-        {/* pb reserves room for the fixed bottom tab bar so content and footer
-            never hide behind it. In a browser the bar is mobile-only, so the
-            padding clears at sm; in standalone the bar shows at all widths, so
-            the padding must persist at all widths. */}
-        <div
-          className={
-            isStandalone()
-              ? 'min-h-screen flex flex-col pb-20'
-              : 'min-h-screen flex flex-col pb-20 sm:pb-0'
-          }
-        >
-          <div className="w-full max-w-[900px] mx-auto px-5 pt-4">
-            <App />
-          </div>
-          <div className="mt-auto">
-            <Footer />
-          </div>
+        {/* Viewport-sized flex column. The middle child owns the page
+            scroll so the scrollbar ends at the top edge of the bottom
+            tab bar instead of running behind it. MobileTabBar is now in
+            flow as the last child (returns null on desktop). */}
+        <div className="h-dvh flex flex-col">
+          <main
+            id={SCROLL_ROOT_ID}
+            className="flex-1 min-h-0 overflow-y-auto overscroll-contain flex flex-col pb-6"
+          >
+            <div className="w-full max-w-[900px] mx-auto px-5 pt-4">
+              <App />
+            </div>
+            <div className="mt-auto">
+              <Footer />
+            </div>
+          </main>
+          <MobileTabBar />
         </div>
-        <MobileTabBar />
         <PwaUpdatePrompt />
         <OfflineProvisioner />
         <Toaster />

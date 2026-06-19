@@ -1,8 +1,16 @@
+# Root toml. Paths explicitly include `apps/web/` because the CLI auto-adds
+# `packagePath = apps/web` (detected from the workspaces field in this
+# package.json). Combined with the auto-base set to wherever the toml lives,
+# the bundler computes base + packagePath + path; if the toml is INSIDE
+# apps/web/ that doubles to apps/web/apps/web/, which is the bug we've
+# been chasing.
+#
+# Run `bunx netlify deploy --prod` from the REPO ROOT, not from apps/web/.
+
 [build]
-  base = "apps/web"
+  publish = "apps/web/dist"
   command = "bun run build"
-  publish = "dist"
-  edge_functions = "netlify/edge-functions"
+  edge_functions = "apps/web/netlify/edge-functions"
 
 [[edge_functions]]
   function = "badge"

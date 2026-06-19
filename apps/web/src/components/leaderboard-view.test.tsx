@@ -163,7 +163,11 @@ describe('LeaderboardView', () => {
     );
     renderView(board, 'W4GIT');
     await screen.findByText(/You · #42/);
-    expect(findRow).toHaveBeenCalledWith('W4GIT', 'technician');
+    expect(findRow).toHaveBeenCalledWith(
+      'W4GIT',
+      'technician',
+      expect.any(AbortSignal)
+    );
   });
 
   it('does NOT pin own row when the viewer is already visible in the list', async () => {

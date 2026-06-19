@@ -77,6 +77,15 @@ function toRow(r: RawRow, useAllRank: boolean): LeaderboardRow {
 
 const EMPTY_PAGE: LeaderboardPage = { rows: [], hasMore: false };
 
+// Supabase wraps an aborted fetch in a PostgrestError shape (no `name`,
+// just `message` / `hint`). React StrictMode double-mounts effects in
+// dev, so the cleanup fires before the first request settles — we don't
+// want those benign aborts on the console.
+function isAbortError(err: { name?: string; message?: string }): boolean {
+  if (err.name === 'AbortError') return true;
+  return Boolean(err.message?.includes('AbortError'));
+}
+
 /**
  * Beat-the-Bot board adapter. Reads `btb_leaderboard` (the public-read view
  * that joins `btb_bests` against `profiles` and exposes server-computed rank
@@ -114,20 +123,24 @@ export function beatTheBotBoard(defaultSegmentId?: string): LeaderboardBoard {
       let q = supabase.from('btb_leaderboard').select(SELECT_COLS);
 
       if (!useAllRank) q = q.eq('tier', seg);
-      if (params.search && params.search.trim()) {
+      if (params.search?.trim()) {
         // Sanitize wildcards so a stray % / _ doesn't widen the match.
         const safe = params.search.trim().replace(/[%_]/g, '\\$&');
         q = q.ilike('call_sign', `%${safe}%`);
       }
 
-      const { data, error } = await q
+      let ordered = q
         .order(useAllRank ? 'all_rank_pos' : 'tier_rank_pos', {
           ascending: true,
         })
         .range(offset, rangeTo);
+      if (params.signal) ordered = ordered.abortSignal(params.signal);
+      const { data, error } = await ordered;
 
       if (error || !data) {
-        if (error) console.error('[leaderboard-btb] load failed', error);
+        if (error && !isAbortError(error)) {
+          console.error('[leaderboard-btb] load failed', error);
+        }
         return EMPTY_PAGE;
       }
 
@@ -139,7 +152,8 @@ export function beatTheBotBoard(defaultSegmentId?: string): LeaderboardBoard {
     },
     async findRow(
       callSign: string,
-      segmentId?: string
+      segmentId?: string,
+      signal?: AbortSignal
     ): Promise<LeaderboardRow | null> {
       if (!supabase) return null;
       const seg = segmentId ?? defaultId;
@@ -154,14 +168,18 @@ export function beatTheBotBoard(defaultSegmentId?: string): LeaderboardBoard {
 
       // On All, an operator can hold rows across multiple tiers — pick their
       // best (smallest all_rank_pos). On a tier segment there's at most one.
-      const { data, error } = await q
+      let ordered = q
         .order(useAllRank ? 'all_rank_pos' : 'tier_rank_pos', {
           ascending: true,
         })
         .limit(1);
+      if (signal) ordered = ordered.abortSignal(signal);
+      const { data, error } = await ordered;
 
       if (error || !data || data.length === 0) {
-        if (error) console.error('[leaderboard-btb] findRow failed', error);
+        if (error && !isAbortError(error)) {
+          console.error('[leaderboard-btb] findRow failed', error);
+        }
         return null;
       }
       return toRow(data[0] as RawRow, useAllRank);

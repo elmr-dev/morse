@@ -46,6 +46,10 @@ export interface LeaderboardLoadParams {
   offset?: number;
   /** Max rows to return. Defaults to whatever the adapter picks. */
   limit?: number;
+  /** Optional abort signal. Adapters that hit the network should forward it
+   *  so suspended/stale fetches can be cancelled (notably on iOS PWA resume,
+   *  where the prior request may never settle). */
+  signal?: AbortSignal;
 }
 
 export interface LeaderboardPage {
@@ -82,6 +86,7 @@ export interface LeaderboardBoard {
    *  viewer's own row even when it's outside the visible top-N. Optional. */
   findRow?: (
     callSign: string,
-    segmentId?: string
+    segmentId?: string,
+    signal?: AbortSignal
   ) => Promise<LeaderboardRow | null>;
 }

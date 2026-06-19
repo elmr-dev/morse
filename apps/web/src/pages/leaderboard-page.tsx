@@ -61,6 +61,21 @@ export default function LeaderboardPage() {
     };
   }, [status, user]);
 
+  // iOS PWA resume: when JS execution is suspended in the background, the
+  // in-flight leaderboard fetch can be permanently parked. Bumping the
+  // reload token on visible-again forces a fresh request and unblocks the
+  // spinner. Cheap to run unconditionally — the underlying effect's seq
+  // guard makes the new fetch authoritative.
+  useEffect(() => {
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        setReloadToken((n) => n + 1);
+      }
+    };
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => document.removeEventListener('visibilitychange', onVisibility);
+  }, []);
+
   return (
     <div>
       <PageHeader

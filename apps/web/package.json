@@ -1,6 +1,6 @@
 {
   "name": "morse-web",
-  "version": "2026.6.5",
+  "version": "2026.6.6",
   "type": "module",
   "license": "AGPL-3.0-or-later",
   "scripts": {
