@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { Navigate, Route, Routes } from 'react-router-dom';
+import { useOnlineTransitionToasts } from './components/offline-indicator';
 import { SiteHeader } from './components/site-nav';
 import { useIsStandalone } from './lib/use-standalone';
 import AccountPage, {
@@ -18,6 +19,7 @@ import LeaderboardPage from './pages/leaderboard-page';
 
 export default function App() {
   const standalone = useIsStandalone();
+  useOnlineTransitionToasts();
   return (
     <>
       <SiteHeader />

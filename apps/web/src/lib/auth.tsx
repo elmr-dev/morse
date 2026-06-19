@@ -179,6 +179,32 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signOut = useCallback(async () => {
     if (!supabase) return;
+    const online =
+      typeof navigator === 'undefined' || navigator.onLine !== false;
+
+    // Offline path: skip supabase.auth.signOut entirely. Even `scope:
+    // 'local'` makes a POST /logout call (see @supabase/auth-js), and when
+    // that fails offline the SDK returns early WITHOUT clearing the
+    // persisted token — leaving the user "signed in" but stuck. Wipe the
+    // sb-*-auth-token keys ourselves and force the in-memory state. The
+    // remote session lives on until its TTL — fine, we don't manage
+    // multi-device session UX.
+    if (!online) {
+      try {
+        for (const key of Object.keys(localStorage)) {
+          if (key.startsWith('sb-') && key.endsWith('-auth-token')) {
+            localStorage.removeItem(key);
+          }
+        }
+      } catch {
+        /* storage access denied — best-effort */
+      }
+      setSession(null);
+      setProfile(null);
+      toast.success('Signed out.');
+      return;
+    }
+
     const { error } = await supabase.auth.signOut();
     if (error) {
       console.error('[auth] signOut failed', error);

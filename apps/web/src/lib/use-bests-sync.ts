@@ -44,6 +44,12 @@ export function useBestsSync(
     if (statusRef.current !== 'ready') return;
     const userId = userIdRef.current;
     if (!userId) return;
+    // Skip the round-trip when the device is offline. The mount-into-ready
+    // and visibilitychange triggers fire blindly, but a Supabase call there
+    // just times out into a "reconcile failed" console log; the sibling
+    // `online` listener will re-fire this on reconnect. SSR-safe via the
+    // `typeof navigator` guard.
+    if (typeof navigator !== 'undefined' && !navigator.onLine) return;
     if (runningRef.current) return;
     runningRef.current = true;
     try {
