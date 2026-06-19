@@ -99,6 +99,7 @@ export default function AccountPage() {
   });
 
   const { status, signIn, claimCallsign, signOut } = useAuth();
+  const online = useOnline();
 
   if (!isAuthConfigured) {
     return (
@@ -132,6 +133,19 @@ export default function AccountPage() {
     return (
       <Shell showIntro>
         <SignedOutView onSignIn={signIn} />
+      </Shell>
+    );
+  }
+
+  // Signed in (or mid-claim) but offline. Every section past this point
+  // — callsign claim, badge preview, sign-out (Supabase round-trip),
+  // session controls — needs the network. Render one explicit offline
+  // card instead of a half-working settings UI. SignedOutView above has
+  // its own offline treatment (disabled OAuth buttons + inline note).
+  if (!online) {
+    return (
+      <Shell>
+        <OfflineSettings />
       </Shell>
     );
   }
@@ -175,6 +189,27 @@ function Shell({
       <hr className="mb-6 hidden border-border md:block" />
       {children}
     </>
+  );
+}
+
+/** Shown when the user is past sign-in but the device is offline. Every
+ *  remaining settings surface (callsign claim, badge preview, sign-out,
+ *  session controls) needs the network; one explicit card beats a
+ *  half-working UI. */
+function OfflineSettings() {
+  return (
+    <div
+      role="status"
+      className="flex flex-col items-center gap-2 rounded-lg border border-dashed border-border bg-card px-6 py-10 text-center"
+    >
+      <WifiOff className="size-6 text-muted-foreground" aria-hidden />
+      <p className="font-medium text-sm text-foreground">
+        Settings need an internet connection
+      </p>
+      <p className="text-xs text-muted-foreground">
+        They'll be available again when you're back online.
+      </p>
+    </div>
   );
 }
 
