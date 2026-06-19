@@ -8,6 +8,26 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
+    <!-- Paint the themed background BEFORE anything else loads. Runs ahead of
+         the script below so iOS PWA cold launch doesn't flash white between
+         the launch screen and the CSS bundle. The script still corrects for
+         localStorage overrides — that's a 1-frame flicker, only for users who
+         manually overrode their system theme. `color-scheme` also opts the
+         WebView's native controls (scrollbars, form widgets) into matching
+         the system, removing another flash source. -->
+    <style>
+      html {
+        background: oklch(0.93 0.006 286.15);
+        color: oklch(0.3015 0.0572 282.4176);
+        color-scheme: light dark;
+      }
+      @media (prefers-color-scheme: dark) {
+        html {
+          background: oklch(0.1743 0.0227 283.7998);
+          color: oklch(0.93 0.006 286.15);
+        }
+      }
+    </style>
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Morse — CW in your browser</title>
     <link rel="icon" type="image/svg+xml" href="%BASE_URL%favicon.svg" />
@@ -16,6 +36,43 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     <!-- rel="manifest" is injected by vite-plugin-pwa (manifest generated from
          src/lib/site.ts constants — see vite.config.ts). -->
     <meta name="theme-color" content="#0F0F1A" />
+    <!-- iOS PWA chrome. `capable` enables standalone display; `black-translucent`
+         lets the page draw under the status bar in our own theme color instead
+         of letting iOS render a system bar that briefly defaults to white. -->
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <!-- iOS PWA launch screens. Without these, iOS shows a white screen with
+         your app icon between tap and the webview becoming visible. The PNGs
+         are pre-rendered (logo + wordmark over #0F0F1A) by pwa-asset-generator
+         from public/logo.svg — regen with:
+           bunx pwa-asset-generator public/logo.svg public/splash \
+             --background "#0F0F1A" --splash-only --portrait-only \
+             --opaque true --type png --quality 90 --xhtml
+         Dark splash only (iOS launch screens can't query prefers-color-scheme).
+         The media queries match physical device dimensions @ pixel-ratio. -->
+    <link rel="apple-touch-startup-image" href="/splash/apple-splash-2064-2752.png" media="(device-width: 1032px) and (device-height: 1376px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait)" />
+    <link rel="apple-touch-startup-image" href="/splash/apple-splash-2048-2732.png" media="(device-width: 1024px) and (device-height: 1366px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait)" />
+    <link rel="apple-touch-startup-image" href="/splash/apple-splash-1668-2420.png" media="(device-width: 834px) and (device-height: 1210px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait)" />
+    <link rel="apple-touch-startup-image" href="/splash/apple-splash-1668-2388.png" media="(device-width: 834px) and (device-height: 1194px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait)" />
+    <link rel="apple-touch-startup-image" href="/splash/apple-splash-1668-2224.png" media="(device-width: 834px) and (device-height: 1112px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait)" />
+    <link rel="apple-touch-startup-image" href="/splash/apple-splash-1536-2048.png" media="(device-width: 768px) and (device-height: 1024px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait)" />
+    <link rel="apple-touch-startup-image" href="/splash/apple-splash-1640-2360.png" media="(device-width: 820px) and (device-height: 1180px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait)" />
+    <link rel="apple-touch-startup-image" href="/splash/apple-splash-1620-2160.png" media="(device-width: 810px) and (device-height: 1080px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait)" />
+    <link rel="apple-touch-startup-image" href="/splash/apple-splash-1488-2266.png" media="(device-width: 744px) and (device-height: 1133px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait)" />
+    <link rel="apple-touch-startup-image" href="/splash/apple-splash-1320-2868.png" media="(device-width: 440px) and (device-height: 956px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)" />
+    <link rel="apple-touch-startup-image" href="/splash/apple-splash-1206-2622.png" media="(device-width: 402px) and (device-height: 874px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)" />
+    <link rel="apple-touch-startup-image" href="/splash/apple-splash-1260-2736.png" media="(device-width: 420px) and (device-height: 912px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)" />
+    <link rel="apple-touch-startup-image" href="/splash/apple-splash-1290-2796.png" media="(device-width: 430px) and (device-height: 932px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)" />
+    <link rel="apple-touch-startup-image" href="/splash/apple-splash-1179-2556.png" media="(device-width: 393px) and (device-height: 852px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)" />
+    <link rel="apple-touch-startup-image" href="/splash/apple-splash-1170-2532.png" media="(device-width: 390px) and (device-height: 844px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)" />
+    <link rel="apple-touch-startup-image" href="/splash/apple-splash-1284-2778.png" media="(device-width: 428px) and (device-height: 926px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)" />
+    <link rel="apple-touch-startup-image" href="/splash/apple-splash-1080-2340.png" media="(device-width: 360px) and (device-height: 780px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)" />
+    <link rel="apple-touch-startup-image" href="/splash/apple-splash-1242-2688.png" media="(device-width: 414px) and (device-height: 896px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)" />
+    <link rel="apple-touch-startup-image" href="/splash/apple-splash-1125-2436.png" media="(device-width: 375px) and (device-height: 812px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)" />
+    <link rel="apple-touch-startup-image" href="/splash/apple-splash-828-1792.png" media="(device-width: 414px) and (device-height: 896px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait)" />
+    <link rel="apple-touch-startup-image" href="/splash/apple-splash-1242-2208.png" media="(device-width: 414px) and (device-height: 736px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)" />
+    <link rel="apple-touch-startup-image" href="/splash/apple-splash-750-1334.png" media="(device-width: 375px) and (device-height: 667px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait)" />
+    <link rel="apple-touch-startup-image" href="/splash/apple-splash-640-1136.png" media="(device-width: 320px) and (device-height: 568px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait)" />
 
     <!-- Site-wide OG/Twitter tags, canonical, and WebApplication JSON-LD
          are injected at build time by vite-plugin-seo-head.ts (env-driven via
@@ -51,10 +108,75 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       html:not(.standalone) #rotate-guard {
         display: none;
       }
+      /* Splash overlay — sits on top of #root so it survives React's mount.
+         A tiny inline script below holds it for SPLASH_MIN_MS, then fades it
+         out and removes it. The fixed overlay decouples it from React, so
+         a fast bundle can't make it flicker by. */
+      #splash {
+        position: fixed;
+        inset: 0;
+        z-index: 9999;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 0.875rem;
+        padding: 1rem;
+        background: inherit;
+        opacity: 1;
+        transition: opacity 0.3s ease-out;
+        pointer-events: none;
+      }
+      #splash.splash-leave { opacity: 0; }
     </style>
   </head>
   <body>
     <div id="root"></div>
+    <!-- Splash overlay — fixed on top of #root, fades out after a guaranteed
+         minimum on-screen time so the brand registers even when the JS bundle
+         mounts fast. Inline SVG + system mono font so it paints without
+         waiting for the CSS or JS bundles. -->
+    <div id="splash" role="presentation" aria-hidden="true">
+      <svg
+        viewBox="0 0 1200 332"
+        width="220"
+        xmlns="http://www.w3.org/2000/svg"
+      >
+        <g fill="none" stroke-linecap="round" stroke-linejoin="round">
+          <path stroke="#9d86ff" stroke-width="117.124817" d="M 770.731689 273.411774 L 1034.146362 273.411774" />
+          <path stroke="#9d86ff" stroke-width="117.124817" d="M 341.463409 273.411774 L 604.878052 273.411774" />
+          <path stroke="#e0479e" stroke-width="78.083214" d="M 117.073174 273.411774 C 117.073174 284.197571 125.809082 292.941162 136.585373 292.941162 C 147.361649 292.941162 156.097565 284.197571 156.097565 273.411774 C 156.097565 262.625977 147.361649 253.882355 136.585373 253.882355 C 125.809082 253.882355 117.073174 262.625977 117.073174 273.411774 Z" />
+          <path stroke="#e0479e" stroke-width="78.083214" d="M 1121.951172 58.588226 C 1121.951172 69.374023 1130.687134 78.117645 1141.463379 78.117645 C 1152.239746 78.117645 1160.975586 69.374023 1160.975586 58.588226 C 1160.975586 47.802429 1152.239746 39.058838 1141.463379 39.058838 C 1130.687134 39.058838 1121.951172 47.802429 1121.951172 58.588226 Z" />
+          <path stroke="#9d86ff" stroke-width="117.124817" d="M 692.682922 58.588226 L 956.097534 58.588226" />
+          <path stroke="#9d86ff" stroke-width="78.083214" d="M 487.804871 58.588226 C 487.804871 69.374023 496.540771 78.117645 507.317078 78.117645 C 518.093384 78.117645 526.829285 69.374023 526.829285 58.588226 C 526.829285 47.802429 518.093384 39.058838 507.317078 39.058838 C 496.540771 39.058838 487.804871 47.802429 487.804871 58.588226 Z" />
+          <path stroke="#9d86ff" stroke-width="117.124817" d="M 58.536587 58.588226 L 321.951233 58.588226" />
+        </g>
+      </svg>
+      <span
+        style="
+          font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+          font-weight: 700;
+          font-size: 1.5rem;
+          letter-spacing: 0.08em;
+          color: inherit;
+        "
+      >MORSE</span>
+    </div>
+    <script>
+      // Hold the splash for SPLASH_MIN_MS, then fade and remove. Independent
+      // of React mount: a fast bundle can't shortcut it, a slow bundle can't
+      // strand it. Pairs with the CSS transition on #splash.
+      (() => {
+        var SPLASH_MIN_MS = 800;
+        var FADE_MS = 300;
+        window.setTimeout(() => {
+          var el = document.getElementById('splash');
+          if (!el) return;
+          el.classList.add('splash-leave');
+          window.setTimeout(() => el.remove(), FADE_MS);
+        }, SPLASH_MIN_MS);
+      })();
+    </script>
     <!-- Portrait-only guard. The manifest "orientation" locks installed PWAs on
          Chromium, but iOS ignores it, so this overlay (styled in index.css)
          enforces portrait on phone-sized landscape viewports. -->

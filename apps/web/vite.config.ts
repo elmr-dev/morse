@@ -106,9 +106,13 @@ export default defineConfig(({ mode }) => {
           // Exclude the heavy ONNX binaries (runtime-cached below) and the
           // duplicate hashed wasm that onnxruntime-web/wasm's JS import emits into
           // assets/ — only the /ort/ copy is loaded at runtime via wasmPaths.
+          // splash/ is iOS-launch-screen PNGs (~770KB total) that iOS only
+          // reads once at install time; precaching them would just bloat the
+          // SW for no runtime benefit.
           globIgnores: [
             '**/model/**',
             '**/ort/**',
+            '**/splash/**',
             '**/assets/ort-wasm-*.wasm',
           ],
           // Guard only: the 3MB model and 13MB wasm are runtime-cached, never
