@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import {
+  AudioLines,
   Check,
   ChevronDown,
   Download,
@@ -200,6 +201,14 @@ export function MoreSheet({
               (isAuthConfigured && signedIn) || !online ? 'mt-3' : undefined
             )}
           >
+            <NavLink
+              to="/rufzxp"
+              onClick={() => onOpenChange(false)}
+              className={rowClass}
+            >
+              <AudioLines className="size-5 text-muted-foreground" />
+              <span className="flex-1 text-left">RufZXP</span>
+            </NavLink>
             <NavLink
               to="/faq"
               onClick={() => onOpenChange(false)}
