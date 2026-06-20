@@ -42,8 +42,10 @@ export function generateAudio(opts: GenerateOptions): GeneratedAudio {
     sampleRate: 22050,
     noise: {
       snrDb: opts.snrDb,
-      ...(opts.qsb ? { qsb: { depth: 0.5, freqHz: 0.2 } } : {}),
     },
+    ...(opts.qsb
+      ? { ionosphericFading: { depth: 0.55, rate: 0.16, components: 2 } }
+      : {}),
     durationSec: 0,
     seed: opts.seed ?? Math.floor(Math.random() * 2147483647),
   });

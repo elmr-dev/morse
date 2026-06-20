@@ -6,7 +6,9 @@
  * fading is slower and more organic, representing the changing propagation
  * path through the ionosphere.
  *
- * Formula: envelope = Product over n of (1 - depth/n * (0.5 + 0.5*sin(2*pi*f_i*t + phi_i)))
+ * Formula:
+ *   blended = weighted average of sin(2*pi*f_i*t + phi_i), in [-1, 1]
+ *   envelope = 1 - depth * (1 - (blended + 1) / 2)
  */
 
 /**
@@ -15,9 +17,9 @@
 export interface IonosphericFadingOptions {
   /** Fading depth (0-0.9, how deep the fades are) */
   depth: number;
-  /** Primary fading rate in Hz (0.1-8 Hz) */
+  /** Primary fading rate in Hz (typical slow QSB: 0.05-0.35 Hz) */
   rate: number;
-  /** Number of sinusoid components (2-5) */
+  /** Number of sinusoid components (1-5) */
   components?: number;
   /** Initial phases for each component */
   phases?: number[];
@@ -36,9 +38,9 @@ export const FADING_PROFILES: Record<
   IonosphericFadingOptions | null
 > = {
   none: null,
-  mild: { depth: 0.3, rate: 0.3, components: 2 },
-  moderate: { depth: 0.5, rate: 0.8, components: 3 },
-  severe: { depth: 0.8, rate: 2.0, components: 4 },
+  mild: { depth: 0.25, rate: 0.08, components: 1 },
+  moderate: { depth: 0.55, rate: 0.16, components: 2 },
+  severe: { depth: 0.75, rate: 0.25, components: 3 },
 };
 
 /**
@@ -66,14 +68,21 @@ export class IonosphericFading {
 
   constructor(options: IonosphericFadingOptions, seed?: number) {
     this.depth = Math.max(0, Math.min(0.9, options.depth));
-    this.components = Math.max(2, Math.min(5, options.components ?? 3));
+    this.components = Math.max(1, Math.min(5, options.components ?? 2));
 
-    // Generate component rates spread around the primary rate
+    // Slow QSB in real recordings is broad and sinusoidal: a main multi-second
+    // swing plus a smaller faster component, not rapid product modulation.
     this.rates = [];
+    const factors =
+      this.components === 1
+        ? [1]
+        : this.components === 2
+          ? [0.5, 1.7]
+          : this.components === 3
+            ? [0.5, 1.0, 1.7]
+            : [0.45, 0.8, 1.25, 1.7, 2.2];
     for (let i = 0; i < this.components; i++) {
-      // Spread rates: primary * (0.5, 0.7, 1.0, 1.3, 1.7, ...)
-      const factor = 0.5 + i * 0.3 + (i > 0 ? 0.2 : 0);
-      this.rates.push(options.rate * factor);
+      this.rates.push(options.rate * factors[i]);
     }
 
     // Use provided phases or generate random ones
@@ -105,19 +114,19 @@ export class IonosphericFading {
    * @returns Envelope multiplier (0 to 1)
    */
   getEnvelope(timeSeconds: number): number {
-    let envelope = 1.0;
+    let combined = 0;
+    let totalWeight = 0;
 
     for (let i = 0; i < this.components; i++) {
-      // Depth is distributed across components
-      const componentDepth = this.depth / (i + 1);
-      const modulation =
-        0.5 +
-        0.5 *
-          Math.sin(2 * Math.PI * this.rates[i] * timeSeconds + this.phases[i]);
-      envelope *= 1 - componentDepth * modulation;
+      const weight = 1 / 2 ** i;
+      combined +=
+        weight *
+        Math.sin(2 * Math.PI * this.rates[i] * timeSeconds + this.phases[i]);
+      totalWeight += weight;
     }
 
-    return envelope;
+    const modulation = 0.5 + 0.5 * (combined / totalWeight);
+    return 1 - this.depth * (1 - modulation);
   }
 
   /**
@@ -222,10 +231,18 @@ export function randomIonosphericFadingOptions(
     return null;
   }
 
-  // Add some variation around the profile
+  // Add bounded variation around the slow profile.
+  const depth = Math.max(
+    0,
+    Math.min(0.9, profile.depth * (0.8 + prng() * 0.4))
+  );
+  const rate = Math.max(
+    0.03,
+    Math.min(0.45, profile.rate * (0.75 + prng() * 0.5))
+  );
   return {
-    depth: profile.depth * (0.8 + prng() * 0.4),
-    rate: profile.rate * (0.7 + prng() * 0.6),
+    depth,
+    rate,
     components: profile.components,
     phases: Array.from(
       { length: profile.components ?? 3 },

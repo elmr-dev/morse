@@ -321,7 +321,7 @@ export default function DecodeDemo() {
                 QSB (fading)
               </Label>
               <div className="text-[11px] text-muted-foreground mt-0.5">
-                Moderate fading, 0.2 Hz rate
+                Slow signal fading, 0.16 Hz rate
               </div>
             </div>
             <Switch
