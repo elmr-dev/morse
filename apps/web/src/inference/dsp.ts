@@ -273,12 +273,11 @@ export function uniformFilter1d(x: Float64Array, size: number): Float64Array {
   return out;
 }
 
-function reflectIdx(i: number, n: number): number {
+export function reflectIdx(i: number, n: number): number {
   if (n === 1) return 0;
-  const period = 2 * n - 2;
-  let k = i % period;
-  if (k < 0) k += period;
-  return k < n ? k : period - k;
+  const period = 2 * n;
+  const k = ((i % period) + period) % period;
+  return k < n ? k : 2 * n - 1 - k;
 }
 
 function convolveReflect(x: Float64Array, kernel: Float64Array): Float64Array {

@@ -12,6 +12,7 @@
   ],
   "provenance": {
     "canonical_dsp_path": "packages/ml/cw-dsp-research/dsp.py",
+    "canonical_dsp_note": "Generated from cw-dsp-research/dsp.py; bandpass-verified byte-identical to the training copy packages/ml/model/data/dsp.py (the latter was not imported directly because it pulls soundfile). The conformance guarantee covers both files equally.",
     "canonical_dsp_sha256": "6e7c3b71afb2fb134f4129235ae7f688025e7ec01697a5c97eb0b0e0b2510f4c",
     "canonical_dsp_git_short_sha": "2113d89",
     "regen_command": "uv run --script packages/ml/cw-dsp-research/generate_dsp_fixture.py",
