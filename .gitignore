@@ -48,5 +48,10 @@ ml/cw-dsp-research/testdata/
 ml/cw-dsp-research/evaldata/
 ml/cw-dsp-research/human_baseline_audio/
 
+# Un-ignore the cross-language DSP golden fixtures (committed conformance
+# vectors — see fixtures/dsp/README.md). The *.npy and *.wav globs above
+# would otherwise silently swallow them.
+!fixtures/dsp/**
+
 # Local Netlify folder
 .netlify
