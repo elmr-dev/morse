@@ -23,60 +23,177 @@ const MATCHED_MS = 48.0;
 const LONG_MATCHED_MS = 200.0;
 const SHARPEN_GAMMA = 8.0;
 
-// ---------- Biquad filter (RBJ BPF), forward-backward for ~zero phase ----------
+// ---------- Order-1 Butterworth bandpass (SOS, forward-backward) ----------
+//
+// Matches scipy.signal.butter(1, [lo, hi], btype="bandpass", fs=fs, output="sos")
+// + scipy.signal.sosfiltfilt — the authoritative training-side filter in
+// packages/ml/cw-dsp-research/dsp.py. Closed-form for order 1: one analog
+// section Δs / (s² + Δs + Ω0²) with prewarped band edges, bilinear-transformed
+// to a single digital biquad. Conformance is locked by the per-channel parity
+// test against fixtures/dsp/.
 
-function rbjBandpass(
-  f0: number,
-  bw: number,
+/** A single second-order section in scipy's row layout: [b0, b1, b2, a0, a1, a2]. */
+export type SosSection = [number, number, number, number, number, number];
+
+/**
+ * Order-1 Butterworth bandpass SOS for [loHz, hiHz] at sample rate fs.
+ * Returns one section, matching `scipy.signal.butter(1, ..., output="sos")[0]`
+ * to ~1e-15 absolute on every coefficient (numerical-noise level).
+ */
+export function butterBandpassOrder1Sos(
+  loHz: number,
+  hiHz: number,
   fs: number
-): [number, number, number, number, number] {
-  const w0 = (2 * Math.PI * f0) / fs;
-  const cosW = Math.cos(w0);
-  const sinW = Math.sin(w0);
-  // BW in Hz → Q
-  const Q = f0 / bw;
-  const alpha = sinW / (2 * Q);
-  const b0 = alpha;
-  const b1 = 0;
-  const b2 = -alpha;
-  const a0 = 1 + alpha;
-  const a1 = -2 * cosW;
-  const a2 = 1 - alpha;
-  return [b0 / a0, b1 / a0, b2 / a0, a1 / a0, a2 / a0];
+): SosSection {
+  // Bilinear prewarp of the band edges, then analog bandpass transform of the
+  // order-1 lowpass prototype 1/(s+1): H_a(s) = Δs / (s² + Δs + Ω0²).
+  const K = 2 * fs;
+  const loW = K * Math.tan((Math.PI * loHz) / fs);
+  const hiW = K * Math.tan((Math.PI * hiHz) / fs);
+  const Omega0Sq = loW * hiW;
+  const Delta = hiW - loW;
+  // Bilinear (s = K(z-1)/(z+1)), then clear (z+1)² from both polynomials.
+  const a0Raw = K * K + Delta * K + Omega0Sq;
+  const b0 = (Delta * K) / a0Raw;
+  const b2 = -(Delta * K) / a0Raw;
+  const a1 = (2 * Omega0Sq - 2 * K * K) / a0Raw;
+  const a2 = (K * K - Delta * K + Omega0Sq) / a0Raw;
+  return [b0, 0, b2, 1, a1, a2];
 }
 
-function biquad(
-  x: Float64Array,
-  coefs: [number, number, number, number, number]
-): Float64Array {
-  const [b0, b1, b2, a1, a2] = coefs;
-  const n = x.length;
-  const out = new Float64Array(n);
-  let x1 = 0,
-    x2 = 0,
-    y1 = 0,
-    y2 = 0;
-  for (let i = 0; i < n; i++) {
-    const y = b0 * x[i] + b1 * x1 + b2 * x2 - a1 * y1 - a2 * y2;
-    x2 = x1;
-    x1 = x[i];
-    y2 = y1;
-    y1 = y;
-    out[i] = y;
+/**
+ * Per-section steady-state initial conditions for unit step input. Mirrors
+ * scipy.signal.sosfilt_zi: the returned `zi[k]` should be multiplied by the
+ * first sample fed to section k for use as the initial state in Direct-Form-II
+ * Transposed sosfilt. Assumes a0 == 1 (scipy normalizes on construction).
+ */
+export function sosfiltZi(sos: SosSection[]): [number, number][] {
+  // For DF2T: y = b0*x + s0; s0' = b1*x - a1*y + s1; s1' = b2*x - a2*y.
+  // Steady state with x = 1 in isolation gives y_ss = (b0+b1+b2)/(1+a1+a2),
+  // s1 = b2 - a2*y_ss, s0 = b1 + b2 - (a1+a2)*y_ss. But sosfilt_zi composes
+  // sections: section k receives the previous section's steady-state output
+  // (scaled by x), so we propagate scale = y_ss across sections.
+  const zi: [number, number][] = [];
+  let scale = 1;
+  for (const s of sos) {
+    const b0 = s[0],
+      b1 = s[1],
+      b2 = s[2],
+      a1 = s[4],
+      a2 = s[5];
+    const denom = 1 + a1 + a2;
+    const yss = ((b0 + b1 + b2) * scale) / denom;
+    const s1 = b2 * scale - a2 * yss;
+    const s0 = b1 * scale + b2 * scale - (a1 + a2) * yss;
+    zi.push([s0, s1]);
+    scale = yss;
   }
-  return out;
+  return zi;
 }
 
-function filtfilt(
+/**
+ * Direct-Form-II Transposed SOS filter. Mirrors scipy.signal.sosfilt with the
+ * `zi` argument: pass per-section initial state (already scaled by the first
+ * sample if you want sosfiltfilt-style edge matching). Returns `{ y, zf }`.
+ */
+function sosfilt(
+  sos: SosSection[],
   x: Float64Array,
-  coefs: [number, number, number, number, number]
-): Float64Array {
-  const fwd = biquad(x, coefs);
-  const rev = new Float64Array(fwd.length);
-  for (let i = 0; i < fwd.length; i++) rev[i] = fwd[fwd.length - 1 - i];
-  const back = biquad(rev, coefs);
-  const out = new Float64Array(back.length);
-  for (let i = 0; i < back.length; i++) out[i] = back[back.length - 1 - i];
+  zi: ReadonlyArray<readonly [number, number]>
+): { y: Float64Array; zf: [number, number][] } {
+  const n = x.length;
+  const zf: [number, number][] = zi.map(([a, b]) => [a, b]);
+  let cur = Float64Array.from(x);
+  let next = new Float64Array(n);
+  for (let k = 0; k < sos.length; k++) {
+    const [b0, b1, b2, , a1, a2] = sos[k];
+    let s0 = zf[k][0];
+    let s1 = zf[k][1];
+    for (let i = 0; i < n; i++) {
+      const xi = cur[i];
+      const y = b0 * xi + s0;
+      s0 = b1 * xi - a1 * y + s1;
+      s1 = b2 * xi - a2 * y;
+      next[i] = y;
+    }
+    zf[k] = [s0, s1];
+    const tmp = cur;
+    cur = next;
+    next = tmp;
+  }
+  return { y: cur, zf };
+}
+
+/**
+ * Forward-backward SOS filter matching scipy.signal.sosfiltfilt with default
+ * `padtype="odd"` and `padlen = 3 * (2*n_sections + 1 - zerosInB2A2)`. For
+ * order-1 bandpass (n_sections=1, no zero b2/a2) that's an edge of 9 samples.
+ *
+ * Crucially this uses per-section initial conditions on BOTH forward and
+ * backward passes — the bit the previous naive RBJ-biquad filtfilt omitted,
+ * which is what dominated the parity gap at the clip edges.
+ */
+export function sosfiltfilt(sos: SosSection[], x: Float64Array): Float64Array {
+  const nSections = sos.length;
+  // scipy: padlen default counts b2/a2 zeros to shrink ntaps; for our order-1
+  // bandpass neither b2 nor a2 is zero, so this reduces to 3 * (2*N + 1).
+  let zerosB2 = 0;
+  let zerosA2 = 0;
+  for (const s of sos) {
+    if (s[2] === 0) zerosB2++;
+    if (s[5] === 0) zerosA2++;
+  }
+  const minZ = Math.min(zerosB2, zerosA2);
+  const edge = 3 * (2 * nSections + 1 - minZ);
+
+  const ext = oddExtend(x, edge);
+  const ziBase = sosfiltZi(sos);
+
+  // Forward pass: zi scaled by ext[0].
+  const x0 = ext[0];
+  const ziFwd = ziBase.map(([a, b]) => [a * x0, b * x0] as [number, number]);
+  const { y: yFwd } = sosfilt(sos, ext, ziFwd);
+
+  // Backward pass on reversed forward output, with zi scaled by its last sample.
+  const yRev = new Float64Array(yFwd.length);
+  for (let i = 0; i < yFwd.length; i++) yRev[i] = yFwd[yFwd.length - 1 - i];
+  const y0 = yRev[0];
+  const ziBack = ziBase.map(([a, b]) => [a * y0, b * y0] as [number, number]);
+  const { y: yBack } = sosfilt(sos, yRev, ziBack);
+
+  // Un-reverse and trim the padded edges.
+  const yOut = new Float64Array(x.length);
+  for (let i = 0; i < x.length; i++) {
+    yOut[i] = yBack[yBack.length - 1 - (i + edge)];
+  }
+  return yOut;
+}
+
+/**
+ * scipy.signal._arraytools.odd_ext: reflect `n` samples on each side about
+ * the boundary value. Used by sosfiltfilt's default padtype.
+ */
+function oddExtend(x: Float64Array, n: number): Float64Array {
+  if (n === 0) return Float64Array.from(x);
+  if (x.length < n + 1) {
+    throw new Error(
+      `oddExtend: signal length ${x.length} too short for pad ${n}`
+    );
+  }
+  const out = new Float64Array(x.length + 2 * n);
+  const left = x[0];
+  const right = x[x.length - 1];
+  for (let i = 0; i < n; i++) {
+    // left_ext[i] = 2*x[0] - x[n - i]  (mirrors x[n], x[n-1], ..., x[1])
+    out[i] = 2 * left - x[n - i];
+  }
+  for (let i = 0; i < x.length; i++) {
+    out[n + i] = x[i];
+  }
+  for (let i = 0; i < n; i++) {
+    // right_ext[i] = 2*x[-1] - x[-2 - i]
+    out[n + x.length + i] = 2 * right - x[x.length - 2 - i];
+  }
   return out;
 }
 
@@ -86,9 +203,10 @@ export function bandpass(
   f0: number,
   halfBw: number
 ): Float64Array {
-  const bw = 2 * halfBw;
-  const coefs = rbjBandpass(f0, bw, fs);
-  return filtfilt(audio, coefs);
+  const loHz = f0 - halfBw;
+  const hiHz = f0 + halfBw;
+  const sos = [butterBandpassOrder1Sos(loHz, hiHz, fs)];
+  return sosfiltfilt(sos, audio);
 }
 
 // ---------- Hilbert transform magnitude via FFT ----------
