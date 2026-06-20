@@ -11,7 +11,13 @@ import {
   Square,
   Trophy,
 } from 'lucide-react';
-import { type FormEvent, useEffect, useRef, useState } from 'react';
+import {
+  type FormEvent,
+  type KeyboardEvent,
+  useEffect,
+  useRef,
+  useState,
+} from 'react';
 import { generateAudio } from '@/inference/generate';
 import { useDocumentHead } from '@/lib/use-document-head';
 import { usePersistedState } from '@/lib/use-persisted-state';
@@ -113,6 +119,24 @@ function Stat({
       >
         {value}
       </div>
+    </div>
+  );
+}
+
+function ShortcutHint({ keys, label }: { keys: string[]; label: string }) {
+  return (
+    <div className="inline-flex items-center gap-1.5 text-muted-foreground text-xs">
+      <span className="inline-flex items-center gap-1">
+        {keys.map((key) => (
+          <kbd
+            key={key}
+            className="min-w-6 rounded-sm border border-border bg-muted px-1.5 py-0.5 text-center font-mono text-[11px] text-foreground shadow-xs"
+          >
+            {key}
+          </kbd>
+        ))}
+      </span>
+      <span>{label}</span>
     </div>
   );
 }
@@ -291,6 +315,12 @@ export default function RufzxpPage() {
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    submitCurrent();
+  }
+
+  function submitCurrent() {
+    if (state.phase !== 'playing' || !state.userAnswer) return;
+
     const next = submitAnswer(state);
     setState(next);
     if (next.phase === 'playing' && next.currentCallsign) {
@@ -310,6 +340,25 @@ export default function RufzxpPage() {
   function reset() {
     audioRef.current?.pause();
     setState(createInitialState(settings));
+  }
+
+  function handleAnswerKeyDown(event: KeyboardEvent<HTMLInputElement>) {
+    if (event.key === 'F5') {
+      event.preventDefault();
+      void playCurrent(true);
+      return;
+    }
+
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      setState((current) => ({ ...current, userAnswer: '' }));
+      return;
+    }
+
+    if (event.key === ' ') {
+      event.preventDefault();
+      submitCurrent();
+    }
   }
 
   return (
@@ -454,6 +503,7 @@ export default function RufzxpPage() {
                         userAnswer,
                       }));
                     }}
+                    onKeyDown={handleAnswerKeyDown}
                     className="h-14 font-mono text-3xl uppercase tracking-normal"
                     autoComplete="off"
                   />
@@ -461,7 +511,7 @@ export default function RufzxpPage() {
                 <div className="flex flex-wrap items-center gap-2">
                   <Button type="submit" disabled={!state.userAnswer}>
                     <Square className="size-4" />
-                    Enter
+                    Send
                   </Button>
                   <Button
                     type="button"
@@ -484,6 +534,11 @@ export default function RufzxpPage() {
                   <Button type="button" variant="ghost" onClick={reset}>
                     Abort
                   </Button>
+                </div>
+                <div className="flex flex-wrap gap-x-4 gap-y-2 border-t border-border pt-3">
+                  <ShortcutHint keys={['Enter', 'Space']} label="send" />
+                  <ShortcutHint keys={['F5']} label="replay" />
+                  <ShortcutHint keys={['Esc']} label="clear" />
                 </div>
               </form>
             )}
