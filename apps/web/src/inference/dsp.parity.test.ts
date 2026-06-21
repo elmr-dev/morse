@@ -148,23 +148,16 @@ describe('extractEnvelope — parity vs python golden fixture', () => {
   expect(index.dsp_sample_rate).toBe(DSP_SAMPLE_RATE);
   expect(index.channels.length).toBe(IN_CHANNELS);
 
-  // Per-channel max-abs-error gates. The bandpass is now numerically faithful
-  // to scipy butter+sosfiltfilt (verified by butterBandpassOrder1Sos test
-  // above), but a separate latent bug remains in the smoothing stages: the
-  // shared `reflectIdx` implements scipy.ndimage's `mode='mirror'`
-  // (d c b | a b c d | c b a) rather than `mode='reflect'`
-  // (d c b a | a b c d | d c b a) which dsp.py specifies. The delta shows up
-  // at clip edges and scales with kernel size — small for ch0's narrow
-  // Gaussian (σ=4), larger for ch1/ch2/ch3's uniform windows (30/48/200 ms).
-  // Fixing that is OUT OF SCOPE for this fix (the prompt explicitly forbids
-  // touching the smoothing stages), so the bandpass-dominated channels gate
-  // tight and the smoothing-dominated channels gate loose, with the actual
-  // max error reported in every assertion message for future cleanup.
+  // Per-channel max-abs-error gates. Both the bandpass (Butterworth) and the
+  // smoothing boundary (reflectIdx mode='reflect') now match scipy exactly.
+  // Observed max abs error across all 10 clips:
+  //   ch0 ≈ 2.75e-4, ch1 ≈ 5.82e-11, ch2 ≈ 4.66e-10, ch3 ≈ 5.96e-8
+  // Epsilons are set ~4–20× above observed max for numerical headroom.
   const EPS_PER_CHANNEL: [number, number, number, number] = [
-    1e-3, // ch0 amplitude — bandpass + narrow Gaussian
-    5e-3, // ch1 TKEO — uniform 30 ms
-    5e-2, // ch2 matched 48 ms — uniform 48 ms; reflect/mirror at edges
-    5e-2, // ch3 matched 200 ms — uniform 200 ms; reflect/mirror at edges
+    5e-4, // ch0 amplitude — bandpass + narrow Gaussian (σ=4)
+    1e-9, // ch1 TKEO — uniform 30 ms
+    1e-8, // ch2 matched 48 ms — uniform 48 ms
+    1e-6, // ch3 matched 200 ms — uniform 200 ms
   ];
 
   for (const clip of index.clips) {

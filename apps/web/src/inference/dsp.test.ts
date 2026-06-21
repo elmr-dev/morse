@@ -15,6 +15,7 @@ import {
   DSP_SAMPLE_RATE,
   ENVELOPE_SR,
   extractEnvelope,
+  reflectIdx,
 } from './dsp';
 
 // Synthesize 8 kHz mono audio with a single keyed tone (one dah at the
@@ -48,6 +49,52 @@ function synthesizeKeyedTone(opts: {
   }
   return out;
 }
+
+describe('reflectIdx — scipy mode="reflect" boundary', () => {
+  // scipy mode='reflect' (half-sample symmetric): the edge sample IS duplicated
+  // across the boundary. Extension for n=5 [a,b,c,d,e]:
+  //   (e d c b a | a b c d e | e d c b a ...)  period = 2*n = 10
+  //
+  // Reference values verified against scipy.ndimage for n=5.
+  const n = 5;
+  const cases: [number, number][] = [
+    // interior — identity
+    [0, 0],
+    [1, 1],
+    [2, 2],
+    [3, 3],
+    [4, 4],
+    // right boundary: edge (4) is duplicated
+    [5, 4],
+    [6, 3],
+    [7, 2],
+    [8, 1],
+    [9, 0],
+    // second period right
+    [10, 0],
+    [11, 1],
+    // left boundary: edge (0) is duplicated (reflect, not mirror)
+    [-1, 0],
+    [-2, 1],
+    [-3, 2],
+    [-4, 3],
+    [-5, 4],
+    // multi-period left
+    [-10, 0],
+    [-11, 0],
+  ];
+  for (const [i, expected] of cases) {
+    it(`reflectIdx(${i}, ${n}) === ${expected}`, () => {
+      expect(reflectIdx(i, n)).toBe(expected);
+    });
+  }
+
+  it('n=1 always returns 0', () => {
+    expect(reflectIdx(-5, 1)).toBe(0);
+    expect(reflectIdx(0, 1)).toBe(0);
+    expect(reflectIdx(3, 1)).toBe(0);
+  });
+});
 
 describe('extractEnvelope', () => {
   const TONE_FREQ = 700;
