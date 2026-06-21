@@ -1,0 +1,19 @@
+# SPDX-FileCopyrightText: 2026 John Schult, Mark Percival
+#
+# SPDX-License-Identifier: MIT
+
+[package]
+name = "cw-core"
+version = "0.1.0"
+description = "Shared CW primitives (symbol table, timing) for the Morse suite"
+authors = ["John Schult W4GIT", "Mark Percival KC4T"]
+edition.workspace = true
+
+# No dependencies. cw-core is the mode-agnostic shared core and MUST stay
+# WASM-clean (compiles to wasm32-unknown-unknown) — no native-only deps
+# (no ort, no audio, no DSP, no tauri). Any future dep must be WASM-safe.
+
+[lib]
+# Default rlib is correct. Do NOT add crate-type = ["cdylib"] — WASM packaging
+# (wasm-bindgen) is a later slice; an rlib consumed by the decoder app is all
+# this needs.
