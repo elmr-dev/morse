@@ -5,6 +5,7 @@
 pub mod audio;
 pub mod decode;
 pub mod dsp;
+pub mod model;
 
 use audio::{AudioSource, WavFileSource};
 

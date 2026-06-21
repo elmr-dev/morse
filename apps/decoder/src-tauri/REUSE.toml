@@ -13,3 +13,11 @@ path = [
 ]
 SPDX-FileCopyrightText = "2026 Mark Percival, John Schult"
 SPDX-License-Identifier = "AGPL-3.0-or-later"
+
+# CWNet ONNX model — a binary blob (no SPDX header possible), embedded into the
+# decoder via include_bytes!. Copy of the canonical model that ships with
+# morse-web (apps/web/public/model/cw_model_full.onnx), same license.
+[[annotations]]
+path = ["resources/cw_model_full.onnx"]
+SPDX-FileCopyrightText = "2026 Mark Percival, John Schult"
+SPDX-License-Identifier = "AGPL-3.0-or-later"
