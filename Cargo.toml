@@ -2,7 +2,7 @@
 resolver = "2"
 members = [
   "apps/decoder/src-tauri",
-  # "packages/cw-core",  # created in Slice 1 — uncomment when it exists
+  "packages/cw-core",
 ]
 
 [workspace.package]
