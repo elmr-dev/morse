@@ -1,0 +1,15 @@
+version = 1
+
+# Files that cannot carry an SPDX comment header: strict JSON (no comments),
+# the .gitignore dotfile, and Tauri-generated icon assets (binary PNG/ICO/ICNS
+# and the Android launcher XML/PNGs). The Rust sources and Cargo.toml carry
+# inline headers instead.
+[[annotations]]
+path = [
+  ".gitignore",
+  "capabilities/default.json",
+  "tauri.conf.json",
+  "icons/**",
+]
+SPDX-FileCopyrightText = "2026 Mark Percival, John Schult"
+SPDX-License-Identifier = "AGPL-3.0-or-later"
