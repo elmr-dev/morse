@@ -55,3 +55,7 @@ ml/cw-dsp-research/human_baseline_audio/
 
 # Local Netlify folder
 .netlify
+
+# Rust / Cargo
+target/
+gen/schemas/

@@ -1,0 +1,9 @@
+[workspace]
+resolver = "2"
+members = [
+  "apps/decoder/src-tauri",
+  # "packages/cw-core",  # created in Slice 1 — uncomment when it exists
+]
+
+[workspace.package]
+edition = "2021"
