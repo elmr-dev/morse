@@ -141,8 +141,8 @@ def _add_impairments(sample_cfg: dict, imp: str, rng: random.Random,
         depth = round(rng.uniform(0.10, max_depth), 2)
         sample_cfg["ionosphericFading"] = {
             "depth": depth,
-            "rate":  round(rng.uniform(0.3,  2.0),  2),
-            "components": 3,
+            "rate":  round(rng.uniform(0.06,  0.35),  2),
+            "components": 2,
         }
 
 

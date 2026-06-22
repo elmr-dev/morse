@@ -1,20 +1,20 @@
 /**
- * SNR matching tests: verify that applyAWGN + measureSNR are consistent
- * across the full training range (-18 dB to +20 dB).
+ * SNR matching tests: verify both the legacy AWGN helper and the shared
+ * receiver-chain generator calibration across the training range.
  *
  * Background
  * ----------
- * The TypeScript generator uses a **total-energy SNR** definition (matching
- * the Kaggle/cw-decode training pipeline):
+ * The applyAWGN helper uses a **total-energy SNR** definition:
  *
  *   noise_power = mean(signal²) / 10^(snrDb/10)
  *
  * This means signal power is computed over the *entire* waveform including
  * silence, so at low SNR the noise genuinely buries the signal.
  *
- * These tests ensure the measured SNR (via measureSNR) matches the target SNR
- * within ±0.5 dB across the training range, locking in the definition so it
- * cannot silently drift relative to what the Python training pipeline expects.
+ * The TrainingSampleGenerator path uses receiver-chain calibration: actual
+ * keyed CW RMS is matched against actual 2.4 kHz receiver-noise RMS, so
+ * generated clips measure close to the requested SNR while sounding like a
+ * shared receiver output.
  *
  * Training data context
  * ---------------------
@@ -182,10 +182,10 @@ describe('TrainingSampleGenerator SNR config', () => {
     }
   });
 
-  it('pure-AWGN sample (no AGC, no pink blend): measured content SNR matches target', () => {
+  it('receiver-calibrated sample measured in the 2400 Hz passband matches target SNR', () => {
     // With outputNoisePath set, the generator returns noiseAudio.
-    // audio - noiseAudio = clean signal (padded with zeros).
-    // This lets us measure the actual content-region SNR directly.
+    // audio - noiseAudio = scaled signal (padded with zeros). The generator
+    // calibrates the actual keyed CW RMS against the actual receiver-noise RMS.
     const gen = new TrainingSampleGenerator();
 
     for (const snrDb of [-15, -10, -5, 0, 5, 10, 15, 20]) {
@@ -198,7 +198,6 @@ describe('TrainingSampleGenerator SNR config', () => {
         durationSec: 10,
         seed: 42,
         outputNoisePath: 'dummy', // triggers noiseAudio output
-        // No AGC — preserves the applyAWGN SNR definition exactly
       });
 
       expect(sample.noiseAudio).toBeDefined();
@@ -234,7 +233,7 @@ describe('TrainingSampleGenerator SNR config', () => {
       const measured = measureSNR(contentClean, contentNoisy);
       expect(
         Math.abs(measured - snrDb),
-        `Content SNR mismatch at ${snrDb} dB: measured ${measured.toFixed(3)} dB`
+        `Receiver-calibrated content SNR mismatch at ${snrDb} dB: measured ${measured.toFixed(3)} dB`
       ).toBeLessThanOrEqual(TOLERANCE_DB);
     }
   });

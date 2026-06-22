@@ -1262,8 +1262,9 @@ async function generateDataset(args: CliArgs): Promise<void> {
       if (args.split !== 'phase0') {
         if (prng() < distributions.ionosphericFadingProbability) {
           const depth = 0.1 + prng() * 0.8;
-          const rate = 0.1 + prng() * 7.9;
-          config.ionosphericFading = { depth, rate, components: 3 };
+          const rate = 0.06 + prng() * 0.29;
+          const components = prng() < 0.65 ? 2 : 3;
+          config.ionosphericFading = { depth, rate, components };
         }
 
         if (prng() < distributions.multipathProbability) {

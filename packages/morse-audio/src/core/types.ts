@@ -53,11 +53,11 @@ export interface FistOptions {
  * Noise configuration
  */
 export interface NoiseConfig {
-  /** Target SNR in dB (total-energy ratio, Kaggle/ARRL standard) */
+  /** Target SNR in dB, calibrated against keyed CW and 2.4 kHz receiver noise */
   snrDb: number;
   /**
-   * Slow QSB: sinusoidal amplitude modulation of the noise floor.
-   * Models propagation-induced noise-level variation (0.1–1 Hz fading).
+   * Slow sinusoidal amplitude modulation of the generated noise floor.
+   * Signal QSB uses `ionosphericFading`; this field is only noise breathing.
    */
   qsb?: {
     /** Fractional amplitude depth (0–1, e.g. 0.08 = ±8% variation) */
