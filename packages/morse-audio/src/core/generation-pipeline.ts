@@ -15,7 +15,15 @@ import type { MultipathOptions } from '../utils/multipath';
 import { applyMultipath } from '../utils/multipath';
 import type { PitchWobbleOptions } from '../utils/pitch-wobble';
 import { createPrng, randomSeed } from '../utils/prng';
-import { generateUsbPassbandNoise } from '../utils/usb-passband-noise';
+import { applyRayleighFading } from '../utils/rayleigh-fading';
+import {
+  DEFAULT_REFERENCE_PEAK,
+  generateCalibratedNoise,
+} from '../utils/snr-mixing';
+import {
+  DEFAULT_USB_BANDWIDTH_HZ,
+  generateUsbPassbandNoise,
+} from '../utils/usb-passband-noise';
 import {
   generateBroadbandInterference,
   mixBroadbandInterference,
@@ -198,6 +206,18 @@ function offsetMetadata<T extends CharacterMetadata | ElementMetadata>(
   }));
 }
 
+function subtractSignals(a: Float32Array, b: Float32Array): Float32Array {
+  const output = new Float32Array(a.length);
+  for (let i = 0; i < output.length; i++) output[i] = a[i] - b[i];
+  return output;
+}
+
+function rms(samples: Float32Array): number {
+  let sumSq = 0;
+  for (let i = 0; i < samples.length; i++) sumSq += samples[i] * samples[i];
+  return Math.sqrt(sumSq / Math.max(1, samples.length));
+}
+
 export function generateMorsePipeline<TConfig extends PipelineConfig>(
   config: TConfig,
   policy: Partial<PipelinePolicy> = {}
@@ -236,7 +256,6 @@ export function generateMorsePipeline<TConfig extends PipelineConfig>(
     sampleRate,
     rampDurationMs: rampDuration,
     seed: Math.floor(prng() * 2147483647),
-    rayleigh: config.rayleigh,
     flutter: config.flutter,
     chirp: config.chirp,
     pitchWobble: config.pitchWobble,
@@ -245,6 +264,26 @@ export function generateMorsePipeline<TConfig extends PipelineConfig>(
 
   let audio = synthesis.samples;
   const envelope = synthesis.envelope;
+
+  if (config.dopplerSpread) {
+    audio = applyDopplerSpread(
+      audio,
+      envelope,
+      config.frequency,
+      config.dopplerSpread,
+      sampleRate,
+      Math.floor(prng() * 2147483647)
+    );
+  }
+
+  if (config.rayleigh) {
+    audio = applyRayleighFading(
+      audio,
+      config.rayleigh,
+      sampleRate,
+      Math.floor(prng() * 2147483647)
+    );
+  }
 
   if (config.ionosphericFading) {
     audio = applyIonosphericFading(
@@ -257,17 +296,6 @@ export function generateMorsePipeline<TConfig extends PipelineConfig>(
 
   if (config.multipath) {
     audio = applyMultipath(audio, config.multipath, sampleRate);
-  }
-
-  if (config.dopplerSpread) {
-    audio = applyDopplerSpread(
-      audio,
-      envelope,
-      config.frequency,
-      config.dopplerSpread,
-      sampleRate,
-      Math.floor(prng() * 2147483647)
-    );
   }
 
   if (config.cwQrm?.length) {
@@ -293,20 +321,16 @@ export function generateMorsePipeline<TConfig extends PipelineConfig>(
     audio = mixBroadbandInterference(audio, interference);
   }
 
-  const cleanAudioSnapshot = audio.slice();
+  const signalAudio = audio;
   const noiseConfig = config.noise;
-  let totalPower = 0;
-  for (let i = 0; i < audio.length; i++) totalPower += audio[i] * audio[i];
-  totalPower /= audio.length;
-  const noiseLevel =
-    totalPower < 1e-10
-      ? 0.001
-      : Math.sqrt(totalPower / 10 ** (noiseConfig.snrDb / 10));
 
-  const noiseSamples = generateUsbPassbandNoise({
-    length: audio.length,
+  const noiseSamples = generateCalibratedNoise({
+    length: signalAudio.length,
     sampleRate,
+    centerFrequency: config.frequency,
     seed: Math.floor(prng() * 2147483647),
+    referenceSinePeak: DEFAULT_REFERENCE_PEAK,
+    referenceBandwidth: DEFAULT_USB_BANDWIDTH_HZ,
   });
 
   if (noiseConfig.qsb) {
@@ -319,40 +343,52 @@ export function generateMorsePipeline<TConfig extends PipelineConfig>(
     }
   }
 
-  for (let i = 0; i < audio.length; i++)
-    audio[i] += noiseSamples[i] * noiseLevel;
-
   if (noiseConfig.qrn) {
     const qrn = generateImpulseQRN(
-      audio.length,
+      signalAudio.length,
       sampleRate,
       noiseConfig.qrn.rate,
-      noiseConfig.qrn.amplitudeMultiplier * noiseLevel,
+      noiseConfig.qrn.amplitudeMultiplier *
+        (DEFAULT_REFERENCE_PEAK / Math.SQRT2),
       Math.floor(prng() * 2147483647)
     );
-    for (let i = 0; i < audio.length; i++) audio[i] += qrn[i];
+    for (let i = 0; i < noiseSamples.length; i++) noiseSamples[i] += qrn[i];
   }
 
   if (noiseConfig.powerLine) {
     const { baseHz, level, buzzDepth, coronaLevel } = noiseConfig.powerLine;
     const interference = generatePowerLineInterference(
-      audio.length,
+      signalAudio.length,
       sampleRate,
       baseHz,
-      noiseLevel * 10 ** (level / 20),
+      (DEFAULT_REFERENCE_PEAK / Math.SQRT2) * 10 ** (level / 20),
       buzzDepth,
       coronaLevel ?? 0.3,
       Math.floor(prng() * 2147483647)
     );
-    for (let i = 0; i < audio.length; i++) audio[i] += interference[i];
+    for (let i = 0; i < noiseSamples.length; i++)
+      noiseSamples[i] += interference[i];
   }
 
-  const noiseOnlyContent = new Float32Array(audio.length);
-  for (let i = 0; i < audio.length; i++)
-    noiseOnlyContent[i] = audio[i] - cleanAudioSnapshot[i];
+  const signalRms = rms(signalAudio);
+  const receiverNoiseRms = rms(noiseSamples);
+  const signalGain =
+    signalRms < 1e-12
+      ? 0
+      : (receiverNoiseRms * 10 ** (noiseConfig.snrDb / 20)) / signalRms;
+
+  const cleanAudioSnapshot = new Float32Array(signalAudio.length);
+  audio = new Float32Array(signalAudio.length);
+  for (let i = 0; i < signalAudio.length; i++) {
+    cleanAudioSnapshot[i] = signalAudio[i] * signalGain;
+    audio[i] = cleanAudioSnapshot[i] + noiseSamples[i];
+  }
+
+  let noiseOnlyContent = noiseSamples;
 
   if (config.agc) {
     audio = applyAGC(audio, sampleRate, config.agc);
+    noiseOnlyContent = subtractSignals(audio, cleanAudioSnapshot);
   }
 
   const minPaddingSamples = Math.ceil(
@@ -380,7 +416,7 @@ export function generateMorsePipeline<TConfig extends PipelineConfig>(
   if (silentSampleCount > 100) {
     noiseRms = Math.sqrt(noiseRms / silentSampleCount);
   } else {
-    noiseRms = noiseLevel;
+    noiseRms = receiverNoiseRms;
   }
 
   const paddingNoise = generateUsbPassbandNoise({

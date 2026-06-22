@@ -40,11 +40,11 @@ export interface FistOptions {
  * Noise configuration for training samples
  */
 export interface NoiseConfig {
-  /** Target SNR in dB (total-energy ratio, Kaggle/ARRL standard) */
+  /** Target SNR in dB, calibrated against keyed CW and 2.4 kHz receiver noise */
   snrDb: number;
   /**
-   * Slow QSB: sinusoidal amplitude modulation of the noise floor.
-   * Models propagation-induced noise-level variation (1–30 Hz fading).
+   * Slow sinusoidal amplitude modulation of the generated noise floor.
+   * Signal QSB uses `ionosphericFading`; this field is only noise breathing.
    */
   qsb?: {
     /** Fractional amplitude depth (0–1, e.g. 0.08 = ±8 % variation) */
@@ -287,7 +287,7 @@ export const DEFAULT_DISTRIBUTIONS: ParameterDistributions = {
   agcProbability: 0.7,
   pitchWobbleProbability: 0.3,
   chirpProbability: 0.2,
-  qsbProbability: 0.6, // 60% of samples get slow noise-floor QSB
+  qsbProbability: 0.6, // 60% of samples get slow noise-floor breathing
   qrnProbability: 0.4, // 40% of samples get Poisson impulse bursts
   powerLineProbability: 0.15, // 15% of samples get power-line interference
 };
