@@ -4,10 +4,9 @@
 
 // Audio generation using morse-audio's training-equivalent pipeline (MorseAudioGenerator).
 //
-// The simple generateMorseAudio helper uses peak-signal SNR scaling, which is ~5–10 dB
-// different from the training data's RMS-power SNR. Using MorseAudioGenerator with a
-// NoiseConfig matches the exact SNR calibration the model was trained on, so UI "-5 dB"
-// corresponds to training "-5 dB".
+// The simple generateMorseAudio helper uses legacy peak-signal SNR scaling. The
+// MorseAudioGenerator path uses the shared receiver-chain mixer, so UI SNR values
+// map to the same keyed-CW/receiver-noise calibration as generated samples.
 
 import { createMorseAudioGenerator } from 'morse-audio';
 

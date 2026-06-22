@@ -1,20 +1,20 @@
 /**
- * SNR matching tests: verify that applyAWGN + measureSNR are consistent
- * across the full training range (-18 dB to +20 dB).
+ * SNR matching tests: verify both the legacy AWGN helper and the shared
+ * receiver-chain generator calibration across the training range.
  *
  * Background
  * ----------
- * The TypeScript generator uses a **total-energy SNR** definition (matching
- * the Kaggle/cw-decode training pipeline):
+ * The applyAWGN helper uses a **total-energy SNR** definition:
  *
  *   noise_power = mean(signal²) / 10^(snrDb/10)
  *
  * This means signal power is computed over the *entire* waveform including
  * silence, so at low SNR the noise genuinely buries the signal.
  *
- * These tests ensure the measured SNR (via measureSNR) matches the target SNR
- * within ±0.5 dB across the training range, locking in the definition so it
- * cannot silently drift relative to what the Python training pipeline expects.
+ * The TrainingSampleGenerator path uses receiver-chain calibration: actual
+ * keyed CW RMS is matched against actual 2.4 kHz receiver-noise RMS, so
+ * generated clips measure close to the requested SNR while sounding like a
+ * shared receiver output.
  *
  * Training data context
  * ---------------------

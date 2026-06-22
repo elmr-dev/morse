@@ -53,7 +53,7 @@ export interface FistOptions {
  * Noise configuration
  */
 export interface NoiseConfig {
-  /** Target SNR in dB (total-energy ratio, Kaggle/ARRL standard) */
+  /** Target SNR in dB, calibrated against keyed CW and 2.4 kHz receiver noise */
   snrDb: number;
   /**
    * Slow sinusoidal amplitude modulation of the generated noise floor.
