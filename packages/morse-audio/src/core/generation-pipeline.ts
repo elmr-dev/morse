@@ -15,6 +15,7 @@ import type { MultipathOptions } from '../utils/multipath';
 import { applyMultipath } from '../utils/multipath';
 import type { PitchWobbleOptions } from '../utils/pitch-wobble';
 import { createPrng, randomSeed } from '../utils/prng';
+import { applyRayleighFading } from '../utils/rayleigh-fading';
 import { generateUsbPassbandNoise } from '../utils/usb-passband-noise';
 import {
   generateBroadbandInterference,
@@ -236,7 +237,6 @@ export function generateMorsePipeline<TConfig extends PipelineConfig>(
     sampleRate,
     rampDurationMs: rampDuration,
     seed: Math.floor(prng() * 2147483647),
-    rayleigh: config.rayleigh,
     flutter: config.flutter,
     chirp: config.chirp,
     pitchWobble: config.pitchWobble,
@@ -245,6 +245,26 @@ export function generateMorsePipeline<TConfig extends PipelineConfig>(
 
   let audio = synthesis.samples;
   const envelope = synthesis.envelope;
+
+  if (config.dopplerSpread) {
+    audio = applyDopplerSpread(
+      audio,
+      envelope,
+      config.frequency,
+      config.dopplerSpread,
+      sampleRate,
+      Math.floor(prng() * 2147483647)
+    );
+  }
+
+  if (config.rayleigh) {
+    audio = applyRayleighFading(
+      audio,
+      config.rayleigh,
+      sampleRate,
+      Math.floor(prng() * 2147483647)
+    );
+  }
 
   if (config.ionosphericFading) {
     audio = applyIonosphericFading(
@@ -257,17 +277,6 @@ export function generateMorsePipeline<TConfig extends PipelineConfig>(
 
   if (config.multipath) {
     audio = applyMultipath(audio, config.multipath, sampleRate);
-  }
-
-  if (config.dopplerSpread) {
-    audio = applyDopplerSpread(
-      audio,
-      envelope,
-      config.frequency,
-      config.dopplerSpread,
-      sampleRate,
-      Math.floor(prng() * 2147483647)
-    );
   }
 
   if (config.cwQrm?.length) {

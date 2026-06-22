@@ -11,6 +11,28 @@
 
 import { createMorseAudioGenerator } from 'morse-audio';
 
+const ROUGH_QSB_PRESET = {
+  noise: {
+    qsb: { depth: 0.08, freqHz: 0.18 },
+    qrn: { rate: 3, amplitudeMultiplier: 4 },
+  },
+  ionosphericFading: { depth: 0.55, rate: 0.16, components: 2 },
+  multipath: {
+    paths: [
+      { delayMs: 2.5, amplitude: 0.28, phase: Math.PI },
+      { delayMs: 6.5, amplitude: 0.16, phase: Math.PI / 2 },
+    ],
+  },
+  dopplerSpread: { spreadHz: 2.5, components: 3 },
+  rayleigh: { bandwidth: 0.45, depth: 0.18 },
+  agc: {
+    attackMs: 8,
+    releaseMs: 180,
+    targetLevel: 0.55,
+    maxGain: 6,
+  },
+};
+
 // Lazy singleton — defers construction to first call rather than at module
 // import time, keeping the module side-effect-free.
 let _gen: ReturnType<typeof createMorseAudioGenerator> | null = null;
@@ -42,9 +64,16 @@ export function generateAudio(opts: GenerateOptions): GeneratedAudio {
     sampleRate: 22050,
     noise: {
       snrDb: opts.snrDb,
+      ...(opts.qsb ? ROUGH_QSB_PRESET.noise : {}),
     },
     ...(opts.qsb
-      ? { ionosphericFading: { depth: 0.55, rate: 0.16, components: 2 } }
+      ? {
+          ionosphericFading: ROUGH_QSB_PRESET.ionosphericFading,
+          multipath: ROUGH_QSB_PRESET.multipath,
+          dopplerSpread: ROUGH_QSB_PRESET.dopplerSpread,
+          rayleigh: ROUGH_QSB_PRESET.rayleigh,
+          agc: ROUGH_QSB_PRESET.agc,
+        }
       : {}),
     durationSec: 0,
     seed: opts.seed ?? Math.floor(Math.random() * 2147483647),
