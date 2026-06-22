@@ -328,8 +328,8 @@ export function MoreSheet({
           <div className="border-t border-foreground/15 pt-3">
             <FooterContent />
             <p className="mt-2 text-center text-[11px] text-muted-foreground">
-              Built by <span className="font-mono text-foreground">W4GIT</span>{' '}
-              + <span className="font-mono text-foreground">KC4T</span> ·{' '}
+              Built by <span className="font-mono text-foreground">KC4T</span> +{' '}
+              <span className="font-mono text-foreground">W4GIT</span> ·{' '}
               <a
                 href="https://www.gnu.org/licenses/agpl-3.0.html"
                 target="_blank"

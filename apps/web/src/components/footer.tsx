@@ -7,7 +7,6 @@ import { Link } from 'react-router-dom';
 import { useIsStandalone } from '@/lib/use-standalone';
 import pkg from '../../package.json';
 import { GITHUB_URL, GithubIcon } from './github';
-import ThemeSwitcher from './theme-switcher';
 
 const NPM_PACKAGES = [
   { name: 'morse-audio', href: 'https://www.npmjs.com/package/morse-audio' },
@@ -66,8 +65,8 @@ export default function Footer() {
             </span>
             <p className="text-[13px] text-muted-foreground">
               CW in your browser — built by{' '}
-              <span className="font-mono text-foreground">W4GIT</span> +{' '}
-              <span className="font-mono text-foreground">KC4T</span>.
+              <span className="font-mono text-foreground">KC4T</span> +{' '}
+              <span className="font-mono text-foreground">W4GIT</span>.
             </p>
             <p className="text-[12px] text-muted-foreground/80">
               Licensed{' '}
@@ -89,6 +88,12 @@ export default function Footer() {
               <ColumnHeading>Reference</ColumnHeading>
               <Link to="/faq" className={linkClass}>
                 FAQ
+              </Link>
+              <Link to="/privacy" className={linkClass}>
+                Privacy
+              </Link>
+              <Link to="/terms" className={linkClass}>
+                Terms
               </Link>
             </div>
             <div className="flex flex-col gap-2.5">
@@ -125,10 +130,18 @@ export default function Footer() {
           </div>
         </div>
 
-        {/* Utility row: theme toggle + made-with line */}
+        {/* Utility row: org link + made-with line */}
         <div className="mt-8 flex flex-col items-center gap-3 border-t border-border pt-6 sm:flex-row sm:justify-between">
           <FooterContent />
-          <ThemeSwitcher />
+          <a
+            href="https://elmr.dev"
+            target="_blank"
+            rel="noreferrer"
+            className={linkClass}
+          >
+            elmr.dev
+            <ExternalLink className="size-3 opacity-60" aria-hidden="true" />
+          </a>
         </div>
       </div>
     </footer>

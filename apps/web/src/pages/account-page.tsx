@@ -2,6 +2,7 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+import type { User } from '@supabase/supabase-js';
 import {
   BadgePercent,
   CircleUser,
@@ -15,7 +16,7 @@ import {
   WifiOff,
 } from 'lucide-react';
 import type { ComponentType } from 'react';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   Link,
   NavLink,
@@ -64,15 +65,9 @@ const PROVIDERS: readonly ProviderEntry[] = [
     id: 'google',
     label: 'Sign in with Google',
     icon: GoogleIcon,
-    comingSoon: true,
   },
   { id: 'github', label: 'Sign in with GitHub', icon: GithubIcon },
-  {
-    id: 'discord',
-    label: 'Sign in with Discord',
-    icon: DiscordIcon,
-    comingSoon: true,
-  },
+  { id: 'discord', label: 'Sign in with Discord', icon: DiscordIcon },
 ] as const;
 
 type SectionId = 'identity' | 'badge' | 'session';
@@ -420,10 +415,38 @@ const PROVIDER_DISPLAY: Record<
 };
 
 export function SessionSection() {
-  const { user, signOut } = useAuth();
+  const { user: sessionUser, signOut } = useAuth();
+  // getUser() hits the server and returns identities with accurate
+  // last_sign_in_at. The JWT-decoded session.user skips server validation
+  // and may carry a stale app_metadata.provider (the signup provider, which
+  // never changes when a second OAuth provider is linked later).
+  const [freshUser, setFreshUser] = useState<User | null>(null);
+  const sessionUserId = sessionUser?.id ?? null;
+  useEffect(() => {
+    if (!supabase || !sessionUserId) return;
+    supabase.auth.getUser().then(({ data }) => {
+      if (data.user) setFreshUser(data.user);
+    });
+  }, [sessionUserId]);
+
+  const user = freshUser ?? sessionUser;
   const email = user?.email ?? null;
-  const providerId =
-    (user?.app_metadata?.provider as string | undefined) ?? null;
+  const providerId = (() => {
+    const identities = user?.identities;
+    if (identities?.length) {
+      const latest = [...identities].sort((a, b) => {
+        const aT = a.last_sign_in_at
+          ? new Date(a.last_sign_in_at).getTime()
+          : 0;
+        const bT = b.last_sign_in_at
+          ? new Date(b.last_sign_in_at).getTime()
+          : 0;
+        return bT - aT;
+      })[0];
+      return latest.provider;
+    }
+    return (user?.app_metadata?.provider as string | undefined) ?? null;
+  })();
   const provider = providerId ? PROVIDER_DISPLAY[providerId] : null;
 
   return (
@@ -837,7 +860,7 @@ function VerifySection({
 // Until a public /u/CALL operator page exists, the snippet link points at the
 // site root via VITE_SITE_URL. Falls back to morse-ml.netlify.app so the badge
 // preview still works in a bare local dev with no env file.
-const BADGE_LINK_ORIGIN = SITE_URL || 'https://morse-ml.netlify.app';
+const BADGE_LINK_ORIGIN = SITE_URL || 'https://morse.elmr.dev';
 
 function badgeUrlFor(callsign: string): string {
   return `${BADGE_LINK_ORIGIN}/badge/${encodeURIComponent(callsign)}.svg`;
