@@ -3,8 +3,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import {
-  AudioLines,
   ChevronDown,
+  Gauge,
   HelpCircle,
   House,
   LogOut,
@@ -75,7 +75,7 @@ const NAV_ITEMS: NavItem[] = [
 const DESKTOP_NAV_ITEMS: NavItem[] = [
   { to: '/decode', label: 'Decode', icon: Radio },
   { to: '/beat-the-bot', label: 'Beat the Bot', icon: BoxingGloveIcon },
-  { to: '/rufzxp', label: 'RufZXP', icon: AudioLines },
+  { to: '/redline', label: 'Redline', icon: Gauge },
   { to: '/leaderboard', label: 'Leaderboard', icon: Trophy },
   { to: '/faq', label: 'FAQ', icon: HelpCircle },
 ];

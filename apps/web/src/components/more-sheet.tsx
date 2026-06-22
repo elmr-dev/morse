@@ -3,11 +3,11 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import {
-  AudioLines,
   Check,
   ChevronDown,
   Download,
   ExternalLink,
+  Gauge,
   HelpCircle,
   LogOut,
   Monitor,
@@ -202,12 +202,12 @@ export function MoreSheet({
             )}
           >
             <NavLink
-              to="/rufzxp"
+              to="/redline"
               onClick={() => onOpenChange(false)}
               className={rowClass}
             >
-              <AudioLines className="size-5 text-muted-foreground" />
-              <span className="flex-1 text-left">RufZXP</span>
+              <Gauge className="size-5 text-muted-foreground" />
+              <span className="flex-1 text-left">Redline</span>
             </NavLink>
             <NavLink
               to="/faq"

@@ -18,7 +18,7 @@ import FaqPage from './pages/faq-page';
 import LandingPage from './pages/landing-page';
 import LeaderboardPage from './pages/leaderboard-page';
 
-const RufzxpPage = lazy(() => import('./pages/rufzxp-page'));
+const RedlinePage = lazy(() => import('./pages/redline-page'));
 
 export default function App() {
   const standalone = useIsStandalone();
@@ -39,10 +39,10 @@ export default function App() {
         <Route path="/beat" element={<Navigate to="/beat-the-bot" replace />} />
         <Route path="/beat-the-bot" element={<BeatTheBotPage />} />
         <Route
-          path="/rufzxp"
+          path="/redline"
           element={
             <Suspense fallback={null}>
-              <RufzxpPage />
+              <RedlinePage />
             </Suspense>
           }
         />
