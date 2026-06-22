@@ -13,6 +13,12 @@
 // board itself always comes from the server — there are no synthetic rows.
 
 import { callsignCountry } from '@/inference/callsign';
+import type {
+  LeaderboardBoard,
+  LeaderboardLoadParams,
+  LeaderboardPage,
+  LeaderboardRow,
+} from '@/lib/leaderboard';
 import { supabase } from '@/lib/supabase';
 
 const LOCAL_BEST_KEY = 'morse:redline:best';
@@ -110,19 +116,37 @@ export function writeLocalBest(score: number, topWpm: number): LocalBest {
 
 // ── Cloud read/write ────────────────────────────────────────────────────────
 
-/** The ranked board, server-sorted. Empty when the backend isn't configured. */
+/** Options for a board fetch — all optional. */
+export interface FetchOptions {
+  /** Case-insensitive substring on callsign. Empty/undefined = no filter. */
+  search?: string;
+  /** Zero-based offset for paging. Defaults to 0. */
+  offset?: number;
+  /** Max rows to return. */
+  limit?: number;
+  signal?: AbortSignal;
+}
+
+/** The ranked board, server-sorted. Empty when the backend isn't configured.
+ *  This is the single read path for the Redline board — both the embedded
+ *  mini-board and the full `/leaderboards/redline` view go through here (via
+ *  the `redlineBoard()` adapter below). */
 export async function fetchLeaderboard(
-  signal?: AbortSignal,
-  limit = DEFAULT_LIMIT
+  opts: FetchOptions = {}
 ): Promise<RankedEntry[]> {
   if (!supabase) return [];
-  let q = supabase
-    .from('redline_leaderboard')
-    .select(SELECT_COLS)
+  const { search, offset = 0, limit = DEFAULT_LIMIT, signal } = opts;
+  let q = supabase.from('redline_leaderboard').select(SELECT_COLS);
+  if (search?.trim()) {
+    // Sanitize wildcards so a stray % / _ doesn't widen the match.
+    const safe = search.trim().replace(/[%_]/g, '\\$&');
+    q = q.ilike('call_sign', `%${safe}%`);
+  }
+  let ordered = q
     .order('rank_pos', { ascending: true })
-    .range(0, limit - 1);
-  if (signal) q = q.abortSignal(signal);
-  const { data, error } = await q;
+    .range(offset, offset + limit - 1);
+  if (signal) ordered = ordered.abortSignal(signal);
+  const { data, error } = await ordered;
   if (error || !data) {
     if (error && !isAbortError(error)) {
       console.error('[redline-leaderboard] load failed', error);
@@ -181,4 +205,58 @@ export async function reconcile(): Promise<void> {
   const best = readLocalBest();
   if (!best) return;
   await publishScore(best.score, best.topWpm);
+}
+
+// ── Generic board adapter (one component, two views) ────────────────────────
+
+// Shape a server entry into the board-agnostic row the shared <LeaderboardView>
+// renders. Score is the ranking value; Top WPM rides along in the chip slot
+// (the board overrides that column's header to "Top WPM").
+function toLeaderboardRow(e: RankedEntry): LeaderboardRow {
+  return {
+    rank: e.rank,
+    callSign: e.call,
+    verified: e.verified,
+    score: e.score,
+    scoreLabel: e.score.toLocaleString(),
+    updatedAt: e.updatedAt,
+    tag: { label: `${e.topWpm} WPM` },
+  };
+}
+
+/**
+ * Redline board adapter for the shared <LeaderboardView>. A flat board (no
+ * tiers), ranked by best score with Top WPM shown alongside. Reuses the same
+ * `fetchLeaderboard` / `fetchOwnRow` read path used everywhere else — no second
+ * fetch path, no divergence.
+ */
+export function redlineBoard(): LeaderboardBoard {
+  return {
+    id: 'redline',
+    label: 'Redline',
+    tagHeader: 'Top WPM',
+    scoreHeader: 'Score',
+    playHref: '/redline',
+    async load(params: LeaderboardLoadParams): Promise<LeaderboardPage> {
+      const limit = params.limit ?? DEFAULT_LIMIT;
+      const offset = params.offset ?? 0;
+      // Fetch one extra to tell the shell whether more rows exist.
+      const entries = await fetchLeaderboard({
+        search: params.search,
+        offset,
+        limit: limit + 1,
+        signal: params.signal,
+      });
+      const rows = entries.slice(0, limit).map(toLeaderboardRow);
+      return { rows, hasMore: entries.length > limit };
+    },
+    async findRow(
+      callSign: string,
+      _segmentId?: string,
+      signal?: AbortSignal
+    ): Promise<LeaderboardRow | null> {
+      const own = await fetchOwnRow(callSign, signal);
+      return own ? toLeaderboardRow(own) : null;
+    },
+  };
 }

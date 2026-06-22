@@ -4,15 +4,14 @@
 
 import {
   ChevronDown,
+  Dumbbell,
   Gauge,
-  HelpCircle,
   House,
   LogOut,
   type LucideIcon,
   Menu,
   Monitor,
   Moon,
-  Radio,
   Settings,
   ShieldCheck,
   Sun,
@@ -31,6 +30,7 @@ import { GITHUB_URL, GithubIcon } from './github';
 import Logo from './logo';
 import { MoreSheet } from './more-sheet';
 import { OfflineIndicator } from './offline-indicator';
+import { PileupIcon } from './pileup-icon';
 import { scrollToTop } from './scroll-to-top';
 import ThemeSwitcher from './theme-switcher';
 import {
@@ -59,34 +59,85 @@ interface NavItem {
   end?: boolean;
 }
 
-// Primary destinations — shown in the desktop header AND the mobile bottom bar.
-// GitHub is intentionally excluded (external link, not a site section): it
-// lives in the header on desktop and the footer on mobile only.
-const NAV_ITEMS: NavItem[] = [
-  { to: '/decode', label: 'Decode', icon: Radio },
-  { to: '/beat-the-bot', label: 'Beat the Bot', icon: BoxingGloveIcon },
-  { to: '/leaderboard', label: 'Leaderboard', icon: Trophy },
-];
-
-// Desktop header nav — same primary destinations as the mobile bottom bar,
-// plus Leaderboard inserted before FAQ. The mobile bottom bar can't fit
-// another route (it's already at its slot cap with NAV_ITEMS + Home + More),
-// so Leaderboard surfaces on mobile via the MoreSheet instead.
-const DESKTOP_NAV_ITEMS: NavItem[] = [
-  { to: '/decode', label: 'Decode', icon: Radio },
+// The trainers — the things you do, all scored with public boards. Grouped
+// under a "Trainers ▾" dropdown on desktop; Beat the Bot also rides the mobile
+// bottom bar, with Redline reachable via the MoreSheet.
+const TRAINER_ITEMS: NavItem[] = [
   { to: '/beat-the-bot', label: 'Beat the Bot', icon: BoxingGloveIcon },
   { to: '/redline', label: 'Redline', icon: Gauge },
-  { to: '/leaderboard', label: 'Leaderboard', icon: Trophy },
-  { to: '/faq', label: 'FAQ', icon: HelpCircle },
 ];
 
-// Browser-mode bottom bar leads with Home. On desktop the wordmark is the home
-// link, so Home isn't repeated in the header nav. In standalone there is no
-// landing page, so the bar drops Home and gains a "More" trigger instead.
+// Pileup is a named-but-unbuilt future trainer (Morse-Runner-style sim). It
+// shows as a disabled "Soon" entry in the Trainers menu — the IA slot exists,
+// the trainer doesn't yet.
+const PILEUP_FUTURE = { label: 'Pileup', icon: PileupIcon } as const;
+
+// Mobile bottom-bar destinations (beyond Home + More). Beat the Bot is the hero
+// CTA target; Leaderboards is the cross-cutting standings destination. Redline
+// and FAQ live in the MoreSheet (the bar is slot-capped).
+const NAV_ITEMS: NavItem[] = [
+  { to: '/beat-the-bot', label: 'Beat the Bot', icon: BoxingGloveIcon },
+  { to: '/leaderboards', label: 'Leaderboards', icon: Trophy },
+];
+
+// Both the browser and standalone bottom bars lead with Home — `/` is now the
+// live Decode demo, so it's the home in every mode.
 const HOME_ITEM: NavItem = { to: '/', label: 'Home', icon: House, end: true };
 
 const tabClass =
   'flex flex-1 flex-col items-center justify-center gap-0.5 py-3.5 text-[11px] font-medium text-center leading-tight transition-colors outline-none';
+
+/**
+ * Desktop "Trainers ▾" group — the things you do, all scored. Beat the Bot and
+ * Redline navigate; Pileup is a disabled future slot. The trigger reads active
+ * whenever the current route is one of the trainers.
+ */
+function TrainersMenu() {
+  const navigate = useNavigate();
+  const { pathname } = useLocation();
+  const active = TRAINER_ITEMS.some(
+    (it) => pathname === it.to || pathname.startsWith(`${it.to}/`)
+  );
+  const PileupIcon = PILEUP_FUTURE.icon;
+  return (
+    <DropdownMenu modal={false}>
+      <DropdownMenuTrigger
+        className={cn(
+          'inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring/50',
+          'data-[state=open]:bg-muted data-[state=open]:text-foreground',
+          active
+            ? 'bg-muted text-foreground'
+            : 'text-muted-foreground hover:text-foreground hover:bg-muted/60'
+        )}
+      >
+        <Dumbbell className="size-4" />
+        Trainers
+        <ChevronDown className="size-3.5 opacity-60" aria-hidden="true" />
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start" className="min-w-48">
+        {TRAINER_ITEMS.map(({ to, label, icon: Icon }) => (
+          <DropdownMenuItem
+            key={to}
+            onSelect={() => {
+              scrollToTop();
+              navigate(to);
+            }}
+          >
+            <Icon className="size-4" />
+            {label}
+          </DropdownMenuItem>
+        ))}
+        <DropdownMenuItem disabled>
+          <PileupIcon className="size-4" />
+          {PILEUP_FUTURE.label}
+          <span className="ml-auto rounded-full bg-muted px-1.5 py-0.5 text-[10px] uppercase tracking-wider text-muted-foreground">
+            Soon
+          </span>
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
 
 /**
  * Top header — shown on every page in a browser tab, all viewports. Hidden
@@ -133,24 +184,24 @@ export function SiteHeader() {
 
         <div className="flex items-center gap-1">
           <nav className="hidden sm:flex items-center gap-1">
-            {DESKTOP_NAV_ITEMS.map(({ to, label, icon: Icon }) => (
-              <NavLink
-                key={to}
-                to={to}
-                onClick={scrollToTop}
-                className={({ isActive }) =>
-                  cn(
-                    'inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring/50',
-                    isActive
-                      ? 'bg-muted text-foreground'
-                      : 'text-muted-foreground hover:text-foreground hover:bg-muted/60'
-                  )
-                }
-              >
-                <Icon className="size-4" />
-                {label}
-              </NavLink>
-            ))}
+            <TrainersMenu />
+            <NavLink
+              to="/leaderboards"
+              onClick={scrollToTop}
+              className={({ isActive }) =>
+                cn(
+                  'inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring/50',
+                  isActive
+                    ? 'bg-muted text-foreground'
+                    : 'text-muted-foreground hover:text-foreground hover:bg-muted/60'
+                )
+              }
+            >
+              <Trophy className="size-4" />
+              Leaderboards
+            </NavLink>
+            {/* Download is a future slot — the real decoder ships as a Tauri
+                desktop app that doesn't exist yet, so no nav entry. */}
           </nav>
 
           {/* GitHub + theme live up top on desktop only; on mobile they move
@@ -302,8 +353,9 @@ export function MobileTabBar() {
   const [moreOpen, setMoreOpen] = useState(false);
 
   // Route tabs only — the "More" trigger is not a route and is appended after
-  // these. The sliding indicator tracks route tabs exclusively.
-  const routeItems = standalone ? NAV_ITEMS : [HOME_ITEM, ...NAV_ITEMS];
+  // these. The sliding indicator tracks route tabs exclusively. Home leads in
+  // every mode now that `/` is the live Decode demo.
+  const routeItems = [HOME_ITEM, ...NAV_ITEMS];
   const totalSlots = routeItems.length + 1; // + the always-present "More" tab
 
   const activeIndex = routeItems.findIndex((it) =>

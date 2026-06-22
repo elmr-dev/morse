@@ -51,7 +51,8 @@ export function canonical(path: string): string {
  */
 export const SEO_ROUTES: readonly string[] = [
   '/',
-  '/decode',
   '/beat-the-bot',
+  '/redline',
+  '/leaderboards',
   '/faq',
 ];

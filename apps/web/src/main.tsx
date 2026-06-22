@@ -30,7 +30,7 @@ createRoot(rootEl).render(
         <div className="h-dvh flex flex-col">
           <main
             id={SCROLL_ROOT_ID}
-            className="flex-1 min-h-0 overflow-y-auto overscroll-contain flex flex-col pb-6"
+            className="flex-1 min-h-0 overflow-y-auto overflow-x-clip overscroll-contain flex flex-col pb-6"
           >
             <div className="w-full max-w-[900px] mx-auto px-5 pt-4">
               <App />
