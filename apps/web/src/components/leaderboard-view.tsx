@@ -2,7 +2,14 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { Loader2, Search, ShieldCheck, WifiOff, X } from 'lucide-react';
+import {
+  ArrowRight,
+  Loader2,
+  Search,
+  ShieldCheck,
+  WifiOff,
+  X,
+} from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { Link, NavLink } from 'react-router-dom';
 import {
@@ -29,24 +36,40 @@ import { useOnline } from '@/lib/use-online';
 const qrzUrl = (call: string) =>
   `https://www.qrz.com/db/${encodeURIComponent(call)}`;
 
+/**
+ * Two views of the same board off one data source:
+ *  - "full"     — the `/leaderboards/<trainer>` page: search + the full top-N.
+ *  - "embedded" — the small in-trainer board: a shorter list, no search box,
+ *    capped off with a "full standings →" link out to the aggregator.
+ */
+export type LeaderboardVariant = 'embedded' | 'full';
+
 interface Props {
   board: LeaderboardBoard;
   ownCallSign: string | null;
   /** Bump to refetch in the background (e.g. after a sync pushed fresh
    *  bests up to the server). */
   reloadToken?: number;
+  /** "full" (default) or the compact in-trainer "embedded" board. */
+  variant?: LeaderboardVariant;
+  /** Where the embedded board's "full standings →" link points. Required for a
+   *  meaningful embedded board; ignored by the full view. */
+  fullStandingsHref?: string;
 }
 
 // Hard cap. No "Show more" — the leaderboard shows the top N, with a pinned
-// own-row above when the viewer is below it. Search broadens visibility for
-// finding a specific callsign past the cap.
-const TOP_N = 25;
+// own-row above when the viewer is below it. The full view shows more and adds
+// a search box; the embedded mini-board keeps a tight list and links out.
+const TOP_N_FULL = 25;
+const TOP_N_EMBEDDED = 10;
 const SEARCH_DEBOUNCE_MS = 200;
 
 export default function LeaderboardView({
   board,
   ownCallSign,
   reloadToken = 0,
+  variant = 'full',
+  fullStandingsHref,
 }: Props) {
   const segments = board.segments;
   const initialSeg = board.defaultSegmentId ?? segments?.[0]?.id;
@@ -54,7 +77,11 @@ export default function LeaderboardView({
     initialSeg
   );
 
-  // Live input vs the debounced query that actually drives fetches.
+  const embedded = variant === 'embedded';
+  const topN = embedded ? TOP_N_EMBEDDED : TOP_N_FULL;
+
+  // Live input vs the debounced query that actually drives fetches. The
+  // embedded board has no search box, so this stays empty there.
   const [searchInput, setSearchInput] = useState('');
   const [search, setSearch] = useState('');
   useEffect(() => {
@@ -67,7 +94,9 @@ export default function LeaderboardView({
 
   return (
     <div className="flex flex-col gap-4">
-      <SearchInput value={searchInput} onChange={setSearchInput} />
+      {!embedded && (
+        <SearchInput value={searchInput} onChange={setSearchInput} />
+      )}
       {segments && (
         <SegmentSelector
           segments={segments}
@@ -81,7 +110,17 @@ export default function LeaderboardView({
         search={search}
         ownCallSign={ownCallSign}
         reloadToken={reloadToken}
+        topN={topN}
       />
+      {embedded && fullStandingsHref && (
+        <Link
+          to={fullStandingsHref}
+          className="inline-flex items-center justify-center gap-1 self-center rounded-md py-1 text-[13px] font-medium text-muted-foreground underline-offset-2 outline-none hover:text-foreground hover:underline focus-visible:ring-2 focus-visible:ring-ring/50"
+        >
+          Full standings
+          <ArrowRight className="size-3.5" aria-hidden="true" />
+        </Link>
+      )}
     </div>
   );
 }
@@ -188,12 +227,14 @@ function PagedList({
   search,
   ownCallSign,
   reloadToken,
+  topN,
 }: {
   board: LeaderboardBoard;
   segmentId: string | undefined;
   search: string;
   ownCallSign: string | null;
   reloadToken: number;
+  topN: number;
 }) {
   const online = useOnline();
   const [rows, setRows] = useState<LeaderboardRow[]>([]);
@@ -230,7 +271,7 @@ function PagedList({
         segmentId,
         search,
         offset: 0,
-        limit: TOP_N,
+        limit: topN,
         signal: controller.signal,
       })
       .then((page) => {
@@ -255,7 +296,7 @@ function PagedList({
       window.clearTimeout(timeoutId);
       controller.abort();
     };
-  }, [board, segmentId, search, reloadToken, online]);
+  }, [board, segmentId, search, reloadToken, online, topN]);
 
   // Own-row lookup runs independently. Only fires when we have a callsign
   // and the adapter supports it; skipped during search (the rows themselves
@@ -302,10 +343,16 @@ function PagedList({
           ownCallSign={ownCallSign}
           searchActive={!!search}
           pinnedRow={pinnedRow}
+          tagHeader={board.tagHeader ?? 'Tier'}
+          scoreHeader={board.scoreHeader ?? 'Score'}
+          playHref={board.playHref ?? '/beat-the-bot'}
         />
       )}
       {!loading && !search && ownCallSign && !ownRow && (
-        <UnrankedNudge segmentId={segmentId} />
+        <UnrankedNudge
+          segmentId={segmentId}
+          playHref={board.playHref ?? '/beat-the-bot'}
+        />
       )}
     </div>
   );
@@ -332,9 +379,15 @@ function OfflineEmpty() {
 // into, so the CTA just deep-links to the BtB page with no override.
 const ALL_SEGMENT_ID = 'all';
 
-function UnrankedNudge({ segmentId }: { segmentId: string | undefined }) {
+function UnrankedNudge({
+  segmentId,
+  playHref,
+}: {
+  segmentId: string | undefined;
+  playHref: string;
+}) {
   const isTier = segmentId && segmentId !== ALL_SEGMENT_ID;
-  const to = isTier ? `/beat-the-bot?tier=${segmentId}` : '/beat-the-bot';
+  const to = isTier ? `${playHref}?tier=${segmentId}` : playHref;
   return (
     <p className="text-center text-[12px] text-muted-foreground">
       You haven't ranked here yet —{' '}
@@ -366,11 +419,17 @@ function Rows({
   ownCallSign,
   searchActive,
   pinnedRow,
+  tagHeader,
+  scoreHeader,
+  playHref,
 }: {
   rows: LeaderboardRow[];
   ownCallSign: string | null;
   searchActive: boolean;
   pinnedRow: LeaderboardRow | null;
+  tagHeader: string;
+  scoreHeader: string;
+  playHref: string;
 }) {
   if (rows.length === 0 && !pinnedRow) {
     if (searchActive) {
@@ -384,7 +443,7 @@ function Rows({
       <div className="rounded-lg border border-dashed border-border px-4 py-8 text-center text-sm text-muted-foreground">
         No entries yet —{' '}
         <NavLink
-          to="/beat-the-bot"
+          to={playHref}
           className="text-foreground underline-offset-2 hover:underline"
         >
           be the first
@@ -406,10 +465,10 @@ function Rows({
               Callsign
             </TableHead>
             <TableHead className="text-muted-foreground text-[11px] font-medium uppercase tracking-wide">
-              Tier
+              {tagHeader}
             </TableHead>
             <TableHead className="w-20 text-right text-muted-foreground text-[11px] font-medium uppercase tracking-wide">
-              Score
+              {scoreHeader}
             </TableHead>
           </TableRow>
         </TableHeader>

@@ -78,6 +78,15 @@ export interface LeaderboardBoard {
   segments?: LeaderboardSegment[];
   /** Default segment id to open on (e.g. the viewer's active tier). */
   defaultSegmentId?: string;
+  /** Header for the per-row chip column. Defaults to "Tier" (the Beat-the-Bot
+   *  board's chip). Redline overrides this to "Top WPM". */
+  tagHeader?: string;
+  /** Header for the ranking-value column. Defaults to "Score". */
+  scoreHeader?: string;
+  /** Where the empty-state / "haven't ranked here" CTAs send the viewer to
+   *  earn a spot. Defaults to "/beat-the-bot". A board with tier segments
+   *  treats the active non-"all" segment id as a `?tier=` deep-link param. */
+  playHref?: string;
   /** Fetch one page of rows, server-sorted. Adapters that don't support
    *  search/paging may ignore those params. */
   load: (params: LeaderboardLoadParams) => Promise<LeaderboardPage>;

@@ -6,36 +6,30 @@ import { lazy, Suspense } from 'react';
 import { Navigate, Route, Routes } from 'react-router-dom';
 import { useOnlineTransitionToasts } from './components/offline-indicator';
 import { SiteHeader } from './components/site-nav';
-import { useIsStandalone } from './lib/use-standalone';
 import AccountPage, {
   BadgeSectionRoute,
   IdentitySection,
   SessionSection,
 } from './pages/account-page';
 import BeatTheBotPage from './pages/beat-the-bot-page';
-import DecodePage from './pages/decode-page';
 import FaqPage from './pages/faq-page';
 import LandingPage from './pages/landing-page';
-import LeaderboardPage from './pages/leaderboard-page';
+import LeaderboardsPage from './pages/leaderboards-page';
 
 const RedlinePage = lazy(() => import('./pages/redline-page'));
 
 export default function App() {
-  const standalone = useIsStandalone();
   useOnlineTransitionToasts();
   return (
     <>
       <SiteHeader />
       <Routes>
-        {/* Standalone (installed PWA) has no landing page — home is the
-            decoder. start_url stays "/", so this redirect routes the launch. */}
-        <Route
-          path="/"
-          element={
-            standalone ? <Navigate to="/decode" replace /> : <LandingPage />
-          }
-        />
-        <Route path="/decode" element={<DecodePage />} />
+        {/* Home is the live Decode demo — the hero, in browser and standalone
+            alike (start_url stays "/"). The standalone shell just hides the
+            header; the page is the same. */}
+        <Route path="/" element={<LandingPage />} />
+        {/* Decode no longer has its own route — the demo is the landing hero. */}
+        <Route path="/decode" element={<Navigate to="/" replace />} />
         <Route path="/beat" element={<Navigate to="/beat-the-bot" replace />} />
         <Route path="/beat-the-bot" element={<BeatTheBotPage />} />
         <Route
@@ -46,7 +40,14 @@ export default function App() {
             </Suspense>
           }
         />
-        <Route path="/leaderboard" element={<LeaderboardPage />} />
+        {/* Top-level Leaderboards aggregator + per-trainer deep links. The old
+            singular /leaderboard redirects in. */}
+        <Route path="/leaderboards" element={<LeaderboardsPage />} />
+        <Route path="/leaderboards/:trainer" element={<LeaderboardsPage />} />
+        <Route
+          path="/leaderboard"
+          element={<Navigate to="/leaderboards" replace />}
+        />
         <Route path="/faq" element={<FaqPage />} />
         <Route path="/account" element={<AccountPage />}>
           <Route index element={<Navigate to="identity" replace />} />

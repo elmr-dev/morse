@@ -2,6 +2,11 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+// The live generate-and-decode demo. Bury text in noise, watch CWNet copy it —
+// all in-browser. This is the hero of the landing page (`/`); it's a *demo*, not
+// the real decoder (the real one is the future Tauri desktop app). Carries no
+// page chrome of its own so the landing page can frame it.
+
 import {
   Activity,
   AudioLines,
@@ -12,7 +17,6 @@ import {
   Info,
   Loader2,
   MonitorSmartphone,
-  Radio,
   RotateCcw,
   Shuffle,
   Sparkles,
@@ -22,7 +26,6 @@ import {
 } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import AudioPlayer, { fmt } from '@/components/audio-player';
-import PageHeader from '@/components/page-header';
 import { Presence } from '@/components/presence';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -31,7 +34,6 @@ import { Slider } from '@/components/ui/slider';
 import { Switch } from '@/components/ui/switch';
 import VolumeControl from '@/components/volume-control';
 import { randomCwMessage } from '@/lib/cw-message';
-import { useDocumentHead } from '@/lib/use-document-head';
 import { isOfflineModelCached } from '@/lib/use-offline-model';
 import { usePersistedState } from '@/lib/use-persisted-state';
 import { cer } from '../inference/decode';
@@ -44,13 +46,7 @@ const DEFAULT_WPM = 25;
 const DEFAULT_SNR = 6;
 const DEFAULT_QSB = false;
 
-export default function DecodePage() {
-  useDocumentHead({
-    title: 'Decode',
-    description:
-      'Generate a Morse code (CW) clip at 12–50 WPM and any signal-to-noise ratio, then watch a neural network copy it in your browser — with character error rate and a per-character diff.',
-    path: '/decode',
-  });
+export default function DecodeDemo() {
   const [text, setText] = useState(() => randomCwMessage());
   const [wpm, setWpm] = usePersistedState('decode.wpm', DEFAULT_WPM);
   const [snr, setSnr] = usePersistedState('decode.snr', DEFAULT_SNR);
@@ -67,11 +63,6 @@ export default function DecodePage() {
     return Number.isNaN(stored) ? 1 : stored;
   });
   const [playTime, setPlayTime] = useState({ current: 0, duration: 0 });
-  const resultsRef = useRef<HTMLDivElement>(null);
-  const modelRef = useRef<HTMLDivElement>(null);
-  // Guards the auto-scroll so it fires once per generate, not on every render
-  // (e.g. play-time ticks). Regenerate re-arms it explicitly in onGenerate.
-  const didScrollRef = useRef(false);
   // Auto-grow the message field so a long message wraps into view on narrow
   // screens instead of scrolling off the right edge.
   const textRef = useRef<HTMLTextAreaElement>(null);
@@ -87,29 +78,6 @@ export default function DecodePage() {
     setPlayTime({ current, duration });
   }, []);
 
-  // The first time a decode completes, gently bring the results into view.
-  // Subsequent regenerates don't re-scroll (the results are already on screen,
-  // and re-scrolling causes a visible jump, worse with tall/long output).
-  useEffect(() => {
-    if (!result) return;
-    if (didScrollRef.current) return;
-    if (
-      typeof window !== 'undefined' &&
-      window.matchMedia('(prefers-reduced-motion: reduce)').matches
-    )
-      return;
-    didScrollRef.current = true;
-    const id = window.setTimeout(() => {
-      // Bring the model output into view (it's the point of a decode), falling
-      // back to the results container if its card isn't mounted yet.
-      (modelRef.current ?? resultsRef.current)?.scrollIntoView({
-        behavior: 'smooth',
-        block: 'start',
-      });
-    }, 100);
-    return () => window.clearTimeout(id);
-  }, [result]);
-
   // Any input change invalidates the current clip + decode; clear them so the
   // stale Audio / Model output cards don't outlive the inputs they came from.
   function clearOutput() {
@@ -117,7 +85,6 @@ export default function DecodePage() {
     setResult(null);
     setError(null);
     setPlayTime({ current: 0, duration: 0 });
-    didScrollRef.current = false;
   }
 
   function changeText(v: string) {
@@ -194,9 +161,6 @@ export default function DecodePage() {
     setError(null);
     setResult(null);
     setBusy(true);
-    // Regenerate is an explicit user action, so bring the freshly-animated
-    // results back into view (the scroll effect is otherwise one-shot).
-    didScrollRef.current = false;
     try {
       const out = generateAudio({
         text: text.toUpperCase(),
@@ -217,15 +181,6 @@ export default function DecodePage() {
 
   return (
     <div>
-      <PageHeader
-        eyebrow="Generate & decode"
-        icon={Radio}
-        title="Decode"
-        wideIntro
-      >
-        Generate a Morse clip from 12–50 WPM at any SNR, then watch the model
-        copy it — entirely in your browser.
-      </PageHeader>
       <div className="flex flex-wrap gap-2 mb-4">
         <span className="inline-flex items-center gap-1.5 text-xs bg-muted rounded-full px-3 py-1">
           <Cpu className="size-3.5 text-primary" />
@@ -426,7 +381,7 @@ export default function DecodePage() {
         </div>
       </div>
 
-      <div ref={resultsRef} className="scroll-mt-4">
+      <div className="scroll-mt-4">
         <Presence show={!!dataUri}>
           {dataUri && (
             <Card className="mb-4 py-4 gap-3">
@@ -474,7 +429,7 @@ export default function DecodePage() {
               // re-insert visible word breaks into the spaceless output for reading.
               const wordStarts = wordStartIndices(text.toUpperCase());
               return (
-                <Card ref={modelRef} className="mb-4">
+                <Card className="mb-4">
                   <CardHeader className="[&]:flex [&]:flex-row [&]:items-center [&]:gap-2">
                     <CardTitle className="flex-1">
                       <Cpu

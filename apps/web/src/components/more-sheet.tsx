@@ -12,6 +12,7 @@ import {
   LogOut,
   Monitor,
   Moon,
+  Package,
   Settings,
   Share,
   ShieldCheck,
@@ -43,6 +44,14 @@ const THEME_OPTIONS: { value: Theme; label: string; icon: typeof Sun }[] = [
   { value: 'light', label: 'Light', icon: Sun },
   { value: 'dark', label: 'Dark', icon: Moon },
   { value: 'system', label: 'System', icon: Monitor },
+];
+
+const NPM_PACKAGES = [
+  { name: 'morse-audio', href: 'https://www.npmjs.com/package/morse-audio' },
+  {
+    name: 'react-morse-audio',
+    href: 'https://www.npmjs.com/package/react-morse-audio',
+  },
 ];
 
 const rowClass =
@@ -301,10 +310,35 @@ export function MoreSheet({
               <span className="flex-1">View source on GitHub</span>
               <ExternalLink className="size-4 text-muted-foreground" />
             </a>
+            {NPM_PACKAGES.map((p) => (
+              <a
+                key={p.name}
+                href={p.href}
+                target="_blank"
+                rel="noreferrer"
+                className={cn(rowClass, 'group')}
+              >
+                <Package className="size-5 text-muted-foreground" />
+                <span className="flex-1 font-mono">{p.name}</span>
+                <ExternalLink className="size-4 text-muted-foreground" />
+              </a>
+            ))}
           </div>
 
           <div className="border-t border-foreground/15 pt-3">
             <FooterContent />
+            <p className="mt-2 text-center text-[11px] text-muted-foreground">
+              Built by <span className="font-mono text-foreground">W4GIT</span>{' '}
+              + <span className="font-mono text-foreground">KC4T</span> ·{' '}
+              <a
+                href="https://www.gnu.org/licenses/agpl-3.0.html"
+                target="_blank"
+                rel="noreferrer"
+                className="underline-offset-2 hover:text-foreground hover:underline"
+              >
+                AGPL-3.0
+              </a>
+            </p>
           </div>
         </div>
       </DrawerContent>

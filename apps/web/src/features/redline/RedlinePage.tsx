@@ -11,7 +11,6 @@ import {
   HelpCircle,
   Keyboard,
   ListChecks,
-  Loader2,
   type LucideIcon,
   Play,
   RadioTower,
@@ -25,8 +24,15 @@ import {
   X,
   Zap,
 } from 'lucide-react';
-import { type KeyboardEvent, useEffect, useRef, useState } from 'react';
+import {
+  type KeyboardEvent,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import { NavLink } from 'react-router-dom';
+import LeaderboardView from '@/components/leaderboard-view';
 import PageHeader from '@/components/page-header';
 import { Button, buttonVariants } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -64,11 +70,9 @@ import {
   submitAttempt,
 } from './game';
 import {
-  fetchLeaderboard,
-  fetchOwnRow,
   publishScore,
-  type RankedEntry,
   reconcile,
+  redlineBoard,
   writeLocalBest,
 } from './leaderboard';
 import Oscilloscope from './Oscilloscope';
@@ -404,7 +408,7 @@ export default function RedlinePage() {
   useDocumentHead({
     title: 'Redline',
     description:
-      'Push your CW callsign copy to the redline — adaptive-speed RufzXP-style trainer that sends random amateur callsigns and scores accuracy plus speed.',
+      'Push your CW callsign copy to the redline — an adaptive-speed trainer that sends random amateur callsigns and scores accuracy plus speed.',
     path: '/redline',
   });
 
@@ -419,11 +423,12 @@ export default function RedlinePage() {
   );
   const [playing, setPlaying] = useState(false);
   const [tab, setTab] = useState<'log' | 'leaderboard'>('log');
-  const [board, setBoard] = useState<RankedEntry[]>([]);
-  const [ownRow, setOwnRow] = useState<RankedEntry | null>(null);
-  const [boardLoading, setBoardLoading] = useState(true);
   const [reloadToken, setReloadToken] = useState(0);
   const [posted, setPosted] = useState(false);
+
+  // The embedded mini-board and the full /leaderboards/redline view share this
+  // one adapter (one data source, two variants — see lib/leaderboard.ts).
+  const board = useMemo(() => redlineBoard(), []);
   const [howOpen, setHowOpen] = usePersistedState(
     'morse:redline:how-it-works-open',
     true,
@@ -445,33 +450,21 @@ export default function RedlinePage() {
   const stateRef = useRef(state);
   stateRef.current = state;
 
-  // Load the server board (and the operator's own row) whenever the reload
-  // token bumps — on mount, sign-in, leaderboard tab open, run finish, post,
-  // and tab-becomes-visible. Signed-in operators reconcile (push their local
-  // best) first so the board reflects this device before we read it back.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: claimedCall drives the own-row fetch
+  // Reconcile-on-open: a signed-in operator pushes their local best up first,
+  // then we bump the board's reload token so the embedded view refetches with
+  // the just-pushed row visible. The board fetch itself lives in
+  // <LeaderboardView> (via the redlineBoard adapter) — same read path as the
+  // full /leaderboards/redline view, no second fetch path.
   useEffect(() => {
-    const controller = new AbortController();
+    if (!signedIn) return;
     let cancelled = false;
-    setBoardLoading(true);
-    (async () => {
-      if (signedIn) await reconcile();
-      const [rows, own] = await Promise.all([
-        fetchLeaderboard(controller.signal),
-        claimedCall
-          ? fetchOwnRow(claimedCall, controller.signal)
-          : Promise.resolve(null),
-      ]);
-      if (cancelled) return;
-      setBoard(rows);
-      setOwnRow(own);
-      setBoardLoading(false);
-    })();
+    void reconcile().then(() => {
+      if (!cancelled) setReloadToken((n) => n + 1);
+    });
     return () => {
       cancelled = true;
-      controller.abort();
     };
-  }, [reloadToken, signedIn, claimedCall]);
+  }, [signedIn]);
 
   // iOS PWA resume / reconnect: refetch when the tab becomes visible again.
   useEffect(() => {
@@ -869,12 +862,24 @@ export default function RedlinePage() {
         </TabsContent>
 
         <TabsContent value="leaderboard">
-          <Leaderboard
+          <LeaderboardView
             board={board}
-            ownRow={ownRow}
-            loading={boardLoading}
-            signedIn={signedIn}
+            ownCallSign={claimedCall}
+            reloadToken={reloadToken}
+            variant="embedded"
+            fullStandingsHref="/leaderboards/redline"
           />
+          {!signedIn && (
+            <p className="mt-3 text-center text-xs text-muted-foreground">
+              <NavLink
+                to="/account"
+                className="underline-offset-2 hover:text-foreground hover:underline"
+              >
+                Sign in
+              </NavLink>{' '}
+              and post a run to earn your ranking.
+            </p>
+          )}
         </TabsContent>
       </Tabs>
     </main>
@@ -1267,140 +1272,6 @@ function CopyLog({
           </table>
         </div>
       )}
-    </div>
-  );
-}
-
-// ── Leaderboard ──────────────────────────────────────────────────────────────
-
-function LeaderRow({
-  entry,
-  highlight,
-}: {
-  entry: RankedEntry;
-  highlight?: boolean;
-}) {
-  return (
-    <tr
-      className={cn(
-        'border-b border-border/60 last:border-0',
-        highlight && 'bg-primary/5'
-      )}
-    >
-      <td
-        className={cn(
-          'px-4 py-2 font-mono font-semibold',
-          entry.rank <= 3 ? 'text-dial' : 'text-muted-foreground'
-        )}
-      >
-        {entry.rank}
-      </td>
-      <td className="px-4 py-2">
-        <span className="flex items-center gap-2">
-          {entry.flag && (
-            <span aria-hidden="true" title={entry.country ?? undefined}>
-              {entry.flag}
-            </span>
-          )}
-          <span className="font-mono tracking-wider">{entry.call}</span>
-          {entry.verified && (
-            <ShieldCheck
-              className="size-3.5 text-verified"
-              aria-label="Verified"
-            />
-          )}
-          {highlight && (
-            <span className="rounded-sm bg-primary/15 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-primary">
-              You
-            </span>
-          )}
-        </span>
-      </td>
-      <td className="px-4 py-2 text-right font-mono text-good">
-        {entry.score}
-      </td>
-      <td className="px-4 py-2 text-right font-mono text-dial">
-        {entry.topWpm}
-      </td>
-    </tr>
-  );
-}
-
-function Leaderboard({
-  board,
-  ownRow,
-  loading,
-  signedIn,
-}: {
-  board: RankedEntry[];
-  ownRow: RankedEntry | null;
-  loading: boolean;
-  signedIn: boolean;
-}) {
-  // Pin the operator's own row in the footer when they're ranked but scrolled
-  // off the visible top-N (the in-list row is highlighted regardless).
-  const ownInView = !!ownRow && board.some((e) => e.call === ownRow.call);
-  return (
-    <div className="overflow-hidden rounded-xl border border-border bg-card shadow-sm">
-      <div className="max-h-[28rem] overflow-auto">
-        <table className="w-full border-collapse text-sm">
-          <thead className="sticky top-0 bg-card text-[11px] uppercase tracking-wide text-muted-foreground">
-            <tr className="border-b border-border text-left">
-              <th className="px-4 py-2 font-medium">Rank</th>
-              <th className="px-4 py-2 font-medium">Operator</th>
-              <th className="px-4 py-2 text-right font-medium">Score</th>
-              <th className="px-4 py-2 text-right font-medium">Top WPM</th>
-            </tr>
-          </thead>
-          <tbody>
-            {board.map((entry) => (
-              <LeaderRow
-                key={entry.call}
-                entry={entry}
-                highlight={!!ownRow && entry.call === ownRow.call}
-              />
-            ))}
-          </tbody>
-        </table>
-        {!loading && board.length === 0 && (
-          <div className="px-4 py-8 text-center text-sm text-muted-foreground">
-            No operators on the board yet — be the first to post a run.
-          </div>
-        )}
-        {loading && board.length === 0 && (
-          <div className="flex items-center justify-center gap-2 px-4 py-8 text-sm text-muted-foreground">
-            <Loader2 className="size-4 animate-spin" />
-            Loading standings…
-          </div>
-        )}
-      </div>
-      <div className="border-t border-border px-4 py-2.5 text-xs">
-        {ownRow ? (
-          <span className="flex items-center justify-between font-mono text-muted-foreground">
-            <span>
-              You · {ownRow.call} — rank #{ownRow.rank}
-              {ownInView ? '' : ' (above)'}
-            </span>
-            <span className="text-good">{ownRow.score} pts</span>
-          </span>
-        ) : (
-          <span className="text-muted-foreground">
-            {signedIn ? (
-              'Post a run to claim your spot on the toplist.'
-            ) : (
-              <>
-                <NavLink
-                  to="/account"
-                  className="underline-offset-2 hover:text-foreground hover:underline"
-                >
-                  Sign in
-                </NavLink>{' '}
-                and post a run to earn your ranking.
-              </>
-            )}
-          </span>
-        )}
-      </div>
     </div>
   );
 }

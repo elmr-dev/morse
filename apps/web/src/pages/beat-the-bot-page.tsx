@@ -22,9 +22,9 @@ import {
   User,
 } from 'lucide-react';
 import { calculateDuration, translate } from 'morse-audio';
-import { Fragment, useEffect, useRef, useState } from 'react';
-import { NavLink } from 'react-router-dom';
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import { BoxingGloveIcon } from '@/components/boxing-glove-icon';
+import LeaderboardView from '@/components/leaderboard-view';
 import PageHeader from '@/components/page-header';
 import { usePrefersReducedMotion } from '@/components/presence';
 import SyncStatus from '@/components/sync-status';
@@ -34,6 +34,7 @@ import VolumeControl from '@/components/volume-control';
 import { useAuth } from '@/lib/auth';
 import { fireConfetti } from '@/lib/confetti';
 import { randomCwMessage } from '@/lib/cw-message';
+import { beatTheBotBoard } from '@/lib/leaderboard-btb';
 import { getScrollRoot } from '@/lib/scroll-root';
 import { useBestsSync } from '@/lib/use-bests-sync';
 import { useDocumentHead } from '@/lib/use-document-head';
@@ -204,6 +205,19 @@ export default function BeatTheBotPage() {
   const { syncNow } = useBestsSync(bests, setBests);
 
   const tierObj = TIERS.find((t) => t.id === activeTier) ?? TIERS[2];
+
+  // Embedded mini-board, scoped to the player's active tier. Shares the same
+  // adapter + read path as the full /leaderboards/beat-the-bot view (one data
+  // source, two variants — no divergence).
+  const board = useMemo(() => beatTheBotBoard(activeTier), [activeTier]);
+  const [boardReload, setBoardReload] = useState(0);
+  // Refresh the embedded board whenever a best changes (a round just landed and
+  // syncNow pushed it up), so the new standing shows without a manual reload.
+  // `bests` is read only as the trigger.
+  useEffect(() => {
+    void bests;
+    setBoardReload((n) => n + 1);
+  }, [bests]);
 
   const [phase, setPhase] = useState<Phase>('armed');
   const [round, setRound] = useState<Round | null>(null);
@@ -494,16 +508,6 @@ export default function BeatTheBotPage() {
 
         <div className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1 text-[13px]">
           <SyncStatus />
-          <span aria-hidden="true" className="text-muted-foreground/50">
-            ·
-          </span>
-          <NavLink
-            to="/leaderboard"
-            className="inline-flex items-center gap-1 text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
-          >
-            <Trophy className="size-[14px]" aria-hidden="true" />
-            View leaderboard
-          </NavLink>
         </div>
 
         {/* Audio + phase panels — skeleton shown while the initial clip generates
@@ -576,6 +580,22 @@ export default function BeatTheBotPage() {
             <TriangleAlert className="size-4" /> {error}
           </div>
         )}
+
+        {/* Embedded mini-board, scoped to this trainer, with a link out to the
+            full standings on the top-level aggregator. */}
+        <section className="mt-4">
+          <div className="mb-3 flex items-center gap-2 font-mono text-[11px] font-semibold uppercase tracking-[0.15em] text-muted-foreground">
+            <Trophy className="size-3.5 text-primary" />
+            Standings
+          </div>
+          <LeaderboardView
+            board={board}
+            ownCallSign={ownCallSign}
+            reloadToken={boardReload}
+            variant="embedded"
+            fullStandingsHref="/leaderboards/beat-the-bot"
+          />
+        </section>
       </div>
     </div>
   );

@@ -479,7 +479,7 @@ export default function FaqPage() {
             </p>
             <div className="mt-4 grid gap-3 sm:grid-cols-2">
               <Link
-                to="/decode"
+                to="/"
                 className="group flex items-center gap-3 rounded-lg border border-border bg-background p-3.5 transition-colors hover:border-primary/50 hover:bg-muted/40 outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
               >
                 <span className="flex size-9 shrink-0 items-center justify-center rounded-md bg-primary/15 text-primary">
@@ -487,7 +487,7 @@ export default function FaqPage() {
                 </span>
                 <span className="min-w-0 flex-1">
                   <span className="block font-mono text-sm text-foreground">
-                    Open the decoder
+                    Try the decoder
                   </span>
                   <span className="block text-[12px] leading-snug text-muted-foreground">
                     Bury text in noise; watch CWNet copy it.

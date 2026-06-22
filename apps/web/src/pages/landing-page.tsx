@@ -5,6 +5,8 @@
 import {
   ArrowRight,
   Cpu,
+  Download,
+  Gauge,
   HelpCircle,
   Radio,
   ShieldCheck,
@@ -12,16 +14,10 @@ import {
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { BoxingGloveIcon } from '@/components/boxing-glove-icon';
+import DecodeDemo from '@/components/decode-demo';
 import { Reveal } from '@/components/reveal';
 import { buttonVariants } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
-import {
-  HERO_CONFIDENCE,
-  HERO_DECODED,
-  HERO_KEYING,
-  HERO_NOISY,
-  HERO_SNR_DB,
-} from '@/lib/hero-signal.generated';
 import { SITE_DESCRIPTION, SITE_TITLE } from '@/lib/site';
 import { useDocumentHead } from '@/lib/use-document-head';
 import { cn } from '@/lib/utils';
@@ -36,6 +32,9 @@ export default function LandingPage() {
     <div className="flex flex-col gap-14 pb-6">
       <Hero />
       <Reveal>
+        <Trainers />
+      </Reveal>
+      <Reveal>
         <SignalChain />
       </Reveal>
       <Reveal>
@@ -44,163 +43,132 @@ export default function LandingPage() {
       <Reveal>
         <BeatTheBotTeaser />
       </Reveal>
-      <style>{WATERFALL_CSS}</style>
+      <style>{HERO_CSS}</style>
     </div>
   );
 }
 
 /* -------------------------------------------------------------------------- */
-/* Hero — a REAL "CQ CQ DE KC4T K" clip at −12 dB SNR. The raw signal arrives as */
-/* a wall of noise (top band); the matched-filter front-end recovers clean     */
-/* keying from that same clip (bottom band). Both layers are baked from one    */
-/* genuine morse-audio clip — see lib/hero-signal.generated.ts. Messy in →     */
-/* clean out: the pitch in one image, with nothing faked.                      */
+/* Hero — the live decode demo. Bury text in noise and watch CWNet copy it in  */
+/* the very first interaction. This is a DEMO, not the real decoder: the real  */
+/* one is the future Tauri desktop app ("decode for real").                   */
 /* -------------------------------------------------------------------------- */
 
 function Hero() {
   return (
     <section className="relative pt-0 sm:pt-6 text-center">
-      <div className="relative">
-        <div className="flex items-center justify-center gap-2 mb-6 font-mono text-[11px] tracking-[0.2em] uppercase text-muted-foreground">
-          <span className="inline-block size-1.5 rounded-full bg-dial shadow-[0_0_8px_2px] shadow-dial/60 animate-rx-pulse" />
-          Receiver online · 700 Hz · in-browser
-        </div>
-
-        <h1 className="font-mono font-bold tracking-tight text-foreground text-3xl sm:text-5xl leading-[1.05] text-balance">
-          Pull Morse out of
-          <br />
-          the <span className="text-primary">noise floor</span>
-        </h1>
-
-        <p className="mt-5 mx-auto max-w-2xl text-[15px] leading-relaxed text-muted-foreground text-balance">
-          A neural decoder that copies CW down to{' '}
-          <span className="font-mono text-dial-strong">−12&nbsp;dB</span> SNR —
-          the noise carrying ~16× the power of the signal, well below where a
-          tone stops being a tone to the ear. Runs entirely on your device.
-        </p>
-
-        <HeroWaveform />
-
-        <div className="mt-9 flex flex-col sm:flex-row items-center justify-center gap-3">
-          <Link
-            to="/decode"
-            className={cn(
-              buttonVariants({ variant: 'default', size: 'lg' }),
-              'w-full sm:w-auto font-mono transition duration-200 hover:scale-[1.04] active:scale-[0.98]'
-            )}
-          >
-            <Radio className="size-4" />
-            Open the decoder
-          </Link>
-          <Link
-            to="/beat-the-bot"
-            className={cn(
-              buttonVariants({ variant: 'secondary', size: 'lg' }),
-              'w-full sm:w-auto font-mono transition duration-200 hover:scale-[1.04] active:scale-[0.98]'
-            )}
-          >
-            <BoxingGloveIcon className="size-4" />
-            Beat the Bot
-          </Link>
-        </div>
+      <div className="flex items-center justify-center gap-2 mb-6 font-mono text-[11px] tracking-[0.2em] uppercase text-muted-foreground">
+        <span className="inline-block size-1.5 rounded-full bg-dial shadow-[0_0_8px_2px] shadow-dial/60 animate-rx-pulse" />
+        Receiver online · 700 Hz · in-browser
       </div>
+
+      <h1 className="font-mono font-bold tracking-tight text-foreground text-3xl sm:text-5xl leading-[1.05] text-balance">
+        Pull Morse out of
+        <br />
+        the <span className="text-primary">noise floor</span>
+      </h1>
+
+      <p className="mt-5 mx-auto max-w-2xl text-[15px] leading-relaxed text-muted-foreground text-balance">
+        A neural decoder that copies CW down to{' '}
+        <span className="font-mono text-dial-strong">−12&nbsp;dB</span> SNR —
+        the noise carrying ~16× the power of the signal, well below where a tone
+        stops being a tone to the ear. Try it right here: key a message, bury
+        it, and watch the model copy it back.
+      </p>
+
+      {/* The demo itself — left-aligned chrome inside a centered hero. */}
+      <div className="mt-9 mx-auto max-w-2xl text-left">
+        <DecodeDemo />
+      </div>
+      <p className="mt-3 text-[12px] text-muted-foreground">
+        This is a live demo. The full decoder ships as a desktop app — see
+        below.
+      </p>
     </section>
   );
 }
 
-function HeroWaveform() {
-  const snr = `−${Math.abs(HERO_SNR_DB)} dB SNR`;
+/* -------------------------------------------------------------------------- */
+/* Trainers — a full-bleed band (distinct from the demo above) pointing at the */
+/* two scored trainers, plus the deferred desktop decoder.                    */
+/* -------------------------------------------------------------------------- */
+
+const TRAINER_CARDS = [
+  {
+    to: '/beat-the-bot',
+    icon: BoxingGloveIcon,
+    title: 'Beat the Bot',
+    body: 'A callsign buried in static, keyed twice — copy it before a neural decoder does. Pick your license class; climb the public board.',
+    cta: 'Take the bot on',
+  },
+  {
+    to: '/redline',
+    icon: Gauge,
+    title: 'Redline',
+    body: 'Copy random callsigns at the edge of your speed. Every clean copy nudges the WPM up; your best score and top WPM land on the board.',
+    cta: 'Push your speed',
+  },
+] as const;
+
+function Trainers() {
   return (
-    <div className="mt-10 mx-auto max-w-2xl sm:px-4">
-      {/* Both scope rows share one time axis: identical width and the faint
-          vertical grid behind them tie "this mush up here" to "this clean
-          keying down here at the same moment." */}
-      <div className="relative">
-        <div
-          className="absolute inset-0 pointer-events-none"
-          aria-hidden="true"
-        >
-          {[0, 25, 50, 75, 100].map((p) => (
-            <div
-              key={p}
-              className="absolute inset-y-0 w-px bg-border/50"
-              style={{ left: `${p}%` }}
-            />
-          ))}
-        </div>
+    // Full-bleed colored band: breaks out of the centered content column, with
+    // its own inner column re-aligned to the same width as the blocks around it.
+    <section className="w-screen ml-[calc(50%-50vw)] border-y border-border bg-card">
+      <div className="mx-auto max-w-[900px] px-5 py-12">
+        <SectionLabel>Train your copy</SectionLabel>
+        <h2 className="mt-3 font-mono text-2xl font-bold tracking-tight text-foreground">
+          Two ways to drill — both scored
+        </h2>
+        <p className="mt-2 max-w-xl text-[14px] leading-relaxed text-muted-foreground">
+          The demo proves the model can read CW. These put{' '}
+          <span className="text-foreground">you</span> on the key — each a
+          trainer with its own public leaderboard.
+        </p>
 
-        {/* Input — real raw amplitude of the −12 dB clip: a chaotic noise floor
-            the keying is buried under. You can't read the message by eye here;
-            that's the point. */}
-        <BandLabel>Raw signal · {snr}</BandLabel>
-        <div
-          className="relative h-20 flex items-end justify-between gap-[2px]"
-          aria-hidden="true"
-        >
-          {HERO_NOISY.map((v, i) => (
-            <div
-              // biome-ignore lint/suspicious/noArrayIndexKey: positional waveform bar
-              key={i}
-              className="flex-1 rounded-[1px] origin-bottom bg-primary animate-rx-rise"
-              style={{
-                height: `${6 + v * 66}px`,
-                opacity: 0.22 + v * 0.5,
-                animationDelay: `${(i / HERO_NOISY.length) * 420}ms`,
-              }}
-            />
-          ))}
-          {/* amber tuner needle, sweeping the full width edge to edge */}
-          <div className="absolute inset-y-0 w-px bg-dial shadow-[0_0_8px_1px] shadow-dial/60 animate-rx-sweep pointer-events-none" />
-        </div>
-
-        <div className="my-3 h-px bg-border" />
-
-        {/* Output — the same message as a real CW timing diagram: on/off
-            keying at true dit/dah ratios (dit 1, dah 3, gaps 1/3/7), so a ham
-            can read the code by eye. Baked from the message, full call. */}
-        <BandLabel>Recovered keying · matched filter</BandLabel>
-        <div className="relative flex items-end h-8" aria-hidden="true">
-          {HERO_KEYING.map(([on, units], i) => (
-            <div
-              // biome-ignore lint/suspicious/noArrayIndexKey: positional keying segment
-              key={i}
-              className="flex items-end self-stretch"
-              style={{ flexGrow: units, flexBasis: 0 }}
+        <div className="mt-6 grid gap-4 sm:grid-cols-2">
+          {TRAINER_CARDS.map(({ to, icon: Icon, title, body, cta }) => (
+            <Link
+              key={to}
+              to={to}
+              className="group flex flex-col gap-3 rounded-xl border border-border bg-background p-5 transition-colors hover:border-primary/50 hover:bg-muted/30 outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
             >
-              {on ? (
-                <div
-                  className="w-full h-6 rounded-[2px] bg-key shadow-[0_0_6px_0] shadow-primary/30 origin-bottom animate-rx-rise"
-                  style={{
-                    animationDelay: `${480 + (i / HERO_KEYING.length) * 360}ms`,
-                  }}
-                />
-              ) : null}
-            </div>
+              <div className="flex items-center gap-2.5">
+                <span className="flex size-9 shrink-0 items-center justify-center rounded-md bg-primary/15 text-primary">
+                  <Icon className="size-4" />
+                </span>
+                <span className="font-mono text-lg font-semibold text-foreground">
+                  {title}
+                </span>
+              </div>
+              <p className="text-[13px] leading-relaxed text-muted-foreground">
+                {body}
+              </p>
+              <span className="mt-auto inline-flex items-center gap-1 font-mono text-[13px] text-primary">
+                {cta}
+                <ArrowRight className="size-3.5 transition-transform group-hover:translate-x-0.5" />
+              </span>
+            </Link>
           ))}
         </div>
-      </div>
 
-      {/* Decoded text — the payoff. HERO_DECODED is CWNet's genuine output for
-          this exact clip (the bake refuses to ship unless it's letter-perfect),
-          and the percentage is the model's real confidence. */}
-      <div className="mt-3.5 flex items-center justify-between gap-3 rounded-lg border border-border bg-card px-4 py-3">
-        <span className="font-mono text-sm sm:text-lg tracking-widest sm:tracking-[0.18em] text-foreground">
-          {HERO_DECODED}
-        </span>
-        <span className="inline-flex items-center gap-1.5 font-mono text-[11px] uppercase tracking-[0.15em] text-good shrink-0">
-          <span className="inline-block size-1.5 rounded-full bg-good shadow-[0_0_8px_1px] shadow-good/60 animate-rx-pulse" />
-          decoded · {Math.round(HERO_CONFIDENCE * 100)}%
-        </span>
+        {/* Deferred desktop decoder — named, not linked (the Tauri app isn't
+            built yet, so no Download page). */}
+        <div className="mt-5 flex flex-col items-start gap-2 rounded-lg border border-dashed border-border px-4 py-3 sm:flex-row sm:items-center sm:gap-3">
+          <span className="inline-flex items-center gap-2 font-mono text-[13px] font-medium text-foreground">
+            <Download className="size-4 text-muted-foreground" />
+            Decode for real
+            <span className="rounded-full bg-muted px-1.5 py-0.5 text-[10px] uppercase tracking-wider text-muted-foreground">
+              Soon
+            </span>
+          </span>
+          <span className="text-[13px] text-muted-foreground">
+            The demo above is in-browser; the full decoder ships as a desktop
+            app.
+          </span>
+        </div>
       </div>
-    </div>
-  );
-}
-
-function BandLabel({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="mb-1.5 font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
-      {children}
-    </div>
+    </section>
   );
 }
 
@@ -370,33 +338,12 @@ function SectionLabel({ children }: { children: React.ReactNode }) {
 }
 
 /* -------------------------------------------------------------------------- */
-/* Hero animations + inline accent.                                           */
+/* Hero accents.                                                              */
 /* -------------------------------------------------------------------------- */
 
-const WATERFALL_CSS = `
+const HERO_CSS = `
 /* a brighter amber for inline emphasis that still reads on light + dark */
 .text-dial-strong { color: color-mix(in oklch, var(--dial) 78%, var(--foreground)); }
-
-/* bright lavender for the recovered-keying marks — same hue family as the
-   purple noise floor, but lifted toward white so it reads as "clean" above it */
-.bg-key { background-color: color-mix(in oklch, var(--primary) 42%, white); }
-
-@keyframes rx-rise {
-  from { transform: scaleY(0); opacity: 0; }
-  to   { transform: scaleY(1); opacity: 1; }
-}
-.animate-rx-rise { animation: rx-rise 0.5s cubic-bezier(0.22,1,0.36,1) both; }
-
-@keyframes rx-sweep {
-  /* sweep the full width edge to edge, then hold off the rest of the cycle so
-     the needle passes occasionally rather than constantly. ~2.7s in a 12s loop. */
-  0%    { left: 0%; opacity: 0; }
-  2%    { opacity: 1; }
-  20%   { left: 100%; opacity: 1; }
-  23%   { left: 100%; opacity: 0; }
-  100%  { left: 0%; opacity: 0; }
-}
-.animate-rx-sweep { animation: rx-sweep 12s ease-in-out infinite; }
 
 @keyframes rx-pulse {
   0%, 100% { opacity: 1; }
@@ -405,9 +352,6 @@ const WATERFALL_CSS = `
 .animate-rx-pulse { animation: rx-pulse 1.8s ease-in-out infinite; }
 
 @media (prefers-reduced-motion: reduce) {
-  .animate-rx-rise, .animate-rx-sweep, .animate-rx-pulse {
-    animation: none;
-  }
-  .animate-rx-rise { transform: scaleY(1); opacity: 1; }
+  .animate-rx-pulse { animation: none; }
 }
 `;
