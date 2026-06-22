@@ -2,6 +2,7 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+import { lazy, Suspense } from 'react';
 import { Navigate, Route, Routes } from 'react-router-dom';
 import { useOnlineTransitionToasts } from './components/offline-indicator';
 import { SiteHeader } from './components/site-nav';
@@ -16,6 +17,8 @@ import DecodePage from './pages/decode-page';
 import FaqPage from './pages/faq-page';
 import LandingPage from './pages/landing-page';
 import LeaderboardPage from './pages/leaderboard-page';
+
+const RedlinePage = lazy(() => import('./pages/redline-page'));
 
 export default function App() {
   const standalone = useIsStandalone();
@@ -35,6 +38,14 @@ export default function App() {
         <Route path="/decode" element={<DecodePage />} />
         <Route path="/beat" element={<Navigate to="/beat-the-bot" replace />} />
         <Route path="/beat-the-bot" element={<BeatTheBotPage />} />
+        <Route
+          path="/redline"
+          element={
+            <Suspense fallback={null}>
+              <RedlinePage />
+            </Suspense>
+          }
+        />
         <Route path="/leaderboard" element={<LeaderboardPage />} />
         <Route path="/faq" element={<FaqPage />} />
         <Route path="/account" element={<AccountPage />}>

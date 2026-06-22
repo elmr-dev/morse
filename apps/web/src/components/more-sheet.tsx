@@ -7,6 +7,7 @@ import {
   ChevronDown,
   Download,
   ExternalLink,
+  Gauge,
   HelpCircle,
   LogOut,
   Monitor,
@@ -200,6 +201,14 @@ export function MoreSheet({
               (isAuthConfigured && signedIn) || !online ? 'mt-3' : undefined
             )}
           >
+            <NavLink
+              to="/redline"
+              onClick={() => onOpenChange(false)}
+              className={rowClass}
+            >
+              <Gauge className="size-5 text-muted-foreground" />
+              <span className="flex-1 text-left">Redline</span>
+            </NavLink>
             <NavLink
               to="/faq"
               onClick={() => onOpenChange(false)}
