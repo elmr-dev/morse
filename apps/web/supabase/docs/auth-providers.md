@@ -20,10 +20,10 @@ hello, then dies on the way back."
 Dashboard → Authentication → URL Configuration:
 
 - **Site URL** → the prod origin (matches `VITE_SITE_URL` in
-  `apps/web/.env.production`, currently `https://morse-ml.netlify.app`).
+  `apps/web/.env.production`, currently `https://morse.elmr.dev`).
 - **Additional Redirect URLs** — add both:
-  - `https://morse-ml.netlify.app/account`
-  - `http://localhost:5173/account` (the Vite dev port — `apps/web` runs `vite`
+  - `https://morse.elmr.dev/**`
+  - `http://localhost:5173/**` (the Vite dev port — `apps/web` runs `vite`
     with its default port; confirm from `bun run dev` if you've customized it)
 
 Supabase only allows the OAuth callback to redirect back to URLs on this list.
@@ -34,7 +34,7 @@ the session."
 
 1. Google Cloud Console → **APIs & Services → OAuth consent screen**. Create
    one (External, app name = MORSE, support email = yours). Add the prod origin
-   under "Authorized domains" (`netlify.app` if hosting there; the apex domain,
+   under "Authorized domains" (`elmr.dev` if hosting there; the apex domain,
    not the full URL).
 2. **Credentials → Create credentials → OAuth client ID → Web application.**
    - **Authorized redirect URIs:** the Supabase callback URL above.

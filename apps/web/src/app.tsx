@@ -15,6 +15,8 @@ import BeatTheBotPage from './pages/beat-the-bot-page';
 import FaqPage from './pages/faq-page';
 import LandingPage from './pages/landing-page';
 import LeaderboardsPage from './pages/leaderboards-page';
+import PrivacyPage from './pages/privacy-page';
+import TermsPage from './pages/terms-page';
 
 const RedlinePage = lazy(() => import('./pages/redline-page'));
 
@@ -49,6 +51,8 @@ export default function App() {
           element={<Navigate to="/leaderboards" replace />}
         />
         <Route path="/faq" element={<FaqPage />} />
+        <Route path="/privacy" element={<PrivacyPage />} />
+        <Route path="/terms" element={<TermsPage />} />
         <Route path="/account" element={<AccountPage />}>
           <Route index element={<Navigate to="identity" replace />} />
           <Route path="identity" element={<IdentitySection />} />
