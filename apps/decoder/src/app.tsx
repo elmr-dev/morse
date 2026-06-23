@@ -8,11 +8,13 @@ interface DeviceInfo {
   default: boolean;
 }
 
-/** Mirror of the Rust `DecodeResult`: collapsed text + mean per-character
- *  confidence in [0, 1]. */
+/** Mirror of the Rust `DecodeResult`: collapsed text, mean per-character
+ *  confidence in [0, 1], and the CW tone the DSP actually used. */
 interface DecodeResult {
   text: string;
   confidence: number;
+  /** CW tone the DSP bandpass was centred on, in Hz (camelCase from Rust). */
+  detectedToneHz: number;
 }
 
 type DeviceState =
