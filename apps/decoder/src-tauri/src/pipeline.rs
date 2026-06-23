@@ -129,14 +129,15 @@ mod tests {
     }
 
     /// Full native decode must reproduce what the TS pipeline produces on the
-    /// same clip. The TS decoder (dsp.ts → onnx → decode.ts) emits
-    /// "CQCQDEW1ABCW1ABCK" for cq_clean_20wpm (no inter-word spaces — the CTC
-    /// alphabet has no space label). Same DSP + same model + same CTC ⇒ same text.
+    /// same clip. The TS decoder (dsp.ts → onnx → decode.ts) collapses to
+    /// "CQCQDEW1ABCW1ABCK". Word-gap spaces are now inferred post-CTC, so we
+    /// compare with spaces stripped — the character sequence must be identical.
     #[test]
     fn decodes_clean_cq_clip_like_ts() {
         let path = fixture("cq_clean_20wpm.input.wav");
         let result = decode_wav_file(path.to_str().unwrap(), Some(DEFAULT_TONE_HZ)).unwrap();
-        assert_eq!(result.text, "CQCQDEW1ABCW1ABCK");
+        let stripped: String = result.text.chars().filter(|&c| c != ' ').collect();
+        assert_eq!(stripped, "CQCQDEW1ABCW1ABCK");
         assert_eq!(result.detected_tone_hz, DEFAULT_TONE_HZ);
         // A clean clip should decode with high per-emission confidence.
         assert!(
@@ -144,6 +145,8 @@ mod tests {
             "expected confident decode, got {}",
             result.confidence
         );
+        // Per-character results must be present and non-empty.
+        assert!(!result.chars.is_empty());
     }
 
     /// Auto-detect should find the 700 Hz tone in the clean CQ clip without
@@ -152,7 +155,8 @@ mod tests {
     fn auto_detects_tone_in_clean_clip() {
         let path = fixture("cq_clean_20wpm.input.wav");
         let result = decode_wav_file(path.to_str().unwrap(), None).unwrap();
-        assert_eq!(result.text, "CQCQDEW1ABCW1ABCK");
+        let stripped: String = result.text.chars().filter(|&c| c != ' ').collect();
+        assert_eq!(stripped, "CQCQDEW1ABCW1ABCK");
         assert!(
             (result.detected_tone_hz - DEFAULT_TONE_HZ).abs() < 20.0,
             "expected tone near {DEFAULT_TONE_HZ} Hz, got {} Hz",
