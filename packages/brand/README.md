@@ -1,44 +1,35 @@
 # @morse/brand
 
-Canonical source of truth for all Morse suite brand assets.
+Canonical source of truth for Morse suite brand assets.
 
-## Structure
+## Current contents
+
+Right now this package holds **only the decoder app-icon masters**. The rest of the brand
+identity — the web/PWA icons, favicon, wordmark logo, social/OG image, and the theme CSS —
+is still owned by `apps/web`, and migrates into this package as its own focused change
+(see the web asset migration + theme fold sub-issues of #48). Until then, those files live
+in `apps/web/public/`, not here.
 
 ```
-masters/   # SOURCE artwork — hand-authored inputs to icon generation
-  icon.svg                 # vector source — full-bleed master
-  icon-1024.png            # full-bleed square master (web/PWA/iOS/og)
-  icon-macos.svg           # vector source — macOS squircle master
-  icon-macos-1024.png      # macOS master: baked squircle, transparent corners
-icons/     # GENERATED outputs — do NOT hand-edit; fix the master & regenerate
-  favicon.svg
-  apple-touch-icon.png
-  icon-192.png
-  icon-512.png
-  icon-maskable-512.png
-logo/      # logo.svg — primary wordmark / logo glyph
-social/    # og.png — Open Graph / social card image
+decoder-icon.svg             # vector source — full-bleed master
+decoder-icon-1024.png        # rendered full-bleed master
+decoder-icon-macos.svg       # vector source — macOS squircle master
+decoder-icon-macos-1024.png  # rendered macOS master (baked squircle, transparent corners)
 ```
 
-### `masters/` vs `icons/`
+## Icon masters
 
-`masters/` holds the **source** artwork — the hand-authored inputs. `icons/` holds the
-**generated** outputs derived from those masters. Do not hand-edit anything under
-`icons/`: fix the master and regenerate. The split makes that rule structural rather than
-a convention to remember.
+These are **source artwork** — hand-authored; the PNGs are rendered from their matching
+`.svg`. Edit the SVGs and re-render; don't hand-edit the PNGs.
 
-Each PNG master is rendered from its matching `.svg` source (`icon.svg` → `icon-1024.png`,
-`icon-macos.svg` → `icon-macos-1024.png`). The macOS source bakes the squircle
-(superellipse) tile with transparent corners directly into the artwork. Edit the SVGs and
-re-render — don't touch the PNGs by hand.
+They are the inputs to Tauri's icon generator, e.g.:
 
-The masters under `masters/` are what `bun tauri icon <master>.png` consumes to produce the
-decoder's OS icon set under `apps/decoder/src-tauri/icons/` — itself a generated artifact,
-likewise not hand-edited. Tauri's generator only resizes/packs; it does **not** add macOS
-padding, so the macOS `.icns` is generated from the pre-padded `icon-macos-1024.png` while
-the other platforms use the full-bleed `icon-1024.png`.
+```
+bun tauri icon packages/brand/decoder-icon-macos-1024.png
+```
 
-## Notes
-
-`apps/web/public/` still holds duplicate copies of the favicon/icons/og image pending a
-future migration onto this package — intentionally out of scope here.
+which emits the decoder's OS icon set under `apps/decoder/src-tauri/icons/` — a generated
+artifact, likewise not hand-edited. Tauri's generator only resizes/packs; it does **not**
+add macOS padding, so the macOS `.icns` is generated from the pre-padded
+`decoder-icon-macos-1024.png` (the squircle with transparent corners), while a future
+full-bleed/Windows master derives from `decoder-icon-1024.png`.
