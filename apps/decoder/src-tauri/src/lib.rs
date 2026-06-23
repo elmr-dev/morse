@@ -8,14 +8,13 @@ pub mod dsp;
 pub mod model;
 pub mod pipeline;
 pub mod resample;
+pub mod tone;
 
 use audio::{
     list_input_devices as enumerate_input_devices, AudioSource, DeviceInfo, WavFileSource,
 };
 use decode::DecodeResult;
-use pipeline::{
-    capture_and_decode as pipeline_capture_and_decode, decode_wav_file, DEFAULT_TONE_HZ,
-};
+use pipeline::{capture_and_decode as pipeline_capture_and_decode, decode_wav_file};
 
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
 #[tauri::command]
@@ -70,7 +69,7 @@ fn load_audio_clip(path: String) -> Result<ClipInfo, String> {
 /// resample); decode failures cross the boundary as a stringified error.
 #[tauri::command]
 fn decode_file(path: String, tone_hz: Option<f64>) -> Result<DecodeResult, String> {
-    decode_wav_file(&path, tone_hz.unwrap_or(DEFAULT_TONE_HZ))
+    decode_wav_file(&path, tone_hz)
 }
 
 /// List the input devices available for live capture.
@@ -98,11 +97,7 @@ async fn capture_and_decode(
     tone_hz: Option<f64>,
 ) -> Result<DecodeResult, String> {
     tauri::async_runtime::spawn_blocking(move || {
-        pipeline_capture_and_decode(
-            device.as_deref(),
-            seconds,
-            tone_hz.unwrap_or(DEFAULT_TONE_HZ),
-        )
+        pipeline_capture_and_decode(device.as_deref(), seconds, tone_hz)
     })
     .await
     .map_err(|e| format!("capture task failed: {e}"))?
