@@ -1,6 +1,5 @@
 import { invoke } from '@tauri-apps/api/core';
 import { useCallback, useEffect, useState } from 'react';
-import './app.css';
 
 /** Mirror of the Rust `DeviceInfo` returned by `list_input_devices`. */
 interface DeviceInfo {
@@ -59,9 +58,15 @@ function ConfidenceBadge({ value }: { value: number }) {
   const pct = Math.round(value * 100);
   const level = value >= 0.8 ? 'high' : value >= 0.5 ? 'fair' : 'low';
   const label = level === 'high' ? 'High' : level === 'fair' ? 'Fair' : 'Low';
+  const color =
+    level === 'high'
+      ? 'text-good'
+      : level === 'fair'
+        ? 'text-warning'
+        : 'text-destructive';
   return (
     <span
-      className={`confidence confidence-${level}`}
+      className={`inline-flex rounded-full border border-current px-2.5 py-1 text-xs font-semibold ${color}`}
       title="Mean model certainty across the decoded characters"
     >
       {label} confidence · {pct}%
@@ -130,41 +135,54 @@ function App() {
     }
   }
 
+  const fieldCls = 'flex flex-col gap-1.5';
+  const labelCls = 'text-sm font-semibold';
+  const inputCls =
+    'min-h-11 w-full rounded-lg border border-input bg-transparent px-3 text-base';
+  const hintCls = 'text-xs text-muted-foreground';
+  const linkCls = 'min-h-11 px-1 text-primary';
+
   return (
-    <main className="app">
+    <main className="mx-auto flex max-w-xl flex-col gap-6 px-4 pt-6 pb-12">
       <header>
-        <h1>Morse Decoder</h1>
-        <p className="subtitle">
+        <h1 className="text-2xl font-semibold">Morse Decoder</h1>
+        <p className="mt-1 text-sm text-muted-foreground">
           Capture live audio from an input device and decode CW.
         </p>
       </header>
 
-      <section className="controls" aria-label="Capture settings">
-        <div className="field">
-          <label htmlFor="device">Input device</label>
+      <section className="flex flex-col gap-4" aria-label="Capture settings">
+        <div className={fieldCls}>
+          <label htmlFor="device" className={labelCls}>
+            Input device
+          </label>
           {devices.status === 'loading' && (
-            <div className="device-skeleton" aria-hidden="true" />
+            <div
+              className="h-11 animate-pulse rounded-lg bg-muted motion-reduce:animate-none"
+              aria-hidden="true"
+            />
           )}
           {devices.status === 'error' && (
-            <p className="error" role="alert">
+            <p className="text-destructive" role="alert">
               Could not list devices: {devices.message}{' '}
-              <button type="button" className="link" onClick={loadDevices}>
+              <button type="button" className={linkCls} onClick={loadDevices}>
                 Retry
               </button>
             </p>
           )}
           {devices.status === 'ready' &&
             (devices.devices.length === 0 ? (
-              <p className="empty">
+              <p className="text-muted-foreground">
                 No input devices found.{' '}
-                <button type="button" className="link" onClick={loadDevices}>
+                <button type="button" className={linkCls} onClick={loadDevices}>
                   Refresh
                 </button>
               </p>
             ) : (
-              <div className="device-row">
+              <div className="flex items-center gap-2">
                 <select
                   id="device"
+                  className={`${inputCls} flex-1`}
                   value={selectedId}
                   onChange={(e) => setSelectedId(e.target.value)}
                   disabled={capturing}
@@ -178,7 +196,7 @@ function App() {
                 </select>
                 <button
                   type="button"
-                  className="link"
+                  className={linkCls}
                   onClick={loadDevices}
                   disabled={capturing}
                 >
@@ -188,11 +206,14 @@ function App() {
             ))}
         </div>
 
-        <div className="field-grid">
-          <div className="field">
-            <label htmlFor="tone">Tone (Hz)</label>
+        <div className="grid grid-cols-2 gap-4">
+          <div className={fieldCls}>
+            <label htmlFor="tone" className={labelCls}>
+              Tone (Hz)
+            </label>
             <input
               id="tone"
+              className={inputCls}
               type="number"
               min={100}
               max={2000}
@@ -201,13 +222,16 @@ function App() {
               disabled={capturing}
               onChange={(e) => setToneHz(Number(e.target.value))}
             />
-            <span className="hint">IC-7300 factory pitch is 600 Hz</span>
+            <span className={hintCls}>IC-7300 factory pitch is 600 Hz</span>
           </div>
 
-          <div className="field">
-            <label htmlFor="seconds">Capture (s)</label>
+          <div className={fieldCls}>
+            <label htmlFor="seconds" className={labelCls}>
+              Capture (s)
+            </label>
             <input
               id="seconds"
+              className={inputCls}
               type="number"
               min={1}
               max={16}
@@ -216,13 +240,13 @@ function App() {
               disabled={capturing}
               onChange={(e) => setSeconds(Number(e.target.value))}
             />
-            <span className="hint">Max 16 s (model window)</span>
+            <span className={hintCls}>Max 16 s (model window)</span>
           </div>
         </div>
 
         <button
           type="button"
-          className="decode"
+          className="min-h-12 cursor-pointer rounded-lg bg-primary px-5 font-semibold text-primary-foreground transition-opacity active:opacity-85 disabled:cursor-default disabled:opacity-50"
           onClick={handleDecode}
           disabled={capturing || devices.status !== 'ready'}
           aria-busy={capturing}
@@ -231,26 +255,36 @@ function App() {
         </button>
       </section>
 
-      <section className="result" aria-label="Decoded text" aria-live="polite">
+      <section
+        className="flex min-h-20 items-center rounded-xl border border-border p-4"
+        aria-label="Decoded text"
+        aria-live="polite"
+      >
         {decode.status === 'idle' && (
-          <p className="placeholder">Decoded text will appear here.</p>
+          <p className="text-muted-foreground">
+            Decoded text will appear here.
+          </p>
         )}
         {decode.status === 'capturing' && (
-          <p className="placeholder">Listening…</p>
+          <p className="text-muted-foreground">Listening…</p>
         )}
         {decode.status === 'error' && (
-          <p className="error" role="alert">
+          <p className="text-destructive" role="alert">
             {decode.message}
           </p>
         )}
         {decode.status === 'done' &&
           (decode.result.text.length > 0 ? (
-            <div className="decoded-wrap">
-              <output className="decoded">{decode.result.text}</output>
+            <div className="flex flex-col items-start gap-2.5">
+              <output className="font-mono text-xl tracking-[0.08em] break-words">
+                {decode.result.text}
+              </output>
               <ConfidenceBadge value={decode.result.confidence} />
             </div>
           ) : (
-            <p className="placeholder">No CW detected in that window.</p>
+            <p className="text-muted-foreground">
+              No CW detected in that window.
+            </p>
           ))}
       </section>
     </main>
