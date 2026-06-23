@@ -6,9 +6,10 @@ Canonical source of truth for all Morse suite brand assets.
 
 ```
 masters/   # SOURCE artwork — hand-authored inputs to icon generation
-  icon.svg                 # vector source of truth for the icon glyph
+  icon.svg                 # vector source — full-bleed master
   icon-1024.png            # full-bleed square master (web/PWA/iOS/og)
-  icon-macos-1024.png      # macOS-padded ~80% master (squircle tile, transparent margins)
+  icon-macos.svg           # vector source — macOS squircle master
+  icon-macos-1024.png      # macOS master: baked squircle, transparent corners
 icons/     # GENERATED outputs — do NOT hand-edit; fix the master & regenerate
   favicon.svg
   apple-touch-icon.png
@@ -26,8 +27,10 @@ social/    # og.png — Open Graph / social card image
 `icons/`: fix the master and regenerate. The split makes that rule structural rather than
 a convention to remember.
 
-`icon.svg` is the editable source; both PNG masters are rendered from it. Edit the SVG
-and re-render — don't touch the PNGs by hand.
+Each PNG master is rendered from its matching `.svg` source (`icon.svg` → `icon-1024.png`,
+`icon-macos.svg` → `icon-macos-1024.png`). The macOS source bakes the squircle
+(superellipse) tile with transparent corners directly into the artwork. Edit the SVGs and
+re-render — don't touch the PNGs by hand.
 
 The masters under `masters/` are what `bun tauri icon <master>.png` consumes to produce the
 decoder's OS icon set under `apps/decoder/src-tauri/icons/` — itself a generated artifact,
