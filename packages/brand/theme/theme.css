@@ -1,0 +1,20 @@
+/*
+ * SPDX-FileCopyrightText: 2026 Mark Percival, John Schult
+ *
+ * SPDX-License-Identifier: AGPL-3.0-or-later
+ */
+
+/* Barrel for the @morse/brand generic theme. Consumers import this once, after
+   `@import "tailwindcss"` and before their app-local tokens/motion/shell:
+
+     @import "tailwindcss";
+     @import "@morse/brand/theme/theme.css";
+     ...app-local...
+
+   Order is load-bearing: generic tokens must resolve before app-local tokens
+   that reference them (e.g. `--tier-general: var(--primary)`). */
+
+@import "./fonts.css";
+@import "./tokens.css";
+@import "./theme-inline.css";
+@import "./motion.css";

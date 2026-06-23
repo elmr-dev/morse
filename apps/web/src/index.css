@@ -6,49 +6,19 @@
 
 @import "tailwindcss";
 
-/* Self-hosted fonts (no Google Fonts CDN): same-origin so they're COEP-safe
-   and precached by the service worker for offline use. */
-@import "@fontsource-variable/inter";
-@import "@fontsource-variable/jetbrains-mono";
+/* Shared brand identity: generic oklch tokens, Tailwind mappings, self-hosted
+   fonts, and generic motion. Imported before the app-local layers below so the
+   generic tokens resolve first (e.g. --tier-general references --primary). */
+@import "@morse/brand/theme/theme.css";
 
-
+/* The `dark` variant lives here (not in brand) because Tailwind v4 only hoists
+   @theme out of imported package CSS — @custom-variant must sit in the entry
+   alongside `@import "tailwindcss"`. Switches dark mode to the `.dark` class. */
 @custom-variant dark (&:is(.dark *));
 
+/* App-local Tailwind mappings — Beat-the-Bot / decoder CW-domain identity,
+   layered on top of the shared base above (these merge into the brand @theme). */
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --color-card: var(--card);
-  --color-card-foreground: var(--card-foreground);
-  --color-popover: var(--popover);
-  --color-popover-foreground: var(--popover-foreground);
-  --color-primary: var(--primary);
-  --color-primary-foreground: var(--primary-foreground);
-  --color-secondary: var(--secondary);
-  --color-secondary-foreground: var(--secondary-foreground);
-  --color-muted: var(--muted);
-  --color-muted-foreground: var(--muted-foreground);
-  --color-accent: var(--accent);
-  --color-accent-foreground: var(--accent-foreground);
-  --color-destructive: var(--destructive);
-  --color-destructive-foreground: var(--destructive-foreground);
-  --color-border: var(--border);
-  --color-input: var(--input);
-  --color-ring: var(--ring);
-  --color-chart-1: var(--chart-1);
-  --color-chart-2: var(--chart-2);
-  --color-chart-3: var(--chart-3);
-  --color-chart-4: var(--chart-4);
-  --color-chart-5: var(--chart-5);
-  --color-sidebar: var(--sidebar);
-  --color-sidebar-foreground: var(--sidebar-foreground);
-  --color-sidebar-primary: var(--sidebar-primary);
-  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
-  --color-sidebar-accent: var(--sidebar-accent);
-  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
-  --color-sidebar-border: var(--sidebar-border);
-  --color-sidebar-ring: var(--sidebar-ring);
-  --color-good: var(--success);
-  --color-bad: var(--destructive);
   --color-dial: var(--dial);
   --color-verified: var(--color-primary);
   /* Beat-the-Bot competitor identity. Distinct hues in BOTH themes (blue vs
@@ -57,92 +27,6 @@
      bar fill; lighter in dark mode for the same reason inverted. */
   --color-you: var(--you);
   --color-bot: var(--bot);
-  --radius-sm: calc(var(--radius) - 4px);
-  --radius-md: calc(var(--radius) - 2px);
-  --radius-lg: var(--radius);
-  --radius-xl: calc(var(--radius) + 4px);
-  --radius-2xl: calc(var(--radius) * 1.8);
-  --radius-3xl: calc(var(--radius) * 2.2);
-  --font-sans: var(--font-sans);
-  --font-mono: var(--font-mono);
-  --font-serif: var(--font-serif);
-  /* Seven-segment display for the scoreboard numerals. Digits only — never
-     for prose. */
-  --shadow-2xs: var(--shadow-2xs);
-  --shadow-xs: var(--shadow-xs);
-  --shadow-sm: var(--shadow-sm);
-  --shadow: var(--shadow);
-  --shadow-md: var(--shadow-md);
-  --shadow-lg: var(--shadow-lg);
-  --shadow-xl: var(--shadow-xl);
-  --shadow-2xl: var(--shadow-2xl);
-  --tracking-normal: var(--tracking-normal);
-  --spacing: var(--spacing);
-  /* Enter: slide up, then a few decaying bounces that settle into place.
-     Exit: a small anticipatory dip, then accelerate away (back-in). */
-  --animate-slide-up: slide-up 0.42s ease-out both;
-  --animate-slide-down: slide-down 0.4s cubic-bezier(0.36, 0, 0.66, -0.56) both;
-
-  @keyframes slide-up {
-    0% {
-      opacity: 0;
-      transform: translateY(1.25rem);
-    }
-    40% {
-      opacity: 1;
-      transform: translateY(-0.5rem);
-    }
-    58% {
-      transform: translateY(0.3rem);
-    }
-    73% {
-      transform: translateY(-0.18rem);
-    }
-    86% {
-      transform: translateY(0.09rem);
-    }
-    94% {
-      transform: translateY(-0.04rem);
-    }
-    100% {
-      opacity: 1;
-      transform: translateY(0);
-    }
-  }
-
-  @keyframes slide-down {
-    from {
-      opacity: 1;
-      transform: translateY(0);
-    }
-    to {
-      opacity: 0;
-      transform: translateY(1.25rem);
-    }
-  }
-
-  /* Scrim behind the standalone "More" drawer (vaul drives the panel's own
-     slide + drag motion; only the overlay needs a CSS fade). */
-  --animate-fade-in: fade-in 0.3s ease-out both;
-  --animate-fade-out: fade-out 0.22s ease-in both;
-
-  @keyframes fade-in {
-    from {
-      opacity: 0;
-    }
-    to {
-      opacity: 1;
-    }
-  }
-
-  @keyframes fade-out {
-    from {
-      opacity: 1;
-    }
-    to {
-      opacity: 0;
-    }
-  }
 
   /* Beat-the-Bot "copying" phase: abstract activity only (no bot text). An
      equalizer of bars pulsing out of phase, and a progress sheen sweeping
@@ -188,27 +72,8 @@
   }
 }
 
+/* App-local CW-domain tokens (extend the shared base). */
 :root {
-  --background: oklch(0.93 0.006 286.15);
-  --foreground: oklch(0.3015 0.0572 282.4176);
-  --card: oklch(0.995 0.002 286.15);
-  --card-foreground: oklch(0.3015 0.0572 282.4176);
-  --popover: oklch(0.995 0.002 286.15);
-  --popover-foreground: oklch(0.3015 0.0572 282.4176);
-  --primary: oklch(0.5417 0.179 288.0332);
-  --primary-foreground: oklch(1 0 0);
-  --secondary: oklch(0.9174 0.0435 292.6901);
-  --secondary-foreground: oklch(0.4143 0.1039 288.1742);
-  --muted: oklch(0.958 0.0133 286.1454);
-  --muted-foreground: oklch(0.5426 0.0465 284.7435);
-  --accent: oklch(0.9221 0.0373 290);
-  --accent-foreground: oklch(0.3015 0.0572 282.4176);
-  --destructive: oklch(0.6861 0.2061 14.9941);
-  --destructive-foreground: oklch(1 0 0);
-  --border: oklch(0.9115 0.0216 285.9625);
-  --input: oklch(0.9115 0.0216 285.9625);
-  --ring: oklch(0.5417 0.179 288.0332);
-  --success: oklch(0.55 0.17 145);
   /* Competitor identity (light mode — darker so the white bar label reads).
      --you = blue, --bot = orange (distinct from pink Extra and amber dial). */
   --you: oklch(0.48 0.17 252);
@@ -221,68 +86,9 @@
   --tier-technician: var(--you);
   --tier-general: var(--primary);
   --tier-extra: oklch(0.48 0.2 350);
-  --chart-1: oklch(0.5417 0.179 288.0332);
-  --chart-2: oklch(0.7042 0.1602 288.988);
-  --chart-3: oklch(0.5679 0.2113 276.7065);
-  --chart-4: oklch(0.6356 0.1922 281.8054);
-  --chart-5: oklch(0.4509 0.1758 279.3838);
-  --radius: 0.5rem;
-  --sidebar: oklch(0.958 0.0133 286.1454);
-  --sidebar-foreground: oklch(0.3015 0.0572 282.4176);
-  --sidebar-primary: oklch(0.5417 0.179 288.0332);
-  --sidebar-primary-foreground: oklch(1 0 0);
-  --sidebar-accent: oklch(0.9221 0.0373 290);
-  --sidebar-accent-foreground: oklch(0.3015 0.0572 282.4176);
-  --sidebar-border: oklch(0.9115 0.0216 285.9625);
-  --sidebar-ring: oklch(0.5417 0.179 288.0332);
-  --font-sans: "Inter Variable", Inter, sans-serif;
-  --font-serif: Georgia, serif;
-  --font-mono: "JetBrains Mono Variable", JetBrains Mono, monospace;
-  --shadow-color: hsl(240 30% 25%);
-  --shadow-2xs: 0px 4px 10px 0px hsl(240 30% 25% / 0.06);
-  --shadow-xs: 0px 4px 10px 0px hsl(240 30% 25% / 0.06);
-  --shadow-sm:
-    0px 4px 10px 0px hsl(240 30% 25% / 0.12),
-    0px 1px 2px -1px hsl(240 30% 25% / 0.12);
-  --shadow:
-    0px 4px 10px 0px hsl(240 30% 25% / 0.12),
-    0px 1px 2px -1px hsl(240 30% 25% / 0.12);
-  --shadow-md:
-    0px 4px 10px 0px hsl(240 30% 25% / 0.12),
-    0px 2px 4px -1px hsl(240 30% 25% / 0.12);
-  --shadow-lg:
-    0px 4px 10px 0px hsl(240 30% 25% / 0.12),
-    0px 4px 6px -1px hsl(240 30% 25% / 0.12);
-  --shadow-xl:
-    0px 4px 10px 0px hsl(240 30% 25% / 0.12),
-    0px 8px 10px -1px hsl(240 30% 25% / 0.12);
-  --shadow-2xl: 0px 4px 10px 0px hsl(240 30% 25% / 0.3);
-  --tracking-normal: 0em;
-  --spacing: 0.25rem;
-  color-scheme: light;
 }
 
 .dark {
-  --background: oklch(0.1743 0.0227 283.7998);
-  --foreground: oklch(0.9185 0.0257 285.8834);
-  --card: oklch(0.2284 0.0384 282.9324);
-  --card-foreground: oklch(0.9185 0.0257 285.8834);
-  --popover: oklch(0.2284 0.0384 282.9324);
-  --popover-foreground: oklch(0.9185 0.0257 285.8834);
-  --primary: oklch(0.7162 0.1597 290.3962);
-  --primary-foreground: oklch(0.1743 0.0227 283.7998);
-  --secondary: oklch(0.3139 0.0736 283.4591);
-  --secondary-foreground: oklch(0.8367 0.0849 285.9111);
-  --muted: oklch(0.271 0.0621 281.4377);
-  --muted-foreground: oklch(0.7166 0.0462 285.1741);
-  --accent: oklch(0.3354 0.0828 280.9705);
-  --accent-foreground: oklch(0.9185 0.0257 285.8834);
-  --destructive: oklch(0.6861 0.2061 14.9941);
-  --destructive-foreground: oklch(1 0 0);
-  --border: oklch(0.3261 0.0597 282.5832);
-  --input: oklch(0.3261 0.0597 282.5832);
-  --ring: oklch(0.7162 0.1597 290.3962);
-  --success: oklch(0.7 0.17 145);
   /* Competitor identity (dark mode — lighter so the dark bar label reads).
      --you = blue, --bot = orange (distinct from pink Extra and amber dial). */
   --you: oklch(0.72 0.15 252);
@@ -295,45 +101,6 @@
   --tier-technician: var(--you);
   --tier-general: var(--primary);
   --tier-extra: oklch(0.75 0.18 347);
-  --chart-1: oklch(0.7162 0.1597 290.3962);
-  --chart-2: oklch(0.6382 0.1047 274.9117);
-  --chart-3: oklch(0.7482 0.1235 244.7492);
-  --chart-4: oklch(0.7124 0.0977 186.6761);
-  --chart-5: oklch(0.7546 0.1831 346.8124);
-  --radius: 0.5rem;
-  --sidebar: oklch(0.2284 0.0384 282.9324);
-  --sidebar-foreground: oklch(0.9185 0.0257 285.8834);
-  --sidebar-primary: oklch(0.7162 0.1597 290.3962);
-  --sidebar-primary-foreground: oklch(0.1743 0.0227 283.7998);
-  --sidebar-accent: oklch(0.3354 0.0828 280.9705);
-  --sidebar-accent-foreground: oklch(0.9185 0.0257 285.8834);
-  --sidebar-border: oklch(0.3261 0.0597 282.5832);
-  --sidebar-ring: oklch(0.7162 0.1597 290.3962);
-  --font-sans: "Inter Variable", Inter, sans-serif;
-  --font-serif: Georgia, serif;
-  --font-mono: "JetBrains Mono Variable", JetBrains Mono, monospace;
-  --shadow-color: hsl(240 30% 25%);
-  --shadow-2xs: 0px 4px 10px 0px hsl(240 30% 25% / 0.06);
-  --shadow-xs: 0px 4px 10px 0px hsl(240 30% 25% / 0.06);
-  --shadow-sm:
-    0px 4px 10px 0px hsl(240 30% 25% / 0.12),
-    0px 1px 2px -1px hsl(240 30% 25% / 0.12);
-  --shadow:
-    0px 4px 10px 0px hsl(240 30% 25% / 0.12),
-    0px 1px 2px -1px hsl(240 30% 25% / 0.12);
-  --shadow-md:
-    0px 4px 10px 0px hsl(240 30% 25% / 0.12),
-    0px 2px 4px -1px hsl(240 30% 25% / 0.12);
-  --shadow-lg:
-    0px 4px 10px 0px hsl(240 30% 25% / 0.12),
-    0px 4px 6px -1px hsl(240 30% 25% / 0.12);
-  --shadow-xl:
-    0px 4px 10px 0px hsl(240 30% 25% / 0.12),
-    0px 8px 10px -1px hsl(240 30% 25% / 0.12);
-  --shadow-2xl: 0px 4px 10px 0px hsl(240 30% 25% / 0.3);
-  --tracking-normal: 0em;
-  --spacing: 0.25rem;
-  color-scheme: dark;
 }
 
 @layer base {
@@ -430,6 +197,9 @@
       transform: rotate(-90deg);
     }
   }
+  /* Disables both the shared/brand animations (slide/fade share this list) and
+     the app-local CW-domain ones in one place — see the note in
+     @morse/brand/theme/motion.css. */
   @media (prefers-reduced-motion: reduce) {
     .animate-slide-up,
     .animate-slide-down,

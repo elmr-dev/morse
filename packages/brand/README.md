@@ -19,9 +19,37 @@ web/       # consumed by apps/web — favicon, PWA icons, wordmark, social
   icon-maskable-512.png
   logo.svg
   og.png
+theme/     # consumed by every app — the shared design system (CSS)
+  tokens.css        # :root (light) + .dark (dark) generic oklch vars
+  theme-inline.css  # @theme inline Tailwind v4 token→utility mapping
+  fonts.css         # @fontsource imports + --font-* declarations
+  motion.css        # generic keyframes/animations (slide, fade)
+  theme.css         # barrel — @imports the four above, in order
 ```
 
-The shared theme CSS folds in later as `theme/` (extracted from `apps/web`).
+## `theme/` — shared design system
+
+The generic identity layer (the oklch palette, Tailwind v4 token mappings,
+self-hosted fonts, and generic motion), extracted from `apps/web` so both apps
+read the same theme. Consume it once, after `@import "tailwindcss"` and before
+your app-local layers:
+
+```css
+@import "tailwindcss";
+@import "@morse/brand/theme/theme.css";
+@custom-variant dark (&:is(.dark *)); /* see note */
+/* ...app-local CW-domain tokens / motion / shell... */
+```
+
+Order is load-bearing: the generic tokens must resolve before any app-local
+token that references them (e.g. `--tier-general: var(--primary)`).
+
+**Two Tailwind directives stay in the app entry, not here:** `@custom-variant`
+(the `dark` variant) and the `prefers-reduced-motion` `@layer base` block.
+Tailwind v4 only hoists `@theme` (and plain rules) out of imported package CSS —
+`@custom-variant` / `@layer` in an imported file are not registered — so each
+consuming app declares those in its own entry stylesheet alongside
+`@import "tailwindcss"`.
 
 ## `decoder/` — icon masters
 

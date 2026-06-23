@@ -34,10 +34,9 @@
     },
     "apps/web": {
       "name": "morse-web",
-      "version": "2026.6.7",
+      "version": "2026.6.11",
       "dependencies": {
-        "@fontsource-variable/inter": "^5.2.8",
-        "@fontsource-variable/jetbrains-mono": "^5.2.8",
+        "@morse/brand": "workspace:*",
         "@supabase/supabase-js": "^2.108.2",
         "@tailwindcss/vite": "^4.3.0",
         "canvas-confetti": "^1.9.4",
@@ -82,6 +81,10 @@
     "packages/brand": {
       "name": "@morse/brand",
       "version": "0.0.0",
+      "dependencies": {
+        "@fontsource-variable/inter": "^5.2.8",
+        "@fontsource-variable/jetbrains-mono": "^5.2.8",
+      },
     },
     "packages/ml/model": {
       "name": "cw-model",

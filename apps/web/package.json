@@ -17,8 +17,7 @@
     "reuse:fix": "bun scripts/reuse-fix.ts"
   },
   "dependencies": {
-    "@fontsource-variable/inter": "^5.2.8",
-    "@fontsource-variable/jetbrains-mono": "^5.2.8",
+    "@morse/brand": "workspace:*",
     "@supabase/supabase-js": "^2.108.2",
     "@tailwindcss/vite": "^4.3.0",
     "canvas-confetti": "^1.9.4",

@@ -1,0 +1,81 @@
+/*
+ * SPDX-FileCopyrightText: 2026 Mark Percival, John Schult
+ *
+ * SPDX-License-Identifier: AGPL-3.0-or-later
+ */
+
+/* Generic motion shared across the suite: slide (enter/exit) and fade (overlay
+   scrim). App-specific animations live alongside each app.
+
+   NOTE: the prefers-reduced-motion handling for these animations lives in each
+   consuming app's entry @layer base, not here — Tailwind v4 doesn't hoist
+   @layer rules out of imported package CSS (it only hoists @theme + plain
+   rules). The app entry disables these (and its own animations) together. */
+
+@theme inline {
+  /* Enter: slide up, then a few decaying bounces that settle into place.
+     Exit: a small anticipatory dip, then accelerate away (back-in). */
+  --animate-slide-up: slide-up 0.42s ease-out both;
+  --animate-slide-down: slide-down 0.4s cubic-bezier(0.36, 0, 0.66, -0.56) both;
+
+  @keyframes slide-up {
+    0% {
+      opacity: 0;
+      transform: translateY(1.25rem);
+    }
+    40% {
+      opacity: 1;
+      transform: translateY(-0.5rem);
+    }
+    58% {
+      transform: translateY(0.3rem);
+    }
+    73% {
+      transform: translateY(-0.18rem);
+    }
+    86% {
+      transform: translateY(0.09rem);
+    }
+    94% {
+      transform: translateY(-0.04rem);
+    }
+    100% {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  @keyframes slide-down {
+    from {
+      opacity: 1;
+      transform: translateY(0);
+    }
+    to {
+      opacity: 0;
+      transform: translateY(1.25rem);
+    }
+  }
+
+  /* Scrim behind the standalone "More" drawer (vaul drives the panel's own
+     slide + drag motion; only the overlay needs a CSS fade). */
+  --animate-fade-in: fade-in 0.3s ease-out both;
+  --animate-fade-out: fade-out 0.22s ease-in both;
+
+  @keyframes fade-in {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+
+  @keyframes fade-out {
+    from {
+      opacity: 1;
+    }
+    to {
+      opacity: 0;
+    }
+  }
+}
