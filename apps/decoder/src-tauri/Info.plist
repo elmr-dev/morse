@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- Required for live audio capture. macOS gates all audio-input devices
+	     (built-in mic, USB rig CODEC like the IC-7300, virtual loopbacks such as
+	     BlackHole) behind the microphone TCC permission; without this string the
+	     app is killed the moment it opens a capture stream. -->
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Morse Decoder captures audio from your radio or input device to decode CW (Morse code).</string>
+</dict>
+</plist>

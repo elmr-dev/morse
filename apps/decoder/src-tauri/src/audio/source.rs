@@ -71,6 +71,8 @@ pub enum AudioError {
     UnsupportedFormat(String),
     /// The bytes are malformed for their declared format.
     Decode(String),
+    /// A live capture device could not be opened or streamed.
+    Device(String),
 }
 
 impl fmt::Display for AudioError {
@@ -79,6 +81,7 @@ impl fmt::Display for AudioError {
             AudioError::Io(e) => write!(f, "audio I/O error: {e}"),
             AudioError::UnsupportedFormat(m) => write!(f, "unsupported audio format: {m}"),
             AudioError::Decode(m) => write!(f, "audio decode error: {m}"),
+            AudioError::Device(m) => write!(f, "audio device error: {m}"),
         }
     }
 }

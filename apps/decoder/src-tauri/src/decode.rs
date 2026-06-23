@@ -17,7 +17,7 @@ pub const CHARS: &str = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789.,?=/";
 pub const NUM_CLASSES: usize = CHARS.len() + 1;
 
 /// Result of a greedy decode: collapsed text plus mean per-emission confidence.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize)]
 pub struct DecodeResult {
     /// Decoded characters with CTC repeats/blanks collapsed (no inter-word spaces;
     /// the alphabet has no space label).
