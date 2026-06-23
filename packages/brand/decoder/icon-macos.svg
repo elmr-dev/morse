@@ -5,18 +5,21 @@
       <stop offset="0" stop-color="#1c1c26"/>
       <stop offset="1" stop-color="#101018"/>
     </linearGradient>
-    <!-- specular edge: bright at top AND bottom (edges facing up/down catch light),
-         darkest at the side waist (edges facing sideways) -->
-    <linearGradient id="rim" x1="512" y1="100" x2="512" y2="924" gradientUnits="userSpaceOnUse">
-      <stop offset="0" stop-color="#ffffff" stop-opacity="0.55"/>
-      <stop offset="0.5" stop-color="#ffffff" stop-opacity="0.05"/>
-      <stop offset="1" stop-color="#ffffff" stop-opacity="0.5"/>
-    </linearGradient>
+    <!-- two glow pools: bright at top-center & bottom-center, fading out before the corners -->
+    <radialGradient id="rimTop" cx="512" cy="100" r="300" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.75"/>
+      <stop offset="1" stop-color="#ffffff" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="rimBot" cx="512" cy="924" r="300" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.6"/>
+      <stop offset="1" stop-color="#ffffff" stop-opacity="0"/>
+    </radialGradient>
     <clipPath id="clip"><use href="#sq"/></clipPath>
   </defs>
   <use href="#sq" fill="url(#bg)"/>
   <g clip-path="url(#clip)">
-    <use href="#sq" fill="none" stroke="url(#rim)" stroke-width="10"/>
+    <use href="#sq" fill="none" stroke="url(#rimTop)" stroke-width="10"/>
+    <use href="#sq" fill="none" stroke="url(#rimBot)" stroke-width="10"/>
   </g>
   <rect x="256" y="236" width="512" height="232" rx="116" fill="#A48FFF"/>
   <rect x="256" y="560" width="232" height="232" rx="116" fill="#A48FFF"/>
