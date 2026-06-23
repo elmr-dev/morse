@@ -28,6 +28,13 @@ type DecodeState =
   | { status: 'done'; result: DecodeResult }
   | { status: 'error'; message: string };
 
+type OutputDeviceState =
+  | { status: 'loading' }
+  | { status: 'error'; message: string }
+  | { status: 'ready'; devices: DeviceInfo[] };
+
+type MonitorStatus = 'off' | 'starting' | 'on' | 'stopping' | 'error';
+
 /** CW tone the DSP centers on. 700 Hz matches the decode default; the IC-7300's
  *  factory CW pitch is 600 Hz, so operators may want to match their rig. */
 const DEFAULT_TONE_HZ = 700;
@@ -92,6 +99,19 @@ function App() {
   );
   const [decode, setDecode] = useState<DecodeState>({ status: 'idle' });
 
+  // Monitor state
+  const [outputDevices, setOutputDevices] = useState<OutputDeviceState>({
+    status: 'loading',
+  });
+  const [monitorOutputId, setMonitorOutputId] = useState<string>(() =>
+    loadSetting('monitorOutput', '')
+  );
+  const [monitorVolume, setMonitorVolume] = useState<number>(() =>
+    loadSetting('monitorVolume', 1.0)
+  );
+  const [monitorStatus, setMonitorStatus] = useState<MonitorStatus>('off');
+  const [monitorError, setMonitorError] = useState<string | null>(null);
+
   const loadDevices = useCallback(async () => {
     setDevices({ status: 'loading' });
     try {
@@ -109,9 +129,25 @@ function App() {
     }
   }, []);
 
+  const loadOutputDevices = useCallback(async () => {
+    setOutputDevices({ status: 'loading' });
+    try {
+      const list = await invoke<DeviceInfo[]>('list_output_devices');
+      setOutputDevices({ status: 'ready', devices: list });
+      setMonitorOutputId((prev) => {
+        if (prev && list.some((d) => d.id === prev)) return prev;
+        const preferred = list.find((d) => d.default) ?? list[0];
+        return preferred?.id ?? '';
+      });
+    } catch (err) {
+      setOutputDevices({ status: 'error', message: String(err) });
+    }
+  }, []);
+
   useEffect(() => {
     void loadDevices();
-  }, [loadDevices]);
+    void loadOutputDevices();
+  }, [loadDevices, loadOutputDevices]);
 
   // Persist settings whenever they change.
   useEffect(() => {
@@ -126,8 +162,54 @@ function App() {
   useEffect(() => {
     saveSetting('seconds', seconds);
   }, [seconds]);
+  useEffect(() => {
+    if (monitorOutputId) saveSetting('monitorOutput', monitorOutputId);
+  }, [monitorOutputId]);
+  useEffect(() => {
+    saveSetting('monitorVolume', monitorVolume);
+  }, [monitorVolume]);
 
   const capturing = decode.status === 'capturing';
+  const monitorOn = monitorStatus === 'on';
+  const monitorBusy = monitorStatus === 'starting' || monitorStatus === 'stopping';
+
+  async function handleMonitorToggle() {
+    setMonitorError(null);
+    if (monitorOn) {
+      setMonitorStatus('stopping');
+      try {
+        await invoke('stop_monitor');
+        setMonitorStatus('off');
+      } catch (err) {
+        setMonitorStatus('error');
+        setMonitorError(String(err));
+      }
+    } else {
+      setMonitorStatus('starting');
+      try {
+        await invoke('start_monitor', {
+          inputDevice: selectedId || null,
+          outputDevice: monitorOutputId || null,
+          volume: monitorVolume,
+        });
+        setMonitorStatus('on');
+      } catch (err) {
+        setMonitorStatus('error');
+        setMonitorError(String(err));
+      }
+    }
+  }
+
+  async function handleVolumeChange(v: number) {
+    setMonitorVolume(v);
+    if (monitorOn) {
+      try {
+        await invoke('set_monitor_volume', { volume: v });
+      } catch {
+        // non-fatal — volume just won't update until next start
+      }
+    }
+  }
 
   async function handleDecode() {
     setDecode({ status: 'capturing' });
@@ -280,6 +362,115 @@ function App() {
         >
           {capturing ? `Capturing ${seconds}s…` : 'Capture & decode'}
         </button>
+      </section>
+
+      <section className="flex flex-col gap-4" aria-label="Monitor">
+        <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+          Monitor
+        </h2>
+
+        <div className={fieldCls}>
+          <label htmlFor="output-device" className={labelCls}>
+            Output device
+          </label>
+          {outputDevices.status === 'loading' && (
+            <div
+              className="h-11 animate-pulse rounded-lg bg-muted motion-reduce:animate-none"
+              aria-hidden="true"
+            />
+          )}
+          {outputDevices.status === 'error' && (
+            <p className="text-destructive" role="alert">
+              Could not list devices: {outputDevices.message}{' '}
+              <button
+                type="button"
+                className={linkCls}
+                onClick={loadOutputDevices}
+              >
+                Retry
+              </button>
+            </p>
+          )}
+          {outputDevices.status === 'ready' &&
+            (outputDevices.devices.length === 0 ? (
+              <p className="text-muted-foreground">
+                No output devices found.{' '}
+                <button
+                  type="button"
+                  className={linkCls}
+                  onClick={loadOutputDevices}
+                >
+                  Refresh
+                </button>
+              </p>
+            ) : (
+              <div className="flex items-center gap-2">
+                <select
+                  id="output-device"
+                  className={`${inputCls} flex-1`}
+                  value={monitorOutputId}
+                  onChange={(e) => setMonitorOutputId(e.target.value)}
+                  disabled={monitorOn || monitorBusy}
+                >
+                  {outputDevices.devices.map((d) => (
+                    <option key={d.id} value={d.id}>
+                      {d.name}
+                      {d.default ? ' (default)' : ''}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  type="button"
+                  className={linkCls}
+                  onClick={loadOutputDevices}
+                  disabled={monitorOn || monitorBusy}
+                >
+                  Refresh
+                </button>
+              </div>
+            ))}
+        </div>
+
+        <div className={fieldCls}>
+          <label htmlFor="monitor-volume" className={labelCls}>
+            Volume{' '}
+            <span className="font-normal text-muted-foreground">
+              {Math.round(monitorVolume * 100)}%
+            </span>
+          </label>
+          <input
+            id="monitor-volume"
+            type="range"
+            min={0}
+            max={1}
+            step={0.05}
+            value={monitorVolume}
+            className="h-11 w-full cursor-pointer accent-primary"
+            onChange={(e) => void handleVolumeChange(Number(e.target.value))}
+          />
+        </div>
+
+        <button
+          type="button"
+          className="min-h-12 cursor-pointer rounded-lg bg-primary px-5 font-semibold text-primary-foreground transition-opacity active:opacity-85 disabled:cursor-default disabled:opacity-50"
+          onClick={() => void handleMonitorToggle()}
+          disabled={monitorBusy || outputDevices.status !== 'ready'}
+          aria-pressed={monitorOn}
+        >
+          {monitorStatus === 'starting'
+            ? 'Starting…'
+            : monitorStatus === 'stopping'
+              ? 'Stopping…'
+              : monitorOn
+                ? 'Stop monitor'
+                : 'Start monitor'}
+        </button>
+
+        {monitorStatus === 'error' && monitorError && (
+          <p className="text-sm text-destructive" role="alert">
+            {monitorError}
+          </p>
+        )}
       </section>
 
       <section
