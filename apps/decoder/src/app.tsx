@@ -304,12 +304,7 @@ function App() {
               <output className="font-mono text-xl tracking-[0.08em] break-words">
                 {decode.result.text}
               </output>
-              <div className="flex flex-wrap items-center gap-2">
-                <ConfidenceBadge value={decode.result.confidence} />
-                <span className="text-xs text-muted-foreground">
-                  Tone: {Math.round(decode.result.detectedToneHz)} Hz
-                </span>
-              </div>
+              <ConfidenceBadge value={decode.result.confidence} />
             </div>
           ) : (
             <p className="text-muted-foreground">
