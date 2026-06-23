@@ -26,4 +26,5 @@ ndarray = "0.15"
 hound = "3.5.1"
 cpal = "0.18.1"
 rubato = "0.16"
+tauri-plugin-window-state = "2.4.1"
 

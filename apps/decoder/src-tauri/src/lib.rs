@@ -178,6 +178,7 @@ async fn capture_and_decode(
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_window_state::Builder::default().build())
         .plugin(tauri_plugin_opener::init())
         .manage(MonitorState(Mutex::new(None)))
         .invoke_handler(tauri::generate_handler![
