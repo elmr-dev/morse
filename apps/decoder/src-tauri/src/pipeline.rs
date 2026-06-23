@@ -10,19 +10,33 @@
 //! produces log-probabilities; greedy CTC collapses them to text. Holding the
 //! whole chain here keeps `lib.rs` a thin Tauri shell over reusable domain logic.
 
-use crate::audio::{AudioError, AudioSource, WavFileSource};
-use crate::decode::{greedy_decode, DecodeOptions};
-use crate::dsp::{extract_envelope, DSP_SAMPLE_RATE, IN_CHANNELS};
-use crate::model::run_inference;
+use std::time::Duration;
+
+use crate::audio::{AudioError, AudioSource, DeviceSource, WavFileSource};
+use crate::decode::{greedy_decode, DecodeOptions, DecodeResult};
+use crate::dsp::{extract_envelope, DECIMATION, DSP_SAMPLE_RATE, IN_CHANNELS};
+use crate::model::{run_inference, MAX_FRAMES};
+use crate::resample::resample_to_dsp_rate;
 
 /// Default CW tone the DSP centers its bandpass/matched filters on, in Hz.
 pub const DEFAULT_TONE_HZ: f64 = 700.0;
 
-/// Decode mono PCM `samples` (at `sample_rate` Hz) to text.
+/// Longest audio span the fixed-length model accepts, in 8 kHz samples.
+///
+/// The graph is traced at [`MAX_FRAMES`] envelope frames; the DSP decimates audio
+/// by [`DECIMATION`] to reach the envelope rate, so the audio cap is their product
+/// (= 16 s at 8 kHz). Live capture decodes only the trailing window this allows.
+pub const MAX_DECODE_SAMPLES: usize = MAX_FRAMES * DECIMATION;
+
+/// Decode mono PCM `samples` (at `sample_rate` Hz) to text + confidence.
 ///
 /// `sample_rate` must be [`DSP_SAMPLE_RATE`] — the DSP is conformance-locked to
 /// 8 kHz and does not resample.
-pub fn decode_samples(samples: &[f32], sample_rate: u32, tone_hz: f64) -> Result<String, String> {
+pub fn decode_samples(
+    samples: &[f32],
+    sample_rate: u32,
+    tone_hz: f64,
+) -> Result<DecodeResult, String> {
     if sample_rate != DSP_SAMPLE_RATE {
         return Err(format!(
             "expected {DSP_SAMPLE_RATE} Hz audio, got {sample_rate} Hz"
@@ -35,16 +49,51 @@ pub fn decode_samples(samples: &[f32], sample_rate: u32, tone_hz: f64) -> Result
     let envelope = extract_envelope(samples, sample_rate, tone_hz);
     let log_probs = run_inference(&envelope)?;
     let t_out = log_probs.len() / crate::decode::NUM_CLASSES;
-    let result = greedy_decode(&log_probs, t_out, DecodeOptions::default());
-    Ok(result.text)
+    Ok(greedy_decode(&log_probs, t_out, DecodeOptions::default()))
 }
 
 /// Open a WAV file and decode it end to end via the [`AudioSource`] seam.
-pub fn decode_wav_file(path: &str, tone_hz: f64) -> Result<String, String> {
+pub fn decode_wav_file(path: &str, tone_hz: f64) -> Result<DecodeResult, String> {
     let mut source = WavFileSource::open(path).map_err(audio_err)?;
     let sample_rate = source.sample_rate();
     let samples = source.read_to_end().map_err(audio_err)?;
     decode_samples(&samples, sample_rate, tone_hz)
+}
+
+/// Capture `seconds` of live audio from an input device and decode it.
+///
+/// The live counterpart of [`decode_wav_file`]: opens `device` (host default when
+/// `None`) via [`DeviceSource`], lets it buffer for `seconds`, resamples the
+/// device-native rate down to the DSP's 8 kHz ([`resample_to_dsp_rate`]), then
+/// decodes the trailing [`MAX_DECODE_SAMPLES`] window the fixed-length model
+/// accepts. This is the one-shot workaround for the 16 s graph; the continuous
+/// re-decode loop is a later concern.
+pub fn capture_and_decode(
+    device: Option<&str>,
+    seconds: f64,
+    tone_hz: f64,
+) -> Result<DecodeResult, String> {
+    if !(seconds.is_finite() && seconds > 0.0) {
+        return Err("capture seconds must be a positive number".to_string());
+    }
+
+    let source = DeviceSource::open(device).map_err(audio_err)?;
+    let rate = source.sample_rate();
+    std::thread::sleep(Duration::from_secs_f64(seconds));
+    let captured = source.take_buffered();
+    drop(source); // stop the stream before the heavy DSP work
+
+    if captured.is_empty() {
+        return Err("no audio captured from device".to_string());
+    }
+
+    let samples = resample_to_dsp_rate(&captured, rate)?;
+    let window = if samples.len() > MAX_DECODE_SAMPLES {
+        &samples[samples.len() - MAX_DECODE_SAMPLES..]
+    } else {
+        &samples[..]
+    };
+    decode_samples(window, DSP_SAMPLE_RATE, tone_hz)
 }
 
 fn audio_err(e: AudioError) -> String {
@@ -69,8 +118,14 @@ mod tests {
     #[test]
     fn decodes_clean_cq_clip_like_ts() {
         let path = fixture("cq_clean_20wpm.input.wav");
-        let text = decode_wav_file(path.to_str().unwrap(), DEFAULT_TONE_HZ).unwrap();
-        assert_eq!(text, "CQCQDEW1ABCW1ABCK");
+        let result = decode_wav_file(path.to_str().unwrap(), DEFAULT_TONE_HZ).unwrap();
+        assert_eq!(result.text, "CQCQDEW1ABCW1ABCK");
+        // A clean clip should decode with high per-emission confidence.
+        assert!(
+            result.confidence > 0.5,
+            "expected confident decode, got {}",
+            result.confidence
+        );
     }
 
     #[test]

@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 // Pin the backend to "not configured" so these stay pure, offline unit tests —
 // the env in CI may have VITE_SUPABASE_* set, which would otherwise make the
@@ -17,8 +17,28 @@ import {
   writeLocalBest,
 } from './leaderboard';
 
+// happy-dom's localStorage here is a partial stub (no clear/removeItem), so
+// swap in a real in-memory Storage per test for isolated persisted-state reads.
+function stubLocalStorage() {
+  const map = new Map<string, string>();
+  vi.stubGlobal('localStorage', {
+    getItem: (k: string) => map.get(k) ?? null,
+    setItem: (k: string, v: string) => map.set(k, String(v)),
+    removeItem: (k: string) => map.delete(k),
+    clear: () => map.clear(),
+    key: (i: number) => [...map.keys()][i] ?? null,
+    get length() {
+      return map.size;
+    },
+  });
+}
+
 beforeEach(() => {
-  localStorage.clear();
+  stubLocalStorage();
+});
+
+afterEach(() => {
+  vi.unstubAllGlobals();
 });
 
 describe('local best store', () => {

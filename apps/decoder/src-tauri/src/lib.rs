@@ -7,9 +7,15 @@ pub mod decode;
 pub mod dsp;
 pub mod model;
 pub mod pipeline;
+pub mod resample;
 
-use audio::{AudioSource, WavFileSource};
-use pipeline::{decode_wav_file, DEFAULT_TONE_HZ};
+use audio::{
+    list_input_devices as enumerate_input_devices, AudioSource, DeviceInfo, WavFileSource,
+};
+use decode::DecodeResult;
+use pipeline::{
+    capture_and_decode as pipeline_capture_and_decode, decode_wav_file, DEFAULT_TONE_HZ,
+};
 
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
 #[tauri::command]
@@ -56,22 +62,63 @@ fn load_audio_clip(path: String) -> Result<ClipInfo, String> {
     })
 }
 
-/// Decode a CW audio file end to end and return the decoded text.
+/// Decode a CW audio file end to end and return the decoded text + confidence.
 ///
 /// Runs the full native pipeline (`pipeline::decode_wav_file`): WAV → DSP →
 /// ONNX → greedy CTC. `tone_hz` is the CW tone the DSP centers on; pass `None`
 /// for the 700 Hz default. The audio must be 8 kHz mono (the DSP does not
 /// resample); decode failures cross the boundary as a stringified error.
 #[tauri::command]
-fn decode_file(path: String, tone_hz: Option<f64>) -> Result<String, String> {
+fn decode_file(path: String, tone_hz: Option<f64>) -> Result<DecodeResult, String> {
     decode_wav_file(&path, tone_hz.unwrap_or(DEFAULT_TONE_HZ))
+}
+
+/// List the input devices available for live capture.
+///
+/// Powers the device picker; the IC-7300 appears here as "USB Audio CODEC".
+#[tauri::command]
+fn list_input_devices() -> Result<Vec<DeviceInfo>, String> {
+    enumerate_input_devices().map_err(|e| e.to_string())
+}
+
+/// Capture `seconds` of live audio from `device` and decode it to text.
+///
+/// `device` is the device id from [`list_input_devices`] (host default when
+/// `None`); `tone_hz` is the CW tone the DSP centers on (700 Hz default). Runs the
+/// full native path: capture → resample to 8 kHz → trailing-window decode.
+///
+/// `async` + `spawn_blocking`: the capture sleeps for `seconds` and then runs heavy
+/// DSP/ONNX work, so it must stay off the main thread or the webview beachballs.
+/// The `cpal::Stream` inside is `!Send`, but it is created and dropped entirely
+/// within the closure on the blocking thread, so it never crosses a thread boundary.
+#[tauri::command]
+async fn capture_and_decode(
+    device: Option<String>,
+    seconds: f64,
+    tone_hz: Option<f64>,
+) -> Result<DecodeResult, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        pipeline_capture_and_decode(
+            device.as_deref(),
+            seconds,
+            tone_hz.unwrap_or(DEFAULT_TONE_HZ),
+        )
+    })
+    .await
+    .map_err(|e| format!("capture task failed: {e}"))?
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
-        .invoke_handler(tauri::generate_handler![greet, load_audio_clip, decode_file])
+        .invoke_handler(tauri::generate_handler![
+            greet,
+            load_audio_clip,
+            decode_file,
+            list_input_devices,
+            capture_and_decode
+        ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
