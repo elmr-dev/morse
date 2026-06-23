@@ -1,0 +1,42 @@
+/*
+ * SPDX-FileCopyrightText: 2026 Mark Percival, John Schult
+ *
+ * SPDX-License-Identifier: AGPL-3.0-or-later
+ */
+
+@import "tailwindcss";
+
+/* Shared brand identity: generic oklch tokens, Tailwind mappings, self-hosted
+   fonts, and generic motion — the same theme morse-web reads. */
+@import "@morse/brand/theme/theme.css";
+
+/* The `dark` variant is class-based; main.tsx toggles `.dark` on <html> from
+   the OS color-scheme preference. (Tailwind v4 only hoists @theme out of
+   imported package CSS, so @custom-variant must live in the entry.) */
+@custom-variant dark (&:is(.dark *));
+
+/* App-local token: a warning/amber for the "fair" confidence badge — the shared
+   theme only carries success (good) and destructive (bad). */
+@theme inline {
+  --color-warning: var(--warning);
+}
+
+:root {
+  --warning: oklch(0.62 0.16 55);
+}
+
+.dark {
+  --warning: oklch(0.8 0.15 65);
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground;
+    margin: 0;
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+  }
+}
