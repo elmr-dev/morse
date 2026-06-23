@@ -8,11 +8,13 @@ interface DeviceInfo {
   default: boolean;
 }
 
-/** Mirror of the Rust `DecodeResult`: collapsed text + mean per-character
- *  confidence in [0, 1]. */
+/** Mirror of the Rust `DecodeResult`: collapsed text, mean per-character
+ *  confidence in [0, 1], and the CW tone the DSP actually used. */
 interface DecodeResult {
   text: string;
   confidence: number;
+  /** CW tone the DSP bandpass was centred on, in Hz (camelCase from Rust). */
+  detectedToneHz: number;
 }
 
 type DeviceState =
@@ -79,6 +81,9 @@ function App() {
   const [selectedId, setSelectedId] = useState<string>(() =>
     loadSetting('device', '')
   );
+  const [autoDetect, setAutoDetect] = useState(() =>
+    loadSetting('autoDetect', true)
+  );
   const [toneHz, setToneHz] = useState(() =>
     loadSetting('toneHz', DEFAULT_TONE_HZ)
   );
@@ -113,6 +118,9 @@ function App() {
     if (selectedId) saveSetting('device', selectedId);
   }, [selectedId]);
   useEffect(() => {
+    saveSetting('autoDetect', autoDetect);
+  }, [autoDetect]);
+  useEffect(() => {
     saveSetting('toneHz', toneHz);
   }, [toneHz]);
   useEffect(() => {
@@ -127,7 +135,7 @@ function App() {
       const result = await invoke<DecodeResult>('capture_and_decode', {
         device: selectedId || null,
         seconds,
-        toneHz,
+        toneHz: autoDetect ? null : toneHz,
       });
       setDecode({ status: 'done', result });
     } catch (err) {
@@ -208,21 +216,40 @@ function App() {
 
         <div className="grid grid-cols-2 gap-4">
           <div className={fieldCls}>
-            <label htmlFor="tone" className={labelCls}>
-              Tone (Hz)
+            <span className={labelCls}>Tone (Hz)</span>
+            <label className="flex min-h-11 cursor-pointer items-center gap-2 rounded-lg border border-input px-3">
+              <input
+                type="checkbox"
+                className="h-4 w-4 accent-primary"
+                checked={autoDetect}
+                disabled={capturing}
+                onChange={(e) => setAutoDetect(e.target.checked)}
+              />
+              <span className="text-base">Auto-detect</span>
+              {decode.status === 'done' && decode.result.detectedToneHz > 0 && (
+                <span className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
+                  {Math.round(decode.result.detectedToneHz)} Hz
+                </span>
+              )}
             </label>
-            <input
-              id="tone"
-              className={inputCls}
-              type="number"
-              min={100}
-              max={2000}
-              step={10}
-              value={toneHz}
-              disabled={capturing}
-              onChange={(e) => setToneHz(Number(e.target.value))}
-            />
-            <span className={hintCls}>IC-7300 factory pitch is 600 Hz</span>
+            {!autoDetect && (
+              <input
+                id="tone"
+                className={inputCls}
+                type="number"
+                min={100}
+                max={2000}
+                step={10}
+                value={toneHz}
+                disabled={capturing}
+                onChange={(e) => setToneHz(Number(e.target.value))}
+              />
+            )}
+            <span className={hintCls}>
+              {autoDetect
+                ? 'Spectral peak in 300–1000 Hz'
+                : 'IC-7300 factory pitch is 600 Hz'}
+            </span>
           </div>
 
           <div className={fieldCls}>

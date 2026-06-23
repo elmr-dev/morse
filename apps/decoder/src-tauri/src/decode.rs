@@ -16,14 +16,19 @@ pub const CHARS: &str = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789.,?=/";
 /// Total classes: alphabet + blank = 42.
 pub const NUM_CLASSES: usize = CHARS.len() + 1;
 
-/// Result of a greedy decode: collapsed text plus mean per-emission confidence.
+/// Result of a greedy decode: collapsed text, mean per-emission confidence,
+/// and the CW tone the DSP actually used.
 #[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct DecodeResult {
     /// Decoded characters with CTC repeats/blanks collapsed (no inter-word spaces;
     /// the alphabet has no space label).
     pub text: String,
     /// Mean `exp(max_log_prob)` over emitted labels, in `[0, 1]`; 0 when empty.
     pub confidence: f32,
+    /// CW tone the DSP bandpass and matched filters were centred on, in Hz.
+    /// Set by [`pipeline::decode_samples`]; 0.0 until then.
+    pub detected_tone_hz: f64,
 }
 
 /// Tunables for the gates; defaults match decode.ts (`greedyDecode`).
@@ -97,6 +102,7 @@ pub fn greedy_decode(log_probs: &[f32], t: usize, opts: DecodeOptions) -> Decode
         return DecodeResult {
             text: String::new(),
             confidence: 0.0,
+            detected_tone_hz: 0.0,
         };
     }
 
@@ -137,7 +143,11 @@ pub fn greedy_decode(log_probs: &[f32], t: usize, opts: DecodeOptions) -> Decode
     } else {
         confs.iter().sum::<f32>() / confs.len() as f32
     };
-    DecodeResult { text, confidence }
+    DecodeResult {
+        text,
+        confidence,
+        detected_tone_hz: 0.0, // filled in by pipeline::decode_samples
+    }
 }
 
 #[cfg(test)]
