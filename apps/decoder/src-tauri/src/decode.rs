@@ -19,6 +19,7 @@ pub const NUM_CLASSES: usize = CHARS.len() + 1;
 /// Result of a greedy decode: collapsed text, mean per-emission confidence,
 /// and the CW tone the DSP actually used.
 #[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct DecodeResult {
     /// Decoded characters with CTC repeats/blanks collapsed (no inter-word spaces;
     /// the alphabet has no space label).
