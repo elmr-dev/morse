@@ -1,35 +1,51 @@
 # @morse/brand
 
-Canonical source of truth for Morse suite brand assets.
+Single source of truth for Morse suite brand assets, organized by the app that consumes
+them. Both `apps/web` and `apps/decoder` consume from here.
 
-## Current contents
-
-Right now this package holds **only the decoder app-icon masters**. The rest of the brand
-identity — the web/PWA icons, favicon, wordmark logo, social/OG image, and the theme CSS —
-is still owned by `apps/web`, and migrates into this package as its own focused change
-(see the web asset migration + theme fold sub-issues of #48). Until then, those files live
-in `apps/web/public/`, not here.
+## Layout
 
 ```
-decoder-icon.svg             # vector source — full-bleed master
-decoder-icon-1024.png        # rendered full-bleed master
-decoder-icon-macos.svg       # vector source — macOS squircle master
-decoder-icon-macos-1024.png  # rendered macOS master (baked squircle, transparent corners)
+decoder/   # consumed by apps/decoder — app-icon masters (source art)
+  icon.svg              # full-bleed master (vector source)
+  icon-1024.png         # full-bleed master (rendered)
+  icon-macos.svg        # macOS squircle master (vector source)
+  icon-macos-1024.png   # macOS master: baked squircle, transparent corners (rendered)
+web/       # consumed by apps/web — favicon, PWA icons, wordmark, social
+  favicon.svg
+  apple-touch-icon.png
+  icon-192.png
+  icon-512.png
+  icon-maskable-512.png
+  logo.svg
+  og.png
 ```
 
-## Icon masters
+The shared theme CSS folds in later as `theme/` (extracted from `apps/web`).
 
-These are **source artwork** — hand-authored; the PNGs are rendered from their matching
-`.svg`. Edit the SVGs and re-render; don't hand-edit the PNGs.
+## `decoder/` — icon masters
 
-They are the inputs to Tauri's icon generator, e.g.:
+Source artwork for the decoder's app icon: the Morse-**D** glyph (purple pill *dah* +
+purple/pink *dit* dots on `#0F0F1A`). The PNGs render from their matching `.svg` — edit
+the SVGs and re-render; don't hand-edit the PNGs.
+
+These feed Tauri's icon generator:
 
 ```
-bun tauri icon packages/brand/decoder-icon-macos-1024.png
+bun tauri icon packages/brand/decoder/icon-macos-1024.png
 ```
 
-which emits the decoder's OS icon set under `apps/decoder/src-tauri/icons/` — a generated
-artifact, likewise not hand-edited. Tauri's generator only resizes/packs; it does **not**
-add macOS padding, so the macOS `.icns` is generated from the pre-padded
-`decoder-icon-macos-1024.png` (the squircle with transparent corners), while a future
-full-bleed/Windows master derives from `decoder-icon-1024.png`.
+which emits the OS icon set under `apps/decoder/src-tauri/icons/` — a generated artifact,
+likewise not hand-edited. Tauri only resizes/packs; it does **not** add macOS padding, so
+the macOS `.icns` uses the pre-padded `icon-macos-1024.png` squircle, while a future
+full-bleed / Windows icon derives from `icon-1024.png`.
+
+## `web/` — web assets
+
+Favicon, PWA manifest icons, wordmark, and OG image for `apps/web`. **Not yet consumed
+from here** — `apps/web` still references its own copies under `apps/web/public/`. The web
+migration repoints web's `index.html` / manifest / meta tags at these and removes the
+duplicates. Until then, treat these as the canonical copies and edit them here.
+
+> Note: `apps/web/public/` also has a `favicon.ico` and a `splash/` set (PWA launch
+> screens) that aren't mirrored here yet; folding those in is part of the web migration.
