@@ -10,11 +10,22 @@ pub mod pipeline;
 pub mod resample;
 pub mod tone;
 
+use std::sync::Mutex;
+
 use audio::{
-    list_input_devices as enumerate_input_devices, AudioSource, DeviceInfo, WavFileSource,
+    list_input_devices as enumerate_input_devices,
+    list_output_devices as enumerate_output_devices, AudioSource, DeviceInfo, MonitorHandle,
+    WavFileSource,
 };
 use decode::DecodeResult;
 use pipeline::{capture_and_decode as pipeline_capture_and_decode, decode_wav_file};
+
+/// Tauri managed state for the audio monitor passthrough.
+///
+/// `MonitorHandle` is `Send` (it owns a channel sender; the actual `!Send`
+/// streams live on a dedicated thread). Wrapped in `Mutex` so commands can
+/// start/stop atomically.
+struct MonitorState(Mutex<Option<MonitorHandle>>);
 
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
 #[tauri::command]
@@ -80,6 +91,67 @@ fn list_input_devices() -> Result<Vec<DeviceInfo>, String> {
     enumerate_input_devices().map_err(|e| e.to_string())
 }
 
+/// List the output devices available for the monitor passthrough.
+///
+/// Powers the monitor output picker (speakers, headphones, etc.).
+#[tauri::command]
+fn list_output_devices() -> Result<Vec<DeviceInfo>, String> {
+    enumerate_output_devices().map_err(|e| e.to_string())
+}
+
+/// Start (or restart) the audio monitor passthrough.
+///
+/// Captures from `input_device` (host default when `None`) and plays back
+/// through `output_device` (host default when `None`). `volume` is clamped to
+/// `[0.0, 1.0]`; defaults to 1.0. If a monitor is already running it is
+/// stopped first.
+///
+/// Returns once both streams are confirmed running. The monitor continues until
+/// [`stop_monitor`] is called or the app exits.
+#[tauri::command]
+fn start_monitor(
+    state: tauri::State<'_, MonitorState>,
+    input_device: Option<String>,
+    output_device: Option<String>,
+    volume: Option<f32>,
+) -> Result<(), String> {
+    let mut guard = state.0.lock().expect("monitor state poisoned");
+    if let Some(existing) = guard.take() {
+        existing.stop();
+    }
+    let handle = MonitorHandle::start(input_device, output_device, volume.unwrap_or(1.0))
+        .map_err(|e| e.to_string())?;
+    *guard = Some(handle);
+    Ok(())
+}
+
+/// Stop the audio monitor passthrough if one is running.
+#[tauri::command]
+fn stop_monitor(state: tauri::State<'_, MonitorState>) -> Result<(), String> {
+    if let Some(h) = state.0.lock().expect("monitor state poisoned").take() {
+        h.stop();
+    }
+    Ok(())
+}
+
+/// Adjust the monitor playback volume without restarting the streams.
+///
+/// `volume` is clamped to `[0.0, 1.0]`. Returns an error if no monitor is running.
+#[tauri::command]
+fn set_monitor_volume(
+    state: tauri::State<'_, MonitorState>,
+    volume: f32,
+) -> Result<(), String> {
+    let guard = state.0.lock().expect("monitor state poisoned");
+    match guard.as_ref() {
+        Some(h) => {
+            h.set_volume(volume);
+            Ok(())
+        }
+        None => Err("monitor is not running".to_string()),
+    }
+}
+
 /// Capture `seconds` of live audio from `device` and decode it to text.
 ///
 /// `device` is the device id from [`list_input_devices`] (host default when
@@ -107,12 +179,17 @@ async fn capture_and_decode(
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .manage(MonitorState(Mutex::new(None)))
         .invoke_handler(tauri::generate_handler![
             greet,
             load_audio_clip,
             decode_file,
             list_input_devices,
-            capture_and_decode
+            capture_and_decode,
+            list_output_devices,
+            start_monitor,
+            stop_monitor,
+            set_monitor_volume,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
