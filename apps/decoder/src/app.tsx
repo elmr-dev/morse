@@ -224,6 +224,11 @@ function App() {
                 onChange={(e) => setAutoDetect(e.target.checked)}
               />
               <span className="text-base">Auto-detect</span>
+              {decode.status === 'done' && decode.result.detectedToneHz > 0 && (
+                <span className="rounded-full border border-current px-2 py-0.5 text-xs text-muted-foreground">
+                  {Math.round(decode.result.detectedToneHz)} Hz
+                </span>
+              )}
             </label>
             {!autoDetect && (
               <input
