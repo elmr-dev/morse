@@ -1,0 +1,16 @@
+/*
+ * SPDX-FileCopyrightText: 2026 Mark Percival, John Schult
+ *
+ * SPDX-License-Identifier: AGPL-3.0-or-later
+ */
+
+/* Self-hosted fonts (no Google Fonts CDN): same-origin so they're COEP-safe
+   and precached by the service worker for offline use. */
+@import "@fontsource-variable/inter";
+@import "@fontsource-variable/jetbrains-mono";
+
+:root {
+  --font-sans: "Inter Variable", Inter, sans-serif;
+  --font-serif: Georgia, serif;
+  --font-mono: "JetBrains Mono Variable", JetBrains Mono, monospace;
+}
