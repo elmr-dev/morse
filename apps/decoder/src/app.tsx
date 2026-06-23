@@ -178,7 +178,10 @@ function App() {
 
   // Copy sheet
   const [copyLines, setCopyLines] = useState<CopyLine[]>([]);
-  const [capturing, setCapturing] = useState(false);
+  /** True while the continuous capture loop is running. */
+  const [running, setRunning] = useState(false);
+  /** Set to true to break the capture loop after the current window completes. */
+  const stopRef = useRef(false);
   const [lastToneHz, setLastToneHz] = useState(0);
 
   // Monitor
@@ -289,54 +292,72 @@ function App() {
     }
   }
 
-  async function handleDecode() {
-    // Record the capture-start timestamp before the async round-trip.
-    const ts = zuluStamp(new Date());
-    const lineId = Date.now();
-
-    setCapturing(true);
-    setCopyLines((prev) => [
-      ...prev,
-      { id: lineId, timestamp: ts, chars: [], confidence: 0, detectedToneHz: 0, status: 'active' },
-    ]);
-
-    try {
-      const result = await invoke<DecodeResult>('capture_and_decode', {
-        device: selectedId || null,
-        seconds,
-        toneHz: autoDetect ? null : toneHz,
-      });
-      setLastToneHz(result.detectedToneHz);
-      setCopyLines((prev) =>
-        prev.map((line) =>
-          line.id === lineId
-            ? {
-                ...line,
-                chars: result.chars,
-                confidence: result.confidence,
-                detectedToneHz: result.detectedToneHz,
-                status: result.chars.length > 0 ? 'settled' : 'empty',
-              }
-            : line
-        )
-      );
-    } catch (err) {
-      // Remove the placeholder and show a transient error line.
-      setCopyLines((prev) =>
-        prev
-          .filter((line) => line.id !== lineId)
-          .concat({
-            id: lineId,
-            timestamp: ts,
-            chars: [{ ch: String(err), confidence: 1.0 }],
-            confidence: 0,
-            detectedToneHz: 0,
-            status: 'empty',
-          })
-      );
+  async function handleCapture() {
+    if (running) {
+      // Signal the loop to stop after the current window completes.
+      stopRef.current = true;
+      return;
     }
 
-    setCapturing(false);
+    stopRef.current = false;
+    setRunning(true);
+
+    while (!stopRef.current) {
+      const ts = zuluStamp(new Date());
+      const lineId = Date.now();
+
+      setCopyLines((prev) => [
+        ...prev,
+        { id: lineId, timestamp: ts, chars: [], confidence: 0, detectedToneHz: 0, status: 'active' },
+      ]);
+
+      try {
+        const result = await invoke<DecodeResult>('capture_and_decode', {
+          device: selectedId || null,
+          seconds,
+          toneHz: autoDetect ? null : toneHz,
+        });
+
+        if (result.detectedToneHz > 0) setLastToneHz(result.detectedToneHz);
+
+        const hasContent = result.chars.some((c) => c.ch !== ' ');
+        setCopyLines((prev) => {
+          if (!hasContent) {
+            // Empty window — remove the placeholder silently.
+            return prev.filter((l) => l.id !== lineId);
+          }
+          return prev.map((l) =>
+            l.id !== lineId
+              ? l
+              : {
+                  ...l,
+                  chars: result.chars,
+                  confidence: result.confidence,
+                  detectedToneHz: result.detectedToneHz,
+                  status: 'settled' as const,
+                }
+          );
+        });
+      } catch (err) {
+        // On error: remove the placeholder, surface the message, stop the loop.
+        const errMsg = String(err);
+        setCopyLines((prev) =>
+          prev
+            .filter((l) => l.id !== lineId)
+            .concat({
+              id: lineId,
+              timestamp: ts,
+              chars: [{ ch: errMsg, confidence: 1.0 }],
+              confidence: 0,
+              detectedToneHz: 0,
+              status: 'empty',
+            })
+        );
+        stopRef.current = true;
+      }
+    }
+
+    setRunning(false);
   }
 
   const fieldCls = 'flex flex-col gap-1.5';
@@ -390,7 +411,7 @@ function App() {
                   className={`${inputCls} flex-1`}
                   value={selectedId}
                   onChange={(e) => setSelectedId(e.target.value)}
-                  disabled={capturing}
+                  disabled={running}
                 >
                   {devices.devices.map((d) => (
                     <option key={d.id} value={d.id}>
@@ -403,7 +424,7 @@ function App() {
                   type="button"
                   className={linkCls}
                   onClick={loadDevices}
-                  disabled={capturing}
+                  disabled={running}
                 >
                   Refresh
                 </button>
@@ -419,7 +440,7 @@ function App() {
                 type="checkbox"
                 className="h-4 w-4 accent-primary"
                 checked={autoDetect}
-                disabled={capturing}
+                disabled={running}
                 onChange={(e) => setAutoDetect(e.target.checked)}
               />
               <span className="text-base">Auto-detect</span>
@@ -438,7 +459,7 @@ function App() {
                 max={2000}
                 step={10}
                 value={toneHz}
-                disabled={capturing}
+                disabled={running}
                 onChange={(e) => setToneHz(Number(e.target.value))}
               />
             )}
@@ -461,7 +482,7 @@ function App() {
               max={16}
               step={1}
               value={seconds}
-              disabled={capturing}
+              disabled={running}
               onChange={(e) => setSeconds(Number(e.target.value))}
             />
             <span className={hintCls}>Max 16 s (model window)</span>
@@ -470,12 +491,16 @@ function App() {
 
         <button
           type="button"
-          className="min-h-12 cursor-pointer rounded-lg bg-primary px-5 font-semibold text-primary-foreground transition-opacity active:opacity-85 disabled:cursor-default disabled:opacity-50"
-          onClick={() => void handleDecode()}
-          disabled={capturing || devices.status !== 'ready'}
-          aria-busy={capturing}
+          className={`min-h-12 cursor-pointer rounded-lg px-5 font-semibold transition-opacity active:opacity-85 disabled:cursor-default disabled:opacity-50 ${
+            running
+              ? 'bg-destructive text-destructive-foreground'
+              : 'bg-primary text-primary-foreground'
+          }`}
+          onClick={() => void handleCapture()}
+          disabled={!running && devices.status !== 'ready'}
+          aria-busy={running}
         >
-          {capturing ? `Capturing ${seconds}s…` : 'Capture & decode'}
+          {running ? 'Stop' : 'Capture & decode'}
         </button>
       </section>
 
