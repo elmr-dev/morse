@@ -5,11 +5,11 @@
       <stop offset="0" stop-color="#20202c"/>
       <stop offset="1" stop-color="#08080e"/>
     </linearGradient>
-    <!-- specular rim: bright top, dim waist, medium bottom (like Finder) -->
+    <!-- specular rim: gentle falloff, bright top, soft waist, medium bottom -->
     <linearGradient id="rim" x1="512" y1="100" x2="512" y2="924" gradientUnits="userSpaceOnUse">
-      <stop offset="0" stop-color="#ffffff" stop-opacity="0.85"/>
-      <stop offset="0.5" stop-color="#ffffff" stop-opacity="0.16"/>
-      <stop offset="1" stop-color="#ffffff" stop-opacity="0.5"/>
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.7"/>
+      <stop offset="0.5" stop-color="#ffffff" stop-opacity="0.3"/>
+      <stop offset="1" stop-color="#ffffff" stop-opacity="0.45"/>
     </linearGradient>
     <clipPath id="clip"><use href="#sq"/></clipPath>
   </defs>
