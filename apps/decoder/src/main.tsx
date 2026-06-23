@@ -1,4 +1,5 @@
 import faviconUrl from '@morse/brand/decoder/icon.svg';
+import { restoreStateCurrent, StateFlags } from '@tauri-apps/plugin-window-state';
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './app';
@@ -14,6 +15,9 @@ function syncColorScheme(): void {
 }
 syncColorScheme();
 darkQuery.addEventListener('change', syncColorScheme);
+
+// Restore window size/position from the previous session.
+void restoreStateCurrent(StateFlags.SIZE | StateFlags.POSITION);
 
 // Brand favicon, consumed from @morse/brand.
 const favicon = document.createElement('link');
