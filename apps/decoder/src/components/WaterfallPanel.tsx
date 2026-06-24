@@ -241,9 +241,9 @@ export function WaterfallPanel({
             borderRadius: '5px',
             background: 'var(--card)',
             color: 'var(--muted-foreground)',
-            fontFamily: 'var(--font-mono)',
-            fontSize: '9.5px',
-            letterSpacing: '0.06em',
+            fontFamily: 'var(--font-sans)',
+            fontSize: '11px',
+            letterSpacing: '0.01em',
             cursor: 'pointer',
             appearance: 'none',
             backgroundImage:

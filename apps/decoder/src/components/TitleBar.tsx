@@ -85,9 +85,10 @@ export function TitleBar({ themeOverride, onThemeChange }: TitleBarProps) {
         <span
           style={{
             marginLeft: '7px',
-            fontFamily: 'var(--font-mono)',
+            fontFamily: 'var(--font-sans)',
             fontSize: '11px',
-            letterSpacing: '0.14em',
+            fontWeight: 400,
+            letterSpacing: '0.06em',
             color: 'var(--muted-foreground)',
           }}
         >

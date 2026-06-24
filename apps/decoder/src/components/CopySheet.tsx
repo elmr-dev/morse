@@ -161,10 +161,10 @@ function ClearConfirm({ onClear }: { onClear: () => void }) {
       <>
         <span
           style={{
-            fontFamily: 'var(--font-mono)',
+            fontFamily: 'var(--font-sans)',
             fontSize: '11px',
             color: 'var(--destructive)',
-            letterSpacing: '0.03em',
+            letterSpacing: '0.01em',
           }}
         >
           Clear all?
@@ -236,7 +236,7 @@ function CopyScroll({ lines }: { lines: CopyLine[] }) {
         <span style={{ fontSize: '30px', opacity: 0.4 }}>· − ·</span>
         <span style={{ fontSize: '13.5px' }}>
           Press{' '}
-          <span style={{ fontFamily: 'var(--font-mono)', color: 'var(--foreground)' }}>START</span>{' '}
+          <span style={{ color: 'var(--foreground)', fontWeight: 500 }}>START</span>{' '}
           to begin copy.
         </span>
         <span style={{ fontSize: '12px', opacity: 0.8 }}>Each transmission lands as a new line.</span>

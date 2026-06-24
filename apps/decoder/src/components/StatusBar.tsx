@@ -26,9 +26,9 @@ export function StatusBar({ running, deviceName, toneHz, autoDetect, confidence 
         padding: '0 14px',
         borderTop: '1px solid var(--border)',
         background: 'color-mix(in oklch, var(--card) 88%, var(--foreground) 6%)',
-        fontFamily: 'var(--font-mono)',
-        fontSize: '10px',
-        letterSpacing: '0.05em',
+        fontFamily: 'var(--font-sans)',
+        fontSize: '11px',
+        letterSpacing: '0.01em',
         color: 'var(--muted-foreground)',
       }}
     >
