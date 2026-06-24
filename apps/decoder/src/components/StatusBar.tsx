@@ -9,12 +9,9 @@ interface StatusBarProps {
   deviceName: string;
   toneHz: number;
   autoDetect: boolean;
-  confidence: number;
 }
 
-export function StatusBar({ running, deviceName, toneHz, autoDetect, confidence }: StatusBarProps) {
-  const confPct = Math.round(confidence * 100);
-
+export function StatusBar({ running, deviceName, toneHz, autoDetect }: StatusBarProps) {
   return (
     <div
       style={{
@@ -25,7 +22,7 @@ export function StatusBar({ running, deviceName, toneHz, autoDetect, confidence 
         gap: '15px',
         padding: '0 14px',
         borderTop: '1px solid var(--border)',
-        background: 'color-mix(in oklch, var(--card) 88%, var(--foreground) 6%)',
+        background: 'var(--card)',
         fontFamily: 'var(--font-sans)',
         fontSize: '11px',
         letterSpacing: '0.01em',
@@ -49,11 +46,6 @@ export function StatusBar({ running, deviceName, toneHz, autoDetect, confidence 
       <span>
         {Math.round(toneHz)} Hz · {autoDetect ? 'Auto' : 'Manual'}
       </span>
-
-      {/* Confidence */}
-      {running && (
-        <span>CONF {confPct}%</span>
-      )}
 
       {/* CWNet badge — pinned right */}
       <span

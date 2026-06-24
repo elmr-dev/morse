@@ -27,6 +27,7 @@ export interface CopyLine {
 interface CopySheetProps {
   lines: CopyLine[];
   onClear: () => void;
+  running?: boolean;
 }
 
 const CONFIDENCE_FLOOR = 0.35;
@@ -77,7 +78,7 @@ async function handleExport(lines: CopyLine[]) {
   await invoke('export_copy_log', { path, content: head + body + '\n' });
 }
 
-export function CopySheet({ lines, onClear }: CopySheetProps) {
+export function CopySheet({ lines, onClear, running = false }: CopySheetProps) {
   const hasLines = lines.length > 0;
 
   return (
@@ -87,7 +88,7 @@ export function CopySheet({ lines, onClear }: CopySheetProps) {
         minWidth: 0,
         display: 'flex',
         flexDirection: 'column',
-        background: 'var(--background)',
+        background: 'var(--copy-sheet-bg, var(--background))',
       }}
     >
       {/* Header */}
@@ -111,7 +112,7 @@ export function CopySheet({ lines, onClear }: CopySheetProps) {
       </div>
 
       {/* Scroll area — newest on top */}
-      <CopyScroll lines={lines} />
+      <CopyScroll lines={lines} running={running} />
     </div>
   );
 }
@@ -158,7 +159,14 @@ function ClearConfirm({ onClear }: { onClear: () => void }) {
 
   if (confirming) {
     return (
-      <>
+      <div
+        style={{ display: 'contents' }}
+        onBlur={(e) => {
+          if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+            setConfirming(false);
+          }
+        }}
+      >
         <span
           style={{
             fontFamily: 'var(--font-sans)',
@@ -171,6 +179,7 @@ function ClearConfirm({ onClear }: { onClear: () => void }) {
         </span>
         <button
           type="button"
+          autoFocus
           onClick={() => {
             setConfirming(false);
             onClear();
@@ -182,7 +191,7 @@ function ClearConfirm({ onClear }: { onClear: () => void }) {
         <button type="button" onClick={() => setConfirming(false)} style={toolBtnStyle}>
           No
         </button>
-      </>
+      </div>
     );
   }
 
@@ -207,7 +216,7 @@ const toolBtnStyle: React.CSSProperties = {
   fontFamily: 'var(--font-sans)',
 };
 
-function CopyScroll({ lines }: { lines: CopyLine[] }) {
+function CopyScroll({ lines, running }: { lines: CopyLine[]; running: boolean }) {
   const scrollRef = useRef<HTMLDivElement>(null);
 
   // Stick to the top (newest) when already near the top.
@@ -233,13 +242,23 @@ function CopyScroll({ lines }: { lines: CopyLine[] }) {
           padding: '24px',
         }}
       >
-        <span style={{ fontSize: '30px', opacity: 0.4 }}>· − ·</span>
-        <span style={{ fontSize: '13.5px' }}>
-          Press{' '}
-          <span style={{ color: 'var(--foreground)', fontWeight: 500 }}>START</span>{' '}
-          to begin copy.
-        </span>
-        <span style={{ fontSize: '12px', opacity: 0.8 }}>Each transmission lands as a new line.</span>
+        {running ? (
+          <>
+            <span style={{ fontSize: '24px', opacity: 0.35 }}>· · · −−− · · ·</span>
+            <span style={{ fontSize: '13.5px' }}>Listening for a transmission…</span>
+            <span style={{ fontSize: '12px', opacity: 0.7 }}>Each transmission will appear as a new line.</span>
+          </>
+        ) : (
+          <>
+            <span style={{ fontSize: '30px', opacity: 0.4 }}>· − ·</span>
+            <span style={{ fontSize: '13.5px' }}>
+              Press{' '}
+              <span style={{ color: 'var(--foreground)', fontWeight: 500 }}>Start</span>{' '}
+              to begin copy.
+            </span>
+            <span style={{ fontSize: '12px', opacity: 0.8 }}>Each transmission lands as a new line.</span>
+          </>
+        )}
       </div>
     );
   }
@@ -415,12 +434,7 @@ function ActiveRow({ line }: { line: CopyLine }) {
             {chars.map((c, i) => (
               <CharSpan key={i} ch={c.ch} confidence={c.confidence} />
             ))}
-            <span
-              className="wf-cursor"
-              style={{ color: 'var(--primary)', fontWeight: 600 }}
-            >
-              ▌
-            </span>
+            <span className="wf-cursor" />
           </span>
           {pct != null && (
             <span
@@ -436,9 +450,7 @@ function ActiveRow({ line }: { line: CopyLine }) {
           )}
         </>
       ) : (
-        <span className="wf-cursor" style={{ color: 'var(--primary)', fontWeight: 600 }}>
-          ▌
-        </span>
+        <span className="wf-cursor" />
       )}
     </div>
   );

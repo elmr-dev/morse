@@ -1,0 +1,11 @@
+/*
+ * SPDX-FileCopyrightText: 2026 Mark Percival, John Schult
+ *
+ * SPDX-License-Identifier: AGPL-3.0-or-later
+ */
+
+/* Decoder-specific theme entry: latin-only fonts to keep the Tauri binary lean. */
+@import "./fonts-latin.css";
+@import "./tokens.css";
+@import "./theme-inline.css";
+@import "./motion.css";

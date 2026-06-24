@@ -8,7 +8,7 @@
 
 /* Shared brand identity: generic oklch tokens, Tailwind mappings, self-hosted
    fonts, and generic motion — the same theme morse-web reads. */
-@import "@morse/brand/theme/theme.css";
+@import "@morse/brand/theme/theme-decoder.css";
 
 /* The `dark` variant is class-based; main.tsx toggles `.dark` on <html> from
    the OS color-scheme preference. (Tailwind v4 only hoists @theme out of
@@ -36,6 +36,18 @@
   --dial: oklch(0.80 0.15 65);
   --dial-strong: oklch(0.88 0.16 68);
   --warning: oklch(0.8 0.15 65);
+
+  /* Decoder dark mode: strip purple chroma → pure neutral blacks.
+     --primary stays purple (envelope, CWNet dot, etc.).
+     Everything else is achromatic so buttons/toolbar have no purple tint. */
+  --background:    #282727;
+  --copy-sheet-bg: color-mix(in oklch, var(--card) 96%, var(--foreground) 2%);
+  --card:          #282727;
+  --btn-surface:   #282727;
+  --border:        #232323;
+  --input:         #232323;
+  --muted:         #1e1d1d;
+  --muted-foreground: oklch(0.62 0 0);
 }
 
 /* Graph-paper grid — Cosmic Night signature background */
@@ -69,16 +81,22 @@
 }
 .copy-scroll::-webkit-scrollbar-track { background: transparent; }
 
-/* Blinking copy cursor */
+/* Blinking copy cursor — square block the size of one monospace character */
 @keyframes wf-blink {
   0%, 48% { opacity: 1; }
   49%, 100% { opacity: 0; }
 }
 .wf-cursor {
+  display: inline-block;
+  width: 0.6em;
+  height: 1.15em;
+  background: hsl(265 35% 62% / 0.65);
+  border-radius: 1px;
+  vertical-align: text-bottom;
   animation: wf-blink 1s steps(1) infinite;
 }
 @media (prefers-reduced-motion: reduce) {
-  .wf-cursor { animation: none; }
+  .wf-cursor { animation: none; opacity: 1; }
 }
 
 /* Status dot pulse */
@@ -105,6 +123,18 @@
     user-select: none;
     -webkit-user-select: none;
   }
+}
+
+/* ── Toolbar button hover states ────────────────────────────────────────── */
+.tb-btn:hover:not(:disabled) {
+  background: color-mix(in oklch, var(--foreground) 8%, var(--card));
+  border-color: color-mix(in oklch, var(--foreground) 20%, var(--border));
+}
+.tb-btn-active:hover:not(:disabled) {
+  filter: brightness(1.12);
+}
+.tb-seg:hover {
+  background: color-mix(in srgb, var(--foreground) 10%, transparent);
 }
 
 /* macOS overlay title-bar drag region */

@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { useCallback, useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 // Waterfall passband
 const FMIN = 250;
@@ -120,6 +120,10 @@ export function WaterfallPanel({
   const rafRef = useRef<number>(0);
   const lastRowRef = useRef(0);
   const draggingRef = useRef(false);
+  const [sliderHovered, setSliderHovered] = useState(false);
+  const [pointerPos, setPointerPos] = useState({ x: 0, y: 0 });
+  const [pointerHz, setPointerHz] = useState(0);
+  const [canvasCursor, setCanvasCursor] = useState<'crosshair' | 'ew-resize'>('crosshair');
 
   colormapRef.current = colormap;
   binsRef.current = spectrumBins;
@@ -136,7 +140,7 @@ export function WaterfallPanel({
       c.height = h;
       const ctx = c.getContext('2d');
       if (ctx) {
-        ctx.fillStyle = '#100c1c';
+        ctx.fillStyle = '#1c1b1b';
         ctx.fillRect(0, 0, w, h);
       }
     }
@@ -218,7 +222,7 @@ export function WaterfallPanel({
         flexDirection: 'column',
         padding: '13px 14px',
         gap: '9px',
-        background: 'color-mix(in oklch, var(--card) 96%, var(--foreground) 2%)',
+        background: 'var(--copy-sheet-bg, var(--card))',
       }}
     >
       {/* Header row */}
@@ -271,12 +275,25 @@ export function WaterfallPanel({
         }}
         onPointerMove={(e) => {
           if (draggingRef.current) tuneFromPointer(e);
+          const r = e.currentTarget.getBoundingClientRect();
+          const x = e.clientX - r.left;
+          const y = e.clientY - r.top;
+          // Flip left/right so pill never goes off the right edge
+          setPointerPos({ x: x > r.width - 80 ? x - 70 : x + 14, y: y - 28 });
+          // Hz at cursor position
+          const hz = Math.round((FMIN + Math.max(0, Math.min(1, x / r.width)) * FSPAN) / 5) * 5;
+          setPointerHz(hz);
+          // Switch to ew-resize only when near the needle line (±8 px)
+          const needleX = (needlePct / 100) * r.width;
+          setCanvasCursor(Math.abs(x - needleX) <= 8 ? 'ew-resize' : 'crosshair');
         }}
         onPointerUp={() => {
           draggingRef.current = false;
         }}
+        onPointerEnter={() => setSliderHovered(true)}
         onPointerLeave={() => {
           draggingRef.current = false;
+          setSliderHovered(false);
         }}
         title="Drag to lock the decoder onto a signal"
       >
@@ -290,8 +307,8 @@ export function WaterfallPanel({
             display: 'block',
             borderRadius: 'var(--radius-lg)',
             overflow: 'hidden',
-            background: '#100c1c',
-            cursor: 'ew-resize',
+            background: '#1c1b1b',
+            cursor: draggingRef.current ? 'ew-resize' : canvasCursor,
             touchAction: 'none',
           }}
         />
@@ -363,26 +380,28 @@ export function WaterfallPanel({
             pointerEvents: 'none',
           }}
         />
-        {/* Needle Hz pill */}
-        <div
-          style={{
-            position: 'absolute',
-            top: '5px',
-            left: needleLeft,
-            transform: 'translateX(-50%)',
-            pointerEvents: 'none',
-            fontFamily: 'var(--font-mono)',
-            fontSize: '9.5px',
-            fontWeight: 600,
-            color: '#1a1322',
-            background: 'var(--dial)',
-            padding: '1px 5px',
-            borderRadius: '3px',
-            whiteSpace: 'nowrap',
-          }}
-        >
-          {Math.round(toneHz)} Hz
-        </div>
+        {/* Needle Hz pill — visible only on hover */}
+        {sliderHovered && (
+          <div
+            style={{
+              position: 'absolute',
+              top: `${pointerPos.y}px`,
+              left: `${pointerPos.x}px`,
+              transform: 'none',
+              pointerEvents: 'none',
+              fontFamily: 'var(--font-mono)',
+              fontSize: '11px',
+              fontWeight: 700,
+              color: '#1a1322',
+              background: 'var(--dial)',
+              padding: '2px 7px',
+              borderRadius: '4px',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            {pointerHz} Hz
+          </div>
+        )}
       </div>
 
       {/* Frequency scale */}

@@ -8,6 +8,43 @@ import { TitleBar } from './components/TitleBar';
 import { Toolbar } from './components/Toolbar';
 import { WaterfallPanel } from './components/WaterfallPanel';
 
+// ── Startup chime ─────────────────────────────────────────────────────────────
+// Plays the letter D (−··) softly via Web Audio on first mount.
+function playStartupChime() {
+  const ctx = new AudioContext();
+  const UNIT = 55;   // ms — one dit
+  const FREQ = 680;  // Hz
+  const GAIN = 0.015; // soft
+
+  const schedule: Array<{ start: number; dur: number }> = [];
+  let t = 0;
+  for (const sym of [3, 1, 1] as const) { // dah dit dit
+    schedule.push({ start: t, dur: sym * UNIT });
+    t += sym * UNIT + UNIT; // tone + inter-element gap
+  }
+
+  for (const { start, dur } of schedule) {
+    const osc = ctx.createOscillator();
+    const env = ctx.createGain();
+    osc.connect(env);
+    env.connect(ctx.destination);
+    osc.type = 'sine';
+    osc.frequency.value = FREQ;
+    const s = ctx.currentTime + start / 1000;
+    const d = dur / 1000;
+    const ramp = 0.008;
+    env.gain.setValueAtTime(0, s);
+    env.gain.linearRampToValueAtTime(GAIN, s + ramp);
+    env.gain.setValueAtTime(GAIN, s + d - ramp);
+    env.gain.linearRampToValueAtTime(0, s + d);
+    osc.start(s);
+    osc.stop(s + d);
+  }
+
+  const total = t / 1000;
+  setTimeout(() => ctx.close(), total * 1000 + 200);
+}
+
 // ── Types ────────────────────────────────────────────────────────────────────
 
 /** Mirror of `DeviceInfo` from Rust. */
@@ -109,6 +146,7 @@ function App() {
   const emptyCountRef = useRef(0);
   const currentLineIdRef = useRef<number | null>(null);
   const lastToneHzRef = useRef(0);
+  const retuneTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // ── Monitor ────────────────────────────────────────────────────────────────
   const [monitorVolume, setMonitorVolume] = useState<number>(() =>
@@ -139,6 +177,9 @@ function App() {
   );
   // Computed actual dark value.
   const dark = themeOverride === 'dark' || (themeOverride === 'system' && osDark);
+
+  // Startup chime: D (−··)
+  useEffect(() => { playStartupChime(); }, []);
 
   // Sync theme class whenever computed dark changes.
   useEffect(() => {
@@ -322,6 +363,24 @@ function App() {
     return () => { invoke('stop_live_capture').catch(() => {}); };
   }, []);
 
+  // ── Native menu → action dispatcher ────────────────────────────────────────
+  useEffect(() => {
+    type Action = 'start' | 'stop' | 'monitor' | 'auto' | 'lock';
+    let unlisten: (() => void) | undefined;
+    listen<Action>('decoder-action', (ev) => {
+      switch (ev.payload) {
+        case 'start':   if (!running) void handleStart(); break;
+        case 'stop':    if (running)  void handleStop();  break;
+        case 'monitor': void handleMonitorToggle();        break;
+        case 'auto':    handleSetAuto();                   break;
+        case 'lock':    handleSetManual();                 break;
+      }
+    })
+      .then((u) => { unlisten = u; })
+      .catch((e: unknown) => console.error('decoder-action listen error:', e));
+    return () => { unlisten?.(); };
+  }, [running]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // ── Capture control ────────────────────────────────────────────────────────
   async function handleStart() {
     emptyCountRef.current = 0;
@@ -412,20 +471,54 @@ function App() {
   function handleWaterfallTune(hz: number) {
     setToneHz(hz);
     setAutoDetect(false);
+    if (!running) return;
+    // Debounce: on final settle (300 ms after last drag event), insert a TUNED
+    // divider, seal the active line, and restart capture at the new frequency.
+    if (retuneTimerRef.current !== null) clearTimeout(retuneTimerRef.current);
+    retuneTimerRef.current = setTimeout(() => {
+      retuneTimerRef.current = null;
+      const label = `${Math.round(hz)} Hz`;
+      // Seal active line.
+      if (currentLineIdRef.current !== null) {
+        const sealId = currentLineIdRef.current;
+        currentLineIdRef.current = null;
+        setCopyLines((prev) =>
+          prev.map((l) =>
+            l.id === sealId
+              ? { ...l, status: (l.chars && l.chars.length > 0 ? 'settled' : 'empty') as CopyLine['status'] }
+              : l,
+          ),
+        );
+      }
+      // Insert TUNED divider.
+      setCopyLines((prev) => {
+        if (prev.length === 0) return prev;
+        const lines = prev.slice();
+        if (lines[0]?.divider) {
+          lines[0] = { ...lines[0], label };
+        } else {
+          lines.unshift({ id: 'div-' + Date.now(), divider: true, label });
+        }
+        return lines.length > 250 ? lines.slice(0, 250) : lines;
+      });
+      lastToneHzRef.current = hz;
+      setLastToneHz(hz);
+      // Restart capture at new frequency.
+      invoke('stop_live_capture')
+        .then(() =>
+          invoke('start_live_capture', {
+            device: selectedId || null,
+            toneHz: hz,
+          }),
+        )
+        .catch(() => { /* non-fatal */ });
+    }, 300);
   }
 
   // ── Render ─────────────────────────────────────────────────────────────────
   const inputDevices =
     devices.status === 'ready' ? devices.devices : [];
   const selectedDevice = inputDevices.find((d) => d.id === selectedId);
-
-  // Mean confidence of the last settled line.
-  const lastConfidence = (() => {
-    for (const l of copyLines) {
-      if (!l.divider && l.status === 'settled' && l.confidence != null) return l.confidence;
-    }
-    return 0;
-  })();
 
   return (
     <div
@@ -473,6 +566,7 @@ function App() {
         <CopySheet
           lines={copyLines}
           onClear={() => setCopyLines([])}
+          running={running}
         />
       </div>
 
@@ -481,7 +575,6 @@ function App() {
         deviceName={selectedDevice?.name ?? ''}
         toneHz={autoDetect && lastToneHz > 0 ? lastToneHz : toneHz}
         autoDetect={autoDetect}
-        confidence={lastConfidence}
       />
     </div>
   );

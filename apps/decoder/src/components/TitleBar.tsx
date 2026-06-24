@@ -46,8 +46,8 @@ export function TitleBar({ themeOverride, onThemeChange }: TitleBarProps) {
         padding: '0 13px',
         // Leave room for macOS native traffic lights (~68px inset).
         paddingLeft: '80px',
-        borderBottom: '1px solid var(--border)',
-        background: 'color-mix(in oklch, var(--card) 88%, var(--foreground) 6%)',
+        borderBottom: 'none',
+        background: 'var(--card)',
         position: 'relative',
         userSelect: 'none',
       }}

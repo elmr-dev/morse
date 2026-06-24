@@ -14,6 +14,7 @@ pub mod tone;
 use std::sync::Mutex;
 
 use tauri::Emitter;
+use tauri::menu::{MenuItemBuilder, SubmenuBuilder};
 
 use audio::{
     list_input_devices as enumerate_input_devices,
@@ -235,6 +236,55 @@ async fn capture_and_decode(
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .setup(|app| {
+            // Build the "Decoder" menu and append it to the default macOS menu bar.
+            let start = MenuItemBuilder::with_id("decoder-start", "Start Capture")
+                .accelerator("Space")
+                .build(app)?;
+            let stop = MenuItemBuilder::with_id("decoder-stop", "Stop Capture")
+                .accelerator("Escape")
+                .build(app)?;
+            let monitor = MenuItemBuilder::with_id("decoder-monitor", "Toggle Monitor")
+                .accelerator("CmdOrCtrl+Shift+M")
+                .build(app)?;
+            let auto = MenuItemBuilder::with_id("decoder-auto", "Auto Mode")
+                .accelerator("CmdOrCtrl+Shift+A")
+                .build(app)?;
+            let lock = MenuItemBuilder::with_id("decoder-lock", "Lock Frequency")
+                .accelerator("CmdOrCtrl+Shift+L")
+                .build(app)?;
+
+            let decoder_submenu = SubmenuBuilder::new(app, "Decoder")
+                .item(&start)
+                .item(&stop)
+                .separator()
+                .item(&monitor)
+                .separator()
+                .item(&auto)
+                .item(&lock)
+                .build()?;
+
+            if let Some(menu) = app.menu() {
+                // Insert after View (index 3) → position 4, before Window.
+                menu.insert(&decoder_submenu, 4)?;
+            }
+
+            // Route menu events to the frontend as "decoder-action" events.
+            let handle = app.handle().clone();
+            app.on_menu_event(move |_app, event| {
+                let action = match event.id().as_ref() {
+                    "decoder-start"   => "start",
+                    "decoder-stop"    => "stop",
+                    "decoder-monitor" => "monitor",
+                    "decoder-auto"    => "auto",
+                    "decoder-lock"    => "lock",
+                    _ => return,
+                };
+                handle.emit("decoder-action", action).ok();
+            });
+
+            Ok(())
+        })
         .plugin(tauri_plugin_window_state::Builder::default().build())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())

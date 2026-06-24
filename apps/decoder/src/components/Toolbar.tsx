@@ -31,41 +31,20 @@ interface ToolbarProps {
   onStop: () => void;
 }
 
-/** Inline keyboard shortcut badge — same visual language as shadcn <kbd>. */
-function Kbd({ children }: { children: React.ReactNode }) {
-  return (
-    <kbd
-      style={{
-        fontFamily: 'var(--font-mono)',
-        fontSize: '10px',
-        lineHeight: 1,
-        padding: '2px 5px',
-        borderRadius: '3px',
-        border: '1px solid currentColor',
-        opacity: 0.45,
-        letterSpacing: '0.03em',
-        userSelect: 'none',
-      }}
-    >
-      {children}
-    </kbd>
-  );
-}
-
-/** Shared base for every toolbar button. */
+/** Shared base for every toolbar button — neutral dark, no purple. */
 const btn: React.CSSProperties = {
-  height: '30px',
-  padding: '0 10px',
+  height: '28px',
+  padding: '0 12px',
   display: 'inline-flex',
   alignItems: 'center',
-  gap: '5px',
+  gap: '6px',
   border: '1px solid var(--border)',
-  borderRadius: '5px',
-  background: 'transparent',
+  borderRadius: '6px',
+  background: 'var(--btn-surface, var(--card))',
   fontFamily: 'var(--font-sans)',
-  fontSize: '12px',
-  letterSpacing: '0.01em',
-  fontWeight: 500,
+  fontSize: '13px',
+  letterSpacing: 'normal',
+  fontWeight: 400,
   color: 'var(--foreground)',
   cursor: 'pointer',
   whiteSpace: 'nowrap',
@@ -82,14 +61,16 @@ function StartStopBtn({
   onStart: () => void;
   onStop: () => void;
 }) {
-  const accent = running ? 'var(--destructive)' : 'var(--primary)';
+  const accent = running ? 'var(--destructive)' : 'var(--success)';
   return (
     <button
       type="button"
+      className="tb-btn-active"
       onClick={running ? onStop : onStart}
       style={{
         ...btn,
-        padding: '0 12px',
+        padding: '0 20px',
+        minWidth: '80px',
         border: `1px solid color-mix(in oklch, ${accent} 38%, var(--border))`,
         background: `color-mix(in oklch, ${accent} 10%, var(--card))`,
         color: `color-mix(in oklch, ${accent} 88%, white)`,
@@ -97,10 +78,9 @@ function StartStopBtn({
       }}
     >
       {running
-        ? <Square size={10} fill="currentColor" strokeWidth={0} />
-        : <Play size={10} fill="currentColor" strokeWidth={0} />}
+        ? <Square size={11} fill="currentColor" strokeWidth={0} />
+        : <Play size={11} fill="currentColor" strokeWidth={0} />}
       {running ? 'Stop' : 'Start'}
-      <Kbd>{running ? 'Esc' : '⎵'}</Kbd>
     </button>
   );
 }
@@ -165,15 +145,27 @@ export function Toolbar({
   }, [running, onStart, onStop, onMonitorToggle, onSetAuto, onSetManual]);
 
   const segBase: React.CSSProperties = {
-    padding: '3px 9px',
+    height: '24px',
+    padding: '0 10px',
+    margin: '2px',
     cursor: 'pointer',
     border: 'none',
     background: 'transparent',
+    borderRadius: '4px',
     fontFamily: 'var(--font-sans)',
-    fontSize: '11px',
-    letterSpacing: '0.01em',
+    fontSize: '13px',
+    letterSpacing: 'normal',
     lineHeight: 1,
     color: 'var(--muted-foreground)',
+    fontWeight: 400,
+    display: 'inline-flex',
+    alignItems: 'center',
+    transition: 'background 0.1s, color 0.1s',
+  };
+
+  const segActive: React.CSSProperties = {
+    background: 'color-mix(in srgb, var(--foreground) 14%, transparent)',
+    color: 'var(--foreground)',
     fontWeight: 500,
   };
 
@@ -187,7 +179,7 @@ export function Toolbar({
         gap: '8px',
         padding: '0 14px',
         borderBottom: '1px solid var(--border)',
-        background: 'color-mix(in oklch, var(--card) 94%, var(--foreground) 3%)',
+        background: 'var(--card)',
       }}
     >
       {/* Input device */}
@@ -200,28 +192,28 @@ export function Toolbar({
             color: 'var(--muted-foreground)',
           }}
         >
-          In
+          Input
         </span>
         <select
           value={selectedId}
           onChange={(e) => onDeviceChange(e.target.value)}
           disabled={running}
           style={{
-            height: '30px',
+            height: '28px',
             minWidth: '180px',
             padding: '0 26px 0 10px',
             border: '1px solid var(--input)',
-            borderRadius: '5px',
-            background: 'var(--card)',
+            borderRadius: '6px',
+            background: 'var(--btn-surface, var(--card))',
             color: 'var(--foreground)',
-            fontSize: '12px',
+            fontSize: '13px',
             fontFamily: 'var(--font-sans)',
             cursor: running ? 'not-allowed' : 'pointer',
             opacity: running ? 0.6 : 1,
             appearance: 'none',
             backgroundImage:
               'linear-gradient(45deg,transparent 50%,var(--muted-foreground) 50%),linear-gradient(135deg,var(--muted-foreground) 50%,transparent 50%)',
-            backgroundPosition: 'calc(100% - 14px) 12px, calc(100% - 9px) 12px',
+            backgroundPosition: 'calc(100% - 14px) 11px, calc(100% - 9px) 11px',
             backgroundSize: '5px 5px, 5px 5px',
             backgroundRepeat: 'no-repeat',
           }}
@@ -238,24 +230,23 @@ export function Toolbar({
       {/* Monitor toggle */}
       <button
         type="button"
+        className={monitorOn ? 'tb-btn-active' : 'tb-btn'}
         onClick={onMonitorToggle}
         disabled={monitorBusy}
         style={{
           ...btn,
           ...(monitorOn
             ? {
-                border: `1px solid color-mix(in oklch, var(--primary) 38%, var(--border))`,
-                background: `color-mix(in oklch, var(--primary) 10%, var(--card))`,
-                color: `color-mix(in oklch, var(--primary) 88%, white)`,
+                border: `1px solid color-mix(in oklch, var(--foreground) 30%, var(--border))`,
+                background: `color-mix(in oklch, var(--foreground) 12%, var(--card))`,
               }
             : {}),
           opacity: monitorBusy ? 0.5 : 1,
           cursor: monitorBusy ? 'wait' : 'pointer',
         }}
       >
-        <Headphones size={12} strokeWidth={1.75} />
+        <Headphones size={13} strokeWidth={1.75} />
         {monitorOn ? 'Monitor On' : 'Monitor'}
-        <Kbd>⌘M</Kbd>
       </button>
 
       {/* Volume (only when monitor on) */}
@@ -268,7 +259,7 @@ export function Toolbar({
             step={0.01}
             value={monitorVolume}
             onChange={(e) => onVolumeChange(Number(e.target.value))}
-            style={{ flex: 1, accentColor: 'var(--primary)', cursor: 'pointer' }}
+            style={{ flex: 1, accentColor: 'var(--foreground)', cursor: 'pointer' }}
             aria-label="Monitor volume"
           />
           <span
@@ -310,37 +301,40 @@ export function Toolbar({
         <div
           title={
             autoDetect
-              ? 'Auto: tracking the strongest signal — click MANUAL to lock'
-              : `Manual: parked on ${Math.round(toneHz)} Hz — click AUTO to track`
+              ? 'Auto: tracking the strongest signal — click Lock to park'
+              : `Manual: parked on ${Math.round(toneHz)} Hz — click Auto to track`
           }
           style={{
             display: 'inline-flex',
-            border: '1px solid var(--border)',
-            borderRadius: '999px',
-            overflow: 'hidden',
+            alignItems: 'center',
+            background: 'var(--border)',
+            borderRadius: '6px',
+            padding: '0',
           }}
         >
           <button
             type="button"
+            className="tb-seg"
             onClick={onSetAuto}
             style={
               autoDetect
-                ? { ...segBase, background: 'color-mix(in oklch, var(--success) 20%, transparent)', color: 'var(--success)' }
+                ? { ...segBase, ...segActive, color: 'var(--primary)' }
                 : segBase
             }
           >
-            Auto <Kbd>⌘A</Kbd>
+            Auto
           </button>
           <button
             type="button"
+            className="tb-seg"
             onClick={onSetManual}
             style={
               !autoDetect
-                ? { ...segBase, background: 'var(--dial)', color: '#1a1322', fontWeight: 700 }
+                ? { ...segBase, ...segActive, color: 'var(--dial)' }
                 : segBase
             }
           >
-            Lock <Kbd>⌘L</Kbd>
+            Lock
           </button>
         </div>
       </div>
