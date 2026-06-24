@@ -15,7 +15,7 @@
         "title": "Morse Decoder",
         "width": 900,
         "height": 640,
-        "minWidth": 900,
+        "minWidth": 960,
         "minHeight": 540,
         "titleBarStyle": "Transparent",
         "hiddenTitle": true

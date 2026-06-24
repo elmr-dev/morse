@@ -42,7 +42,7 @@ export function TitleBar({ themeOverride, onThemeChange }: TitleBarProps) {
         userSelect: 'none',
       }}
     >
-      {/* Logo + DECODER wordmark — centered */}
+      {/* Logo + wordmark — centered: [icon] MORSE DECODER */}
       <div
         style={{
           position: 'absolute',
@@ -56,13 +56,25 @@ export function TitleBar({ themeOverride, onThemeChange }: TitleBarProps) {
       >
         <img
           src={logoUrl}
-          alt="MORSE"
+          alt=""
           height="15"
           style={{ height: '15px', width: 'auto', display: 'block' }}
         />
         <span
           style={{
-            marginLeft: '9px',
+            marginLeft: '10px',
+            fontFamily: 'var(--font-sans)',
+            fontSize: '13px',
+            fontWeight: 600,
+            letterSpacing: '0.06em',
+            color: 'var(--foreground)',
+          }}
+        >
+          MORSE
+        </span>
+        <span
+          style={{
+            marginLeft: '7px',
             fontFamily: 'var(--font-mono)',
             fontSize: '11px',
             letterSpacing: '0.14em',

@@ -194,6 +194,9 @@ export function Toolbar({
             fontSize: '15px',
             fontWeight: 600,
             letterSpacing: '0.01em',
+            fontVariantNumeric: 'tabular-nums',
+            whiteSpace: 'nowrap',
+            minWidth: '4.6em', // wide enough for "1050 Hz" at 15px mono
             color: 'var(--foreground)',
           }}
         >
