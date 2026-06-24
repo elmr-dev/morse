@@ -4,7 +4,8 @@
 
 import { invoke } from '@tauri-apps/api/core';
 import { save } from '@tauri-apps/plugin-dialog';
-import { Download } from 'lucide-react';
+import { Clipboard, Download } from 'lucide-react';
+import React, { useEffect, useRef, useState } from 'react';
 
 interface CharResult {
   ch: string;
@@ -32,6 +33,21 @@ const CONFIDENCE_FLOOR = 0.35;
 
 function charOpacity(confidence: number): number {
   return Math.max(CONFIDENCE_FLOOR, Math.min(1.0, confidence));
+}
+
+async function handleCopyAll(lines: CopyLine[]) {
+  const body = lines
+    .slice()
+    .reverse()
+    .filter((l) => l.divider || (l.chars && l.chars.length > 0))
+    .map((l) => {
+      if (l.divider) return `\n--- tuned ${l.label} ---`;
+      const txt = (l.chars ?? []).map((c) => c.ch).join('');
+      const pct = l.confidence != null ? `  (${Math.round(l.confidence * 100)}%)` : '';
+      return `${l.timestamp}  ${txt}${l.status === 'active' ? '' : pct}`;
+    })
+    .join('\n');
+  await navigator.clipboard.writeText(body.trim());
 }
 
 async function handleExport(lines: CopyLine[]) {
@@ -87,6 +103,7 @@ export function CopySheet({ lines, onClear }: CopySheetProps) {
         <span className="morse-eyebrow">COPY SHEET</span>
         {hasLines && (
           <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+            <ClipboardButton lines={lines} />
             <ExportButton lines={lines} />
             <ClearButton onClear={onClear} />
           </div>
@@ -96,6 +113,26 @@ export function CopySheet({ lines, onClear }: CopySheetProps) {
       {/* Scroll area — newest on top */}
       <CopyScroll lines={lines} />
     </div>
+  );
+}
+
+function ClipboardButton({ lines }: { lines: CopyLine[] }) {
+  const [copied, setCopied] = useState(false);
+  return (
+    <button
+      type="button"
+      onClick={() => {
+        void handleCopyAll(lines).then(() => {
+          setCopied(true);
+          setTimeout(() => setCopied(false), 1500);
+        });
+      }}
+      style={toolBtnStyle}
+      title="Copy log to clipboard"
+    >
+      <Clipboard size={13} strokeWidth={1.75} />
+      {copied ? 'Copied!' : 'Copy'}
+    </button>
   );
 }
 
@@ -115,8 +152,6 @@ function ExportButton({ lines }: { lines: CopyLine[] }) {
 function ClearButton({ onClear }: { onClear: () => void }) {
   return <ClearConfirm onClear={onClear} />;
 }
-
-import { useState } from 'react';
 
 function ClearConfirm({ onClear }: { onClear: () => void }) {
   const [confirming, setConfirming] = useState(false);
@@ -171,8 +206,6 @@ const toolBtnStyle: React.CSSProperties = {
   borderRadius: '4px',
   fontFamily: 'var(--font-sans)',
 };
-
-import { useEffect, useRef } from 'react';
 
 function CopyScroll({ lines }: { lines: CopyLine[] }) {
   const scrollRef = useRef<HTMLDivElement>(null);

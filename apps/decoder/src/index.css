@@ -100,5 +100,22 @@
     margin: 0;
     font-family: var(--font-sans);
     -webkit-font-smoothing: antialiased;
+    /* Global non-selectable; copy log entry text overrides per-element. */
+    user-select: none;
+    -webkit-user-select: none;
   }
+}
+
+/* macOS overlay title-bar drag region */
+[data-tauri-drag-region] {
+  -webkit-app-region: drag;
+  app-region: drag;
+}
+/* Interactive children inside drag regions must opt out */
+[data-tauri-drag-region] button,
+[data-tauri-drag-region] a,
+[data-tauri-drag-region] input,
+[data-tauri-drag-region] select {
+  -webkit-app-region: no-drag;
+  app-region: no-drag;
 }
