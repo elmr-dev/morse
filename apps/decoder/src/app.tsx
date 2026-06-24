@@ -1,4 +1,5 @@
 import { invoke } from '@tauri-apps/api/core';
+import { listen } from '@tauri-apps/api/event';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 /** Mirror of `DeviceInfo` from Rust. */
@@ -37,7 +38,7 @@ type MonitorStatus = 'off' | 'starting' | 'on' | 'stopping' | 'error';
 /** One row in the copy sheet. */
 interface CopyLine {
   id: number;
-  /** UTC time the capture started, formatted as e.g. "1423Z". */
+  /** UTC time the transmission was first detected, formatted as e.g. "1423Z". */
   timestamp: string;
   chars: CharResult[];
   confidence: number;
@@ -46,10 +47,11 @@ interface CopyLine {
 }
 
 const DEFAULT_TONE_HZ = 700;
-const DEFAULT_SECONDS = 8;
 const STORAGE_PREFIX = 'morse-decoder:';
 /** Opacity floor for low-confidence characters — keeps them readable. */
 const CONFIDENCE_FLOOR = 0.30;
+/** Consecutive empty decode results before the active line is sealed. */
+const GAP_THRESHOLD = 2;
 
 function loadSetting<T>(key: string, fallback: T): T {
   try {
@@ -94,10 +96,10 @@ function SettledLine({ line }: { line: CopyLine }) {
         <span className="text-muted-foreground/50 text-sm italic">no copy</span>
       ) : (
         <>
-          <span className="flex-1 break-all text-base tracking-[0.06em] select-text">
+          <span className="flex-1 break-all text-base select-text">
             {line.chars.map((c, i) =>
               c.ch === ' ' ? (
-                <span key={i}> </span>
+                <span key={i}>&nbsp;</span>
               ) : (
                 <span key={i} style={{ opacity: charOpacity(c.confidence) }}>
                   {c.ch}
@@ -117,12 +119,33 @@ function SettledLine({ line }: { line: CopyLine }) {
   );
 }
 
-/** Render the active (capturing) line — stamp + blinking cursor. */
-function ActiveLine({ timestamp }: { timestamp: string }) {
+/** Render the active (receiving) line — content updates in real-time with a cursor. */
+function ActiveLine({ line }: { line: CopyLine }) {
+  const pct = Math.round(line.confidence * 100);
   return (
     <div className="flex items-baseline gap-3 font-mono leading-relaxed">
-      <span className="shrink-0 text-xs text-muted-foreground">{timestamp}</span>
-      <span className="text-muted-foreground animate-pulse motion-reduce:animate-none">▌</span>
+      <span className="shrink-0 text-xs text-muted-foreground">{line.timestamp}</span>
+      {line.chars.length > 0 ? (
+        <>
+          <span className="flex-1 break-all text-base select-text">
+            {line.chars.map((c, i) =>
+              c.ch === ' ' ? (
+                <span key={i}>&nbsp;</span>
+              ) : (
+                <span key={i} style={{ opacity: charOpacity(c.confidence) }}>
+                  {c.ch}
+                </span>
+              )
+            )}
+            <span className="text-muted-foreground animate-pulse motion-reduce:animate-none">▌</span>
+          </span>
+          <span className="shrink-0 text-xs text-muted-foreground/60 tabular-nums">
+            {pct}%
+          </span>
+        </>
+      ) : (
+        <span className="text-muted-foreground animate-pulse motion-reduce:animate-none">▌</span>
+      )}
     </div>
   );
 }
@@ -138,7 +161,7 @@ function CopySheet({ lines }: { lines: CopyLine[] }) {
   if (lines.length === 0) {
     return (
       <p className="text-sm text-muted-foreground">
-        Each capture appends a line. Select text here to copy.
+        Start capture to begin copy. Each transmission appears as a new line.
       </p>
     );
   }
@@ -147,7 +170,7 @@ function CopySheet({ lines }: { lines: CopyLine[] }) {
     <div className="flex flex-col gap-1 select-text cursor-text">
       {lines.map((line) =>
         line.status === 'active' ? (
-          <ActiveLine key={line.id} timestamp={line.timestamp} />
+          <ActiveLine key={line.id} line={line} />
         ) : (
           <SettledLine key={line.id} line={line} />
         )
@@ -172,17 +195,15 @@ function App() {
   const [toneHz, setToneHz] = useState(() =>
     loadSetting('toneHz', DEFAULT_TONE_HZ)
   );
-  const [seconds, setSeconds] = useState(() =>
-    loadSetting('seconds', DEFAULT_SECONDS)
-  );
 
   // Copy sheet
   const [copyLines, setCopyLines] = useState<CopyLine[]>([]);
-  /** True while the continuous capture loop is running. */
   const [running, setRunning] = useState(false);
-  /** Set to true to break the capture loop after the current window completes. */
-  const stopRef = useRef(false);
   const [lastToneHz, setLastToneHz] = useState(0);
+
+  // Live-capture event state — tracked in refs to avoid stale closures.
+  const emptyCountRef = useRef(0);
+  const currentLineIdRef = useRef<number | null>(null);
 
   // Monitor
   const [outputDevices, setOutputDevices] = useState<OutputDeviceState>({
@@ -242,14 +263,138 @@ function App() {
     saveSetting('toneHz', toneHz);
   }, [toneHz]);
   useEffect(() => {
-    saveSetting('seconds', seconds);
-  }, [seconds]);
-  useEffect(() => {
     if (monitorOutputId) saveSetting('monitorOutput', monitorOutputId);
   }, [monitorOutputId]);
   useEffect(() => {
     saveSetting('monitorVolume', monitorVolume);
   }, [monitorVolume]);
+
+  // Subscribe to live-decode events while running.
+  useEffect(() => {
+    if (!running) return;
+
+    let unlisten: (() => void) | null = null;
+
+    listen<DecodeResult>('live-decode', (event) => {
+      const result = event.payload;
+      const hasContent = result.chars.some((c) => c.ch !== ' ');
+
+      if (!hasContent) {
+        emptyCountRef.current += 1;
+        if (emptyCountRef.current >= GAP_THRESHOLD && currentLineIdRef.current !== null) {
+          const sealId = currentLineIdRef.current;
+          currentLineIdRef.current = null;
+          setCopyLines((prev) =>
+            prev.map((l) =>
+              l.id === sealId
+                ? { ...l, status: l.chars.length > 0 ? ('settled' as const) : ('empty' as const) }
+                : l
+            )
+          );
+        }
+        return;
+      }
+
+      emptyCountRef.current = 0;
+      if (result.detectedToneHz > 0) setLastToneHz(result.detectedToneHz);
+
+      if (currentLineIdRef.current === null) {
+        // New transmission detected after a gap — start a fresh line.
+        const lineId = Date.now();
+        const ts = zuluStamp(new Date());
+        currentLineIdRef.current = lineId;
+        setCopyLines((prev) => [
+          ...prev,
+          {
+            id: lineId,
+            timestamp: ts,
+            chars: result.chars,
+            confidence: result.confidence,
+            detectedToneHz: result.detectedToneHz,
+            status: 'active',
+          },
+        ]);
+      } else {
+        // Update the current active line with the latest decode window.
+        const updateId = currentLineIdRef.current;
+        setCopyLines((prev) =>
+          prev.map((l) =>
+            l.id === updateId
+              ? {
+                  ...l,
+                  chars: result.chars,
+                  confidence: result.confidence,
+                  detectedToneHz: result.detectedToneHz,
+                }
+              : l
+          )
+        );
+      }
+    })
+      .then((fn) => {
+        unlisten = fn;
+      })
+      .catch((e: unknown) => console.error('live-decode listen error:', e));
+
+    return () => {
+      unlisten?.();
+    };
+  }, [running]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Ensure the Rust capture stops if the webview is destroyed.
+  useEffect(() => {
+    return () => {
+      invoke('stop_live_capture').catch(() => {});
+    };
+  }, []);
+
+  async function handleStart() {
+    emptyCountRef.current = 0;
+    currentLineIdRef.current = null;
+    setRunning(true);
+    try {
+      await invoke('start_live_capture', {
+        device: selectedId || null,
+        toneHz: autoDetect ? null : toneHz,
+      });
+    } catch (err) {
+      setRunning(false);
+      const ts = zuluStamp(new Date());
+      setCopyLines((prev) => [
+        ...prev,
+        {
+          id: Date.now(),
+          timestamp: ts,
+          chars: [{ ch: String(err), confidence: 1.0 }],
+          confidence: 0,
+          detectedToneHz: 0,
+          status: 'empty',
+        },
+      ]);
+    }
+  }
+
+  async function handleStop() {
+    setRunning(false);
+    try {
+      await invoke('stop_live_capture');
+    } catch {
+      // ignore
+    }
+    // Seal any still-active line.
+    if (currentLineIdRef.current !== null) {
+      const sealId = currentLineIdRef.current;
+      currentLineIdRef.current = null;
+      setCopyLines((prev) =>
+        prev.map((l) =>
+          l.id === sealId
+            ? { ...l, status: l.chars.length > 0 ? ('settled' as const) : ('empty' as const) }
+            : l
+        )
+      );
+    }
+    emptyCountRef.current = 0;
+  }
 
   const monitorOn = monitorStatus === 'on';
   const monitorBusy = monitorStatus === 'starting' || monitorStatus === 'stopping';
@@ -290,74 +435,6 @@ function App() {
         // non-fatal
       }
     }
-  }
-
-  async function handleCapture() {
-    if (running) {
-      // Signal the loop to stop after the current window completes.
-      stopRef.current = true;
-      return;
-    }
-
-    stopRef.current = false;
-    setRunning(true);
-
-    while (!stopRef.current) {
-      const ts = zuluStamp(new Date());
-      const lineId = Date.now();
-
-      setCopyLines((prev) => [
-        ...prev,
-        { id: lineId, timestamp: ts, chars: [], confidence: 0, detectedToneHz: 0, status: 'active' },
-      ]);
-
-      try {
-        const result = await invoke<DecodeResult>('capture_and_decode', {
-          device: selectedId || null,
-          seconds,
-          toneHz: autoDetect ? null : toneHz,
-        });
-
-        if (result.detectedToneHz > 0) setLastToneHz(result.detectedToneHz);
-
-        const hasContent = result.chars.some((c) => c.ch !== ' ');
-        setCopyLines((prev) => {
-          if (!hasContent) {
-            // Empty window — remove the placeholder silently.
-            return prev.filter((l) => l.id !== lineId);
-          }
-          return prev.map((l) =>
-            l.id !== lineId
-              ? l
-              : {
-                  ...l,
-                  chars: result.chars,
-                  confidence: result.confidence,
-                  detectedToneHz: result.detectedToneHz,
-                  status: 'settled' as const,
-                }
-          );
-        });
-      } catch (err) {
-        // On error: remove the placeholder, surface the message, stop the loop.
-        const errMsg = String(err);
-        setCopyLines((prev) =>
-          prev
-            .filter((l) => l.id !== lineId)
-            .concat({
-              id: lineId,
-              timestamp: ts,
-              chars: [{ ch: errMsg, confidence: 1.0 }],
-              confidence: 0,
-              detectedToneHz: 0,
-              status: 'empty',
-            })
-        );
-        stopRef.current = true;
-      }
-    }
-
-    setRunning(false);
   }
 
   const fieldCls = 'flex flex-col gap-1.5';
@@ -432,61 +509,41 @@ function App() {
             ))}
         </div>
 
-        <div className="grid grid-cols-2 gap-4">
-          <div className={fieldCls}>
-            <span className={labelCls}>Tone (Hz)</span>
-            <label className="flex min-h-11 cursor-pointer items-center gap-2 rounded-lg border border-input px-3">
-              <input
-                type="checkbox"
-                className="h-4 w-4 accent-primary"
-                checked={autoDetect}
-                disabled={running}
-                onChange={(e) => setAutoDetect(e.target.checked)}
-              />
-              <span className="text-base">Auto-detect</span>
-              {lastToneHz > 0 && (
-                <span className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
-                  {Math.round(lastToneHz)} Hz
-                </span>
-              )}
-            </label>
-            {!autoDetect && (
-              <input
-                id="tone"
-                className={inputCls}
-                type="number"
-                min={100}
-                max={2000}
-                step={10}
-                value={toneHz}
-                disabled={running}
-                onChange={(e) => setToneHz(Number(e.target.value))}
-              />
-            )}
-            <span className={hintCls}>
-              {autoDetect
-                ? 'Spectral peak in 300–1000 Hz'
-                : 'IC-7300 factory pitch is 600 Hz'}
-            </span>
-          </div>
-
-          <div className={fieldCls}>
-            <label htmlFor="seconds" className={labelCls}>
-              Capture (s)
-            </label>
+        <div className={fieldCls}>
+          <span className={labelCls}>Tone (Hz)</span>
+          <label className="flex min-h-11 cursor-pointer items-center gap-2 rounded-lg border border-input px-3">
             <input
-              id="seconds"
+              type="checkbox"
+              className="h-4 w-4 accent-primary"
+              checked={autoDetect}
+              disabled={running}
+              onChange={(e) => setAutoDetect(e.target.checked)}
+            />
+            <span className="text-base">Auto-detect</span>
+            {lastToneHz > 0 && (
+              <span className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
+                {Math.round(lastToneHz)} Hz
+              </span>
+            )}
+          </label>
+          {!autoDetect && (
+            <input
+              id="tone"
               className={inputCls}
               type="number"
-              min={1}
-              max={16}
-              step={1}
-              value={seconds}
+              min={100}
+              max={2000}
+              step={10}
+              value={toneHz}
               disabled={running}
-              onChange={(e) => setSeconds(Number(e.target.value))}
+              onChange={(e) => setToneHz(Number(e.target.value))}
             />
-            <span className={hintCls}>Max 16 s (model window)</span>
-          </div>
+          )}
+          <span className={hintCls}>
+            {autoDetect
+              ? 'Spectral peak in 300–1000 Hz'
+              : 'IC-7300 factory pitch is 600 Hz'}
+          </span>
         </div>
 
         <button
@@ -496,11 +553,11 @@ function App() {
               ? 'bg-destructive text-destructive-foreground'
               : 'bg-primary text-primary-foreground'
           }`}
-          onClick={() => void handleCapture()}
+          onClick={() => void (running ? handleStop() : handleStart())}
           disabled={!running && devices.status !== 'ready'}
           aria-busy={running}
         >
-          {running ? 'Stop' : 'Capture & decode'}
+          {running ? 'Stop' : 'Start'}
         </button>
       </section>
 

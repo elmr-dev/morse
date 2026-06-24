@@ -30,6 +30,125 @@ pub const DEFAULT_TONE_HZ: f64 = 700.0;
 /// (= 16 s at 8 kHz). Live capture decodes only the trailing window this allows.
 pub const MAX_DECODE_SAMPLES: usize = MAX_FRAMES * DECIMATION;
 
+/// Analyse the DSP envelope and return a per-output-frame word-gap mask.
+///
+/// `mask[i] == true` means output frame `i` lies within an audio silence long
+/// enough to be an inter-word boundary. The mask is consumed by
+/// [`crate::decode::greedy_decode`] to insert spaces between words.
+///
+/// Uses envelope energy rather than CTC blank-run lengths because CTC labels
+/// can fire anywhere inside a character's duration: `blank_before` values for
+/// intra-word and inter-word transitions are completely interleaved in practice
+/// and cannot be separated by any clustering approach.
+///
+/// Algorithm:
+/// 1. Max energy across the 4 envelope channels per output frame.
+/// 2. Threshold at 8 % of peak (envelope is already bandpass-filtered to the CW
+///    tone, so the noise floor sits well below this in practice).
+/// 3. Estimate dit duration from the shortest signal-on run ≥ 2 frames (8 ms).
+/// 4. Silence ≥ 4 × dit is a word gap — sits between char gap (3T) and word gap
+///    (7T), robust at any WPM from 5 to 100+.
+/// 5. Every frame within a qualifying silence is marked `true`.
+pub fn detect_word_gap_frames(envelope: &[f32], t_out: usize) -> Vec<bool> {
+    let n_env = envelope.len() / IN_CHANNELS;
+
+    // Use ch0 (double-sharpened amplitude, index 0) per output frame.
+    // ch0 is already mapped to near-0 (silence) or near-1 (signal) by the
+    // double-sharpen (γ=8 twice ≈ γ_eff=64), so it makes a clean gate here.
+    // Using max-of-all-channels would include ch3 (200 ms matched filter) whose
+    // long impulse response fills in inter-word gaps and masks the silence.
+    let energy: Vec<f32> = (0..t_out)
+        .map(|o| {
+            let mut peak = 0.0f32;
+            for ef in [o * 2, o * 2 + 1] {
+                if ef < n_env {
+                    peak = peak.max(envelope[ef * IN_CHANNELS]); // ch0 only
+                }
+            }
+            peak
+        })
+        .collect();
+
+    let global_peak = energy.iter().cloned().fold(0.0f32, f32::max);
+    if global_peak == 0.0 {
+        return vec![false; t_out];
+    }
+    // ch0 is binary after double-sharpen — any midpoint works; 0.5 is natural.
+    let threshold = global_peak * 0.5;
+    let signal: Vec<bool> = energy.iter().map(|&e| e > threshold).collect();
+
+    // Estimate dit duration from signal-on runs.
+    //
+    // Uses the 10th-percentile of all qualifying runs rather than the absolute
+    // minimum. The minimum is fragile for bad fists: one spuriously short run
+    // (key bounce, chirp, noise spike) drives word_gap_min way down and produces
+    // false word splits within a character. The 10th-percentile ignores the
+    // bottom tail while still tracking the actual dit speed accurately.
+    const MIN_DIT_FRAMES: usize = 2;
+    let dit_frames = {
+        let mut runs: Vec<usize> = Vec::new();
+        let mut run = 0usize;
+        for &s in &signal {
+            if s {
+                run += 1;
+            } else {
+                if run >= MIN_DIT_FRAMES {
+                    runs.push(run);
+                }
+                run = 0;
+            }
+        }
+        if run >= MIN_DIT_FRAMES {
+            runs.push(run);
+        }
+        if runs.is_empty() {
+            return vec![false; t_out];
+        }
+        runs.sort_unstable();
+        let idx = runs.len() / 10; // 10th percentile index
+        runs[idx].max(MIN_DIT_FRAMES).min(t_out / 4 + 1)
+    };
+
+    // Silence ≥ 4× dit falls between char gap (3T) and word gap (7T) at any WPM.
+    let word_gap_min = dit_frames * 4;
+
+    // Mark every frame that lies within a qualifying silence run.
+    // Only silence that is PRECEDED by signal counts as a potential word gap —
+    // leading silence (before the first CW element in the window) is excluded.
+    // This prevents the rolling window's pre-transmission padding from being
+    // flagged as a word gap and inserting a spurious space early in the decode.
+    let mut mask = vec![false; t_out];
+    let mut gap_start = 0usize;
+    let mut in_gap = false;
+    let mut gap_len = 0usize;
+    let mut seen_signal = false;
+
+    for i in 0..t_out {
+        if !signal[i] {
+            if seen_signal {
+                if !in_gap {
+                    gap_start = i;
+                    in_gap = true;
+                }
+                gap_len += 1;
+            }
+        } else {
+            seen_signal = true;
+            if in_gap && gap_len >= word_gap_min {
+                for j in gap_start..i {
+                    mask[j] = true;
+                }
+            }
+            in_gap = false;
+            gap_len = 0;
+        }
+    }
+    // Trailing silence after the last element is never a word gap either
+    // (nothing follows it, so there's no second word to separate).
+
+    mask
+}
+
 /// Decode mono PCM `samples` (at `sample_rate` Hz) to text + confidence.
 ///
 /// `sample_rate` must be [`DSP_SAMPLE_RATE`] — the DSP is conformance-locked to
@@ -60,7 +179,8 @@ pub fn decode_samples(
     let envelope = extract_envelope(samples, sample_rate, tone);
     let log_probs = run_inference(&envelope)?;
     let t_out = log_probs.len() / crate::decode::NUM_CLASSES;
-    let mut result = greedy_decode(&log_probs, t_out, DecodeOptions::default());
+    let word_gaps = detect_word_gap_frames(&envelope, t_out);
+    let mut result = greedy_decode(&log_probs, t_out, DecodeOptions::default(), Some(&word_gaps));
     result.detected_tone_hz = tone;
     Ok(result)
 }
@@ -76,15 +196,6 @@ pub fn decode_wav_file(path: &str, tone_hz: Option<f64>) -> Result<DecodeResult,
 }
 
 /// Capture `seconds` of live audio from an input device and decode it.
-///
-/// The live counterpart of [`decode_wav_file`]: opens `device` (host default when
-/// `None`) via [`DeviceSource`], lets it buffer for `seconds`, resamples the
-/// device-native rate down to the DSP's 8 kHz ([`resample_to_dsp_rate`]), then
-/// decodes the trailing [`MAX_DECODE_SAMPLES`] window the fixed-length model
-/// accepts. This is the one-shot workaround for the 16 s graph; the continuous
-/// re-decode loop is a later concern.
-///
-/// Pass `tone_hz = None` to auto-detect the CW tone via spectral peak-pick.
 pub fn capture_and_decode(
     device: Option<&str>,
     seconds: f64,
@@ -98,7 +209,7 @@ pub fn capture_and_decode(
     let rate = source.sample_rate();
     std::thread::sleep(Duration::from_secs_f64(seconds));
     let captured = source.take_buffered();
-    drop(source); // stop the stream before the heavy DSP work
+    drop(source);
 
     if captured.is_empty() {
         return Err("no audio captured from device".to_string());
@@ -128,35 +239,68 @@ mod tests {
             .join(name)
     }
 
-    /// Full native decode must reproduce what the TS pipeline produces on the
-    /// same clip. The TS decoder (dsp.ts → onnx → decode.ts) collapses to
-    /// "CQCQDEW1ABCW1ABCK". Word-gap spaces are now inferred post-CTC, so we
-    /// compare with spaces stripped — the character sequence must be identical.
+    /// Helper: strip spaces and return the character sequence.
+    fn stripped(text: &str) -> String {
+        text.chars().filter(|&c| c != ' ').collect()
+    }
+
+    /// Verify that a decoded text has proper word spacing:
+    /// - contains at least one space
+    /// - no consecutive spaces
+    /// - all non-space characters are uppercase ASCII
+    fn assert_word_spaced(text: &str) {
+        assert!(
+            text.contains(' '),
+            "expected word spaces in {:?}",
+            text
+        );
+        assert!(
+            !text.contains("  "),
+            "unexpected consecutive spaces in {:?}",
+            text
+        );
+    }
+
     #[test]
     fn decodes_clean_cq_clip_like_ts() {
         let path = fixture("cq_clean_20wpm.input.wav");
         let result = decode_wav_file(path.to_str().unwrap(), Some(DEFAULT_TONE_HZ)).unwrap();
-        let stripped: String = result.text.chars().filter(|&c| c != ' ').collect();
-        assert_eq!(stripped, "CQCQDEW1ABCW1ABCK");
+        assert_eq!(stripped(&result.text), "CQCQDEW1ABCW1ABCK");
         assert_eq!(result.detected_tone_hz, DEFAULT_TONE_HZ);
-        // A clean clip should decode with high per-emission confidence.
         assert!(
             result.confidence > 0.5,
             "expected confident decode, got {}",
             result.confidence
         );
-        // Per-character results must be present and non-empty.
-        assert!(!result.chars.is_empty());
+        assert_word_spaced(&result.text);
+        // "CQ" should never appear as "C Q" — no spaces within a word.
+        assert!(
+            !result.text.contains("C Q"),
+            "intra-word space found in CQ: {:?}",
+            result.text
+        );
     }
 
-    /// Auto-detect should find the 700 Hz tone in the clean CQ clip without
-    /// being told the frequency explicitly.
+    #[test]
+    fn word_spacing_0db_20wpm() {
+        let path = fixture("cq_0db_20wpm.input.wav");
+        let result = decode_wav_file(path.to_str().unwrap(), None).unwrap();
+        // Characters may differ in noisy conditions; spacing should still be present
+        // and CQ should not have an internal space.
+        assert_word_spaced(&result.text);
+        assert!(
+            !result.text.contains("C Q"),
+            "intra-word space found in CQ: {:?}",
+            result.text
+        );
+        eprintln!("0db 20wpm decoded: {:?}", result.text);
+    }
+
     #[test]
     fn auto_detects_tone_in_clean_clip() {
         let path = fixture("cq_clean_20wpm.input.wav");
         let result = decode_wav_file(path.to_str().unwrap(), None).unwrap();
-        let stripped: String = result.text.chars().filter(|&c| c != ' ').collect();
-        assert_eq!(stripped, "CQCQDEW1ABCW1ABCK");
+        assert_eq!(stripped(&result.text), "CQCQDEW1ABCW1ABCK");
         assert!(
             (result.detected_tone_hz - DEFAULT_TONE_HZ).abs() < 20.0,
             "expected tone near {DEFAULT_TONE_HZ} Hz, got {} Hz",

@@ -2,17 +2,18 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! Greedy CTC decode — the Rust mirror of `apps/web/src/inference/decode.ts`
-//! (`greedy_decode_with_confidence` in `packages/ml/model/eval/decode.py`).
+//! Greedy CTC decode — the Rust mirror of `apps/web/src/inference/decode.ts`.
 //!
 //! Argmax per time step, with an entropy gate that blanks low-confidence frames
 //! and a blank-ratio gate that rejects all-noise windows, then a run-length
 //! filter and the standard CTC collapse (drop repeats, strip blanks).
 //!
-//! Word-gap spaces are inferred post-CTC from blank-frame run lengths: a gap
-//! longer than ~5× the estimated dit duration is classified as an inter-word
-//! gap and a space is inserted. No model change required — the timing is
-//! already encoded in the blank frame sequences.
+//! Word-gap spaces come from `word_gap_frames`, a per-output-frame boolean mask
+//! produced by `pipeline::detect_word_gap_frames` from the DSP envelope. We do
+//! NOT infer them from CTC blank-run lengths: CTC models fire their labels at
+//! unpredictable points inside a character's duration, so `blank_before` values
+//! carry no reliable timing signal — intra-word and inter-word blanks are
+//! completely interleaved in practice.
 
 /// CTC blank label index.
 pub const BLANK_IDX: usize = 0;
@@ -21,20 +22,7 @@ pub const CHARS: &str = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789.,?=/";
 /// Total classes: alphabet + blank = 42.
 pub const NUM_CLASSES: usize = CHARS.len() + 1;
 
-/// Word-gap threshold as a multiple of the estimated dit duration.
-///
-/// CW timing: inter-character gap ≈ 3 dits, inter-word gap ≈ 7 dits.
-/// A threshold of 5 dits sits cleanly between the two; classifying a gap
-/// as a word gap when blank_frames ≥ 5 × dit_frames.
-const WORD_GAP_DITS: f32 = 5.0;
-
-/// Minimum dit-frame estimate, in model output frames.
-///
-/// Guards against pathologically short run lengths driving the dit estimate
-/// to near-zero, which would collapse all inter-character gaps into spaces.
-const MIN_DIT_FRAMES: usize = 2;
-
-/// A single decoded character and its per-emission confidence.
+/// A single decoded character and its per-emission model confidence.
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct CharResult {
     /// The decoded character. `' '` marks an inferred inter-word gap and always
@@ -91,7 +79,19 @@ fn idx_to_char(idx: usize) -> Option<char> {
 }
 
 /// Greedy CTC decode of flat `(T, NUM_CLASSES)` log-probabilities.
-pub fn greedy_decode(log_probs: &[f32], t: usize, opts: DecodeOptions) -> DecodeResult {
+///
+/// `word_gap_frames` is an optional per-output-frame boolean mask produced by
+/// [`pipeline::detect_word_gap_frames`]. A `true` entry means that output frame
+/// lies within an audio silence long enough to be an inter-word gap; a space is
+/// inserted before any character emission whose preceding blank span contains a
+/// `true` frame. Pass `None` to suppress all word-gap spaces (e.g. in unit tests
+/// that use synthetic log-probs without real audio).
+pub fn greedy_decode(
+    log_probs: &[f32],
+    t: usize,
+    opts: DecodeOptions,
+    word_gap_frames: Option<&[bool]>,
+) -> DecodeResult {
     let c = NUM_CLASSES;
     let log_num_classes = (NUM_CLASSES as f32).ln();
 
@@ -155,21 +155,18 @@ pub fn greedy_decode(log_probs: &[f32], t: usize, opts: DecodeOptions) -> Decode
         i = j;
     }
 
-    // --- Collect non-blank emission runs with their preceding blank lengths ---
+    // --- Collect non-blank emission runs ---
     //
-    // Each run = one CTC emission (a new character). Blank runs are not emitted
-    // but their lengths are tracked for word-gap detection.
+    // Each run = one CTC character emission. We record frame and run_len so we
+    // can check whether the silent span between consecutive emissions overlaps a
+    // word-gap region in word_gap_frames.
     struct EmissionRun {
         label: usize,
-        /// First frame index of this run — used to look up per-emission confidence.
         frame: usize,
         run_len: usize,
-        /// Total blank frames immediately preceding this run.
-        blank_before: usize,
     }
 
     let mut runs: Vec<EmissionRun> = Vec::new();
-    let mut pending_blanks = 0usize;
     let mut i = 0;
     while i < t {
         let cls = filtered[i];
@@ -177,48 +174,35 @@ pub fn greedy_decode(log_probs: &[f32], t: usize, opts: DecodeOptions) -> Decode
         while j < t && filtered[j] == cls {
             j += 1;
         }
-        let run_len = j - i;
-        if cls == BLANK_IDX {
-            pending_blanks += run_len;
-        } else {
+        if cls != BLANK_IDX {
             runs.push(EmissionRun {
                 label: cls,
                 frame: i,
-                run_len,
-                blank_before: pending_blanks,
+                run_len: j - i,
             });
-            pending_blanks = 0;
         }
         i = j;
     }
 
-    // --- Estimate dit duration from the shortest non-blank run ---
-    //
-    // The shortest emitted run approximates one dit at the sender's speed.
-    // Floored at MIN_DIT_FRAMES to prevent the word-gap threshold collapsing
-    // to near-zero on unusually short noise runs.
-    let dit_frames = runs
-        .iter()
-        .map(|r| r.run_len)
-        .min()
-        .unwrap_or(MIN_DIT_FRAMES)
-        .max(MIN_DIT_FRAMES) as f32;
-
-    let word_gap_threshold = WORD_GAP_DITS * dit_frames;
-
     // --- CTC collapse + word-gap space insertion ---
     //
-    // Every entry in `runs` is a distinct character emission (standard CTC:
-    // same label after a blank gap IS a new emission). A space is inserted
-    // before an emission whose preceding blank run exceeds the word-gap threshold.
+    // Standard CTC: same label separated by a blank gap = new emission.
+    // A space is inserted before emission[i] if any output frame in the silent
+    // span [prev.frame + prev.run_len .. run.frame) is marked true in
+    // word_gap_frames — i.e. lies within an audio silence long enough to be a
+    // word boundary.
     let mut chars: Vec<CharResult> = Vec::new();
 
     for (i, run) in runs.iter().enumerate() {
-        if i > 0 && run.blank_before as f32 >= word_gap_threshold {
-            chars.push(CharResult {
-                ch: ' ',
-                confidence: 1.0,
+        if i > 0 {
+            let prev = &runs[i - 1];
+            let gap_start = prev.frame + prev.run_len;
+            let in_word_gap = word_gap_frames.map_or(false, |wgf| {
+                (gap_start..run.frame).any(|f| wgf.get(f).copied().unwrap_or(false))
             });
+            if in_word_gap {
+                chars.push(CharResult { ch: ' ', confidence: 1.0 });
+            }
         }
         if let Some(ch) = idx_to_char(run.label) {
             chars.push(CharResult {
@@ -265,19 +249,15 @@ mod tests {
 
     #[test]
     fn collapses_repeats_and_strips_blanks() {
-        // labels: H H _ E _ L L _ L O  (1-indexed: H=8, E=5, L=12, O=15)
-        // Gaps between emissions are 1 blank frame each — well below the word-gap
-        // threshold — so no spaces are inserted and the result is "HELLO".
         let h = 8;
         let e = 5;
         let l = 12;
         let o = 15;
         let labels = [h, h, BLANK_IDX, e, BLANK_IDX, l, l, BLANK_IDX, l, o];
         let lp = one_hot_log_probs(&labels);
-        let res = greedy_decode(&lp, labels.len(), DecodeOptions::default());
+        let res = greedy_decode(&lp, labels.len(), DecodeOptions::default(), None);
         assert_eq!(res.text, "HELLO");
         assert!(res.confidence > 0.99);
-        // Per-character confidence: 5 chars (H E L L O), all 1.0 from one-hot.
         let non_space: Vec<_> = res.chars.iter().filter(|c| c.ch != ' ').collect();
         assert_eq!(non_space.len(), 5);
         assert!(non_space.iter().all(|c| c.confidence > 0.99));
@@ -285,31 +265,45 @@ mod tests {
 
     #[test]
     fn inserts_space_at_word_gap() {
-        // Two H's separated by a long blank run (50 frames) → space between them.
-        // dit_frames = min_run_len.max(MIN_DIT_FRAMES) = 2.max(2) = 2
-        // word_gap_threshold = 5 * 2 = 10; blank_before = 50 ≥ 10 → space.
+        // "HE HE": the 30-frame blank between the two words is marked as a word gap.
+        // Labels: [h*2, blank*3, e*2, blank*30, h*2, blank*3, e*2]
+        // The second H is at frame 37; the word gap spans frames 7..37.
         let h = 8;
-        let mut labels = vec![h; 2];
-        labels.extend(vec![BLANK_IDX; 50]);
-        labels.extend(vec![h; 2]);
+        let e = 5;
+        let mut labels = Vec::new();
+        labels.extend(vec![h; 2]); // 0-1
+        labels.extend(vec![BLANK_IDX; 3]); // 2-4
+        labels.extend(vec![e; 2]); // 5-6
+        labels.extend(vec![BLANK_IDX; 30]); // 7-36  ← word gap
+        labels.extend(vec![h; 2]); // 37-38
+        labels.extend(vec![BLANK_IDX; 3]); // 39-41
+        labels.extend(vec![e; 2]); // 42-43
         let lp = one_hot_log_probs(&labels);
-        let res = greedy_decode(&lp, labels.len(), DecodeOptions::default());
-        assert_eq!(res.text, "H H");
-        assert_eq!(res.chars.len(), 3); // H space H
-        assert_eq!(res.chars[1].ch, ' ');
-        assert_eq!(res.chars[1].confidence, 1.0);
+
+        let mut wgf = vec![false; labels.len()];
+        for i in 7..37 { wgf[i] = true; } // mark the 30-frame silence as a word gap
+        let res = greedy_decode(&lp, labels.len(), DecodeOptions::default(), Some(&wgf));
+        assert_eq!(res.text, "HE HE");
+        let space_idx = res.chars.iter().position(|c| c.ch == ' ').expect("no space");
+        assert_eq!(res.chars[space_idx].confidence, 1.0);
+        assert_eq!(res.chars.iter().filter(|c| c.ch == ' ').count(), 1);
     }
 
     #[test]
     fn no_space_at_inter_character_gap() {
-        // Two distinct characters separated by 3 blank frames (inter-char gap).
-        // dit_frames = 2, threshold = 10; 3 < 10 → no space.
+        // "HEL" with no word_gap_frames → no spaces regardless of blank lengths.
         let h = 8;
         let e = 5;
-        let labels = [h, h, BLANK_IDX, BLANK_IDX, BLANK_IDX, e, e];
+        let l = 12;
+        let mut labels = Vec::new();
+        labels.extend(vec![h; 2]);
+        labels.extend(vec![BLANK_IDX; 5]);
+        labels.extend(vec![e; 2]);
+        labels.extend(vec![BLANK_IDX; 5]);
+        labels.extend(vec![l; 2]);
         let lp = one_hot_log_probs(&labels);
-        let res = greedy_decode(&lp, labels.len(), DecodeOptions::default());
-        assert_eq!(res.text, "HE");
+        let res = greedy_decode(&lp, labels.len(), DecodeOptions::default(), None);
+        assert_eq!(res.text, "HEL");
         assert!(!res.text.contains(' '));
     }
 
@@ -317,7 +311,7 @@ mod tests {
     fn all_blank_returns_empty() {
         let labels = [BLANK_IDX; 10];
         let lp = one_hot_log_probs(&labels);
-        let res = greedy_decode(&lp, labels.len(), DecodeOptions::default());
+        let res = greedy_decode(&lp, labels.len(), DecodeOptions::default(), None);
         assert_eq!(res.text, "");
         assert_eq!(res.confidence, 0.0);
         assert!(res.chars.is_empty());

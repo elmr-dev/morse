@@ -5,6 +5,7 @@
 pub mod audio;
 pub mod decode;
 pub mod dsp;
+pub mod live;
 pub mod model;
 pub mod pipeline;
 pub mod resample;
@@ -12,20 +13,26 @@ pub mod tone;
 
 use std::sync::Mutex;
 
+use tauri::Emitter;
+
 use audio::{
     list_input_devices as enumerate_input_devices,
     list_output_devices as enumerate_output_devices, AudioSource, DeviceInfo, MonitorHandle,
     WavFileSource,
 };
 use decode::DecodeResult;
+use live::LiveHandle;
 use pipeline::{capture_and_decode as pipeline_capture_and_decode, decode_wav_file};
 
 /// Tauri managed state for the audio monitor passthrough.
-///
-/// `MonitorHandle` is `Send` (it owns a channel sender; the actual `!Send`
-/// streams live on a dedicated thread). Wrapped in `Mutex` so commands can
-/// start/stop atomically.
 struct MonitorState(Mutex<Option<MonitorHandle>>);
+
+/// Tauri managed state for the live-capture session.
+///
+/// `LiveHandle` is `Send` (owns only a channel sender; the `!Send`
+/// `DeviceSource` lives on its own thread). Wrapped in `Mutex` so
+/// `start_live_capture` / `stop_live_capture` are atomic.
+struct LiveState(Mutex<Option<LiveHandle>>);
 
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
 #[tauri::command]
@@ -152,6 +159,43 @@ fn set_monitor_volume(
     }
 }
 
+/// Start a continuous live-capture session.
+///
+/// Opens `device` (host default when `None`) and begins streaming PCM through a
+/// sliding 16 s decode window, emitting `"live-decode"` events to the frontend
+/// every ~1 s of new audio. Both non-empty and empty results are emitted so the
+/// frontend can detect end-of-transmission gaps.
+///
+/// Returns immediately; decoding runs on a background thread. Call
+/// [`stop_live_capture`] to end the session. Returns an error if a session is
+/// already running.
+#[tauri::command]
+fn start_live_capture(
+    state: tauri::State<'_, LiveState>,
+    app: tauri::AppHandle,
+    device: Option<String>,
+    tone_hz: Option<f64>,
+) -> Result<(), String> {
+    let mut guard = state.0.lock().expect("live state poisoned");
+    if guard.is_some() {
+        return Err("live capture already running".into());
+    }
+    let handle = LiveHandle::start(device, tone_hz, move |result| {
+        app.emit("live-decode", result).ok();
+    })?;
+    *guard = Some(handle);
+    Ok(())
+}
+
+/// Stop the running live-capture session, if any.
+#[tauri::command]
+fn stop_live_capture(state: tauri::State<'_, LiveState>) -> Result<(), String> {
+    if let Some(h) = state.0.lock().expect("live state poisoned").take() {
+        h.stop();
+    }
+    Ok(())
+}
+
 /// Capture `seconds` of live audio from `device` and decode it to text.
 ///
 /// `device` is the device id from [`list_input_devices`] (host default when
@@ -181,6 +225,7 @@ pub fn run() {
         .plugin(tauri_plugin_window_state::Builder::default().build())
         .plugin(tauri_plugin_opener::init())
         .manage(MonitorState(Mutex::new(None)))
+        .manage(LiveState(Mutex::new(None)))
         .invoke_handler(tauri::generate_handler![
             greet,
             load_audio_clip,
@@ -191,6 +236,8 @@ pub fn run() {
             start_monitor,
             stop_monitor,
             set_monitor_volume,
+            start_live_capture,
+            stop_live_capture,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
