@@ -37,13 +37,13 @@ function Kbd({ children }: { children: React.ReactNode }) {
     <kbd
       style={{
         fontFamily: 'var(--font-mono)',
-        fontSize: '8px',
+        fontSize: '10px',
         lineHeight: 1,
-        padding: '1.5px 3.5px',
+        padding: '2px 5px',
         borderRadius: '3px',
         border: '1px solid currentColor',
-        opacity: 0.38,
-        letterSpacing: '0.04em',
+        opacity: 0.45,
+        letterSpacing: '0.03em',
         userSelect: 'none',
       }}
     >
@@ -99,7 +99,7 @@ function StartStopBtn({
       {running
         ? <Square size={10} fill="currentColor" strokeWidth={0} />
         : <Play size={10} fill="currentColor" strokeWidth={0} />}
-      {running ? 'STOP' : 'START'}
+      {running ? 'Stop' : 'Start'}
       <Kbd>{running ? 'Esc' : '⎵'}</Kbd>
     </button>
   );
@@ -254,7 +254,7 @@ export function Toolbar({
         }}
       >
         <Headphones size={12} strokeWidth={1.75} />
-        {monitorOn ? 'MONITOR ON' : 'MONITOR'}
+        {monitorOn ? 'Monitor On' : 'Monitor'}
         <Kbd>⌘M</Kbd>
       </button>
 
@@ -329,7 +329,7 @@ export function Toolbar({
                 : segBase
             }
           >
-            AUTO <Kbd>⌘A</Kbd>
+            Auto <Kbd>⌘A</Kbd>
           </button>
           <button
             type="button"
@@ -340,7 +340,7 @@ export function Toolbar({
                 : segBase
             }
           >
-            LOCK <Kbd>⌘L</Kbd>
+            Lock <Kbd>⌘L</Kbd>
           </button>
         </div>
       </div>

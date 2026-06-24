@@ -37,7 +37,7 @@ export function StatusBar({ running, deviceName, toneHz, autoDetect, confidence 
         style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', color: 'var(--foreground)' }}
       >
         <StatusDot tone={running ? 'good' : 'dial'} size={7} pulse={running} />
-        {running ? 'RECEIVER ONLINE' : 'STANDBY'}
+        {running ? 'Receiver online' : 'Standby'}
       </span>
 
       {/* Device name */}
@@ -47,7 +47,7 @@ export function StatusBar({ running, deviceName, toneHz, autoDetect, confidence 
 
       {/* Tone + mode */}
       <span>
-        {Math.round(toneHz)} Hz · {autoDetect ? 'AUTO' : 'MANUAL'}
+        {Math.round(toneHz)} Hz · {autoDetect ? 'Auto' : 'Manual'}
       </span>
 
       {/* Confidence */}
@@ -73,7 +73,7 @@ export function StatusBar({ running, deviceName, toneHz, autoDetect, confidence 
             flexShrink: 0,
           }}
         />
-        CWNet · ON-DEVICE
+        CWNet · On-device
       </span>
     </div>
   );
