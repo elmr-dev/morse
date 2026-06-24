@@ -2,12 +2,18 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! Greedy CTC decode — the Rust mirror of `apps/web/src/inference/decode.ts`
-//! (`greedy_decode_with_confidence` in `packages/ml/model/eval/decode.py`).
+//! Greedy CTC decode — the Rust mirror of `apps/web/src/inference/decode.ts`.
 //!
 //! Argmax per time step, with an entropy gate that blanks low-confidence frames
 //! and a blank-ratio gate that rejects all-noise windows, then a run-length
 //! filter and the standard CTC collapse (drop repeats, strip blanks).
+//!
+//! Word-gap spaces come from `word_gap_frames`, a per-output-frame boolean mask
+//! produced by `pipeline::detect_word_gap_frames` from the DSP envelope. We do
+//! NOT infer them from CTC blank-run lengths: CTC models fire their labels at
+//! unpredictable points inside a character's duration, so `blank_before` values
+//! carry no reliable timing signal — intra-word and inter-word blanks are
+//! completely interleaved in practice.
 
 /// CTC blank label index.
 pub const BLANK_IDX: usize = 0;
@@ -16,15 +22,26 @@ pub const CHARS: &str = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789.,?=/";
 /// Total classes: alphabet + blank = 42.
 pub const NUM_CLASSES: usize = CHARS.len() + 1;
 
-/// Result of a greedy decode: collapsed text, mean per-emission confidence,
-/// and the CW tone the DSP actually used.
+/// A single decoded character and its per-emission model confidence.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct CharResult {
+    /// The decoded character. `' '` marks an inferred inter-word gap and always
+    /// carries `confidence = 1.0` (it is structural, not a model prediction).
+    pub ch: char,
+    /// `exp(max_log_prob)` at the emission frame; 1.0 for inferred spaces.
+    pub confidence: f32,
+}
+
+/// Result of a greedy decode: collapsed text with word-gap spaces,
+/// per-character confidence, and the CW tone the DSP used.
 #[derive(Debug, Clone, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DecodeResult {
-    /// Decoded characters with CTC repeats/blanks collapsed (no inter-word spaces;
-    /// the alphabet has no space label).
+    /// Per-character results, including inferred word-gap spaces (confidence=1.0).
+    pub chars: Vec<CharResult>,
+    /// Full decoded text — `chars` joined; spaces are inter-word gaps.
     pub text: String,
-    /// Mean `exp(max_log_prob)` over emitted labels, in `[0, 1]`; 0 when empty.
+    /// Mean `exp(max_log_prob)` over emitted (non-space) labels; 0.0 when empty.
     pub confidence: f32,
     /// CW tone the DSP bandpass and matched filters were centred on, in Hz.
     /// Set by [`pipeline::decode_samples`]; 0.0 until then.
@@ -52,20 +69,33 @@ impl Default for DecodeOptions {
     }
 }
 
-/// Map a label index to its character (`0` → empty blank).
-fn idx_to_char(idx: usize) -> &'static str {
+/// Map a label index to its character (returns `None` for blank or out-of-range).
+fn idx_to_char(idx: usize) -> Option<char> {
     if idx == BLANK_IDX || idx > CHARS.len() {
-        return "";
+        return None;
     }
     // CHARS is ASCII, so byte-indexing is char-indexing.
-    &CHARS[idx - 1..idx]
+    CHARS[idx - 1..idx].chars().next()
 }
 
 /// Greedy CTC decode of flat `(T, NUM_CLASSES)` log-probabilities.
-pub fn greedy_decode(log_probs: &[f32], t: usize, opts: DecodeOptions) -> DecodeResult {
+///
+/// `word_gap_frames` is an optional per-output-frame boolean mask produced by
+/// [`pipeline::detect_word_gap_frames`]. A `true` entry means that output frame
+/// lies within an audio silence long enough to be an inter-word gap; a space is
+/// inserted before any character emission whose preceding blank span contains a
+/// `true` frame. Pass `None` to suppress all word-gap spaces (e.g. in unit tests
+/// that use synthetic log-probs without real audio).
+pub fn greedy_decode(
+    log_probs: &[f32],
+    t: usize,
+    opts: DecodeOptions,
+    word_gap_frames: Option<&[bool]>,
+) -> DecodeResult {
     let c = NUM_CLASSES;
     let log_num_classes = (NUM_CLASSES as f32).ln();
 
+    // --- Argmax + entropy gate ---
     let mut argmax = vec![0usize; t];
     let mut max_lp = vec![f32::NEG_INFINITY; t];
 
@@ -97,16 +127,18 @@ pub fn greedy_decode(log_probs: &[f32], t: usize, opts: DecodeOptions) -> Decode
         }
     }
 
+    // --- Blank ratio gate ---
     let non_blank = argmax.iter().filter(|&&a| a != BLANK_IDX).count();
     if non_blank < 2 || (non_blank as f32) / (t as f32) < 1.0 - opts.blank_ratio_threshold {
         return DecodeResult {
+            chars: Vec::new(),
             text: String::new(),
             confidence: 0.0,
             detected_tone_hz: 0.0,
         };
     }
 
-    // Run-length filter: short non-blank runs are demoted to blank.
+    // --- Run-length filter: short non-blank runs are demoted to blank ---
     let mut filtered = vec![0usize; t];
     let mut i = 0;
     while i < t {
@@ -123,27 +155,79 @@ pub fn greedy_decode(log_probs: &[f32], t: usize, opts: DecodeOptions) -> Decode
         i = j;
     }
 
-    // CTC collapse: emit on label change, skipping blanks.
-    let mut text = String::new();
-    let mut confs: Vec<f32> = Vec::new();
-    let mut prev: isize = -1;
-    for ti in 0..t {
-        let idx = filtered[ti];
-        if idx as isize != prev {
-            if idx != BLANK_IDX {
-                text.push_str(idx_to_char(idx));
-                confs.push(max_lp[ti].exp());
+    // --- Collect non-blank emission runs ---
+    //
+    // Each run = one CTC character emission. We record frame and run_len so we
+    // can check whether the silent span between consecutive emissions overlaps a
+    // word-gap region in word_gap_frames.
+    struct EmissionRun {
+        label: usize,
+        frame: usize,
+        run_len: usize,
+    }
+
+    let mut runs: Vec<EmissionRun> = Vec::new();
+    let mut i = 0;
+    while i < t {
+        let cls = filtered[i];
+        let mut j = i + 1;
+        while j < t && filtered[j] == cls {
+            j += 1;
+        }
+        if cls != BLANK_IDX {
+            runs.push(EmissionRun {
+                label: cls,
+                frame: i,
+                run_len: j - i,
+            });
+        }
+        i = j;
+    }
+
+    // --- CTC collapse + word-gap space insertion ---
+    //
+    // Standard CTC: same label separated by a blank gap = new emission.
+    // A space is inserted before emission[i] if any output frame in the silent
+    // span [prev.frame + prev.run_len .. run.frame) is marked true in
+    // word_gap_frames — i.e. lies within an audio silence long enough to be a
+    // word boundary.
+    let mut chars: Vec<CharResult> = Vec::new();
+
+    for (i, run) in runs.iter().enumerate() {
+        if i > 0 {
+            let prev = &runs[i - 1];
+            let gap_start = prev.frame + prev.run_len;
+            let in_word_gap = word_gap_frames.map_or(false, |wgf| {
+                (gap_start..run.frame).any(|f| wgf.get(f).copied().unwrap_or(false))
+            });
+            if in_word_gap {
+                chars.push(CharResult { ch: ' ', confidence: 1.0 });
             }
-            prev = idx as isize;
+        }
+        if let Some(ch) = idx_to_char(run.label) {
+            chars.push(CharResult {
+                ch,
+                confidence: max_lp[run.frame].exp(),
+            });
         }
     }
 
-    let confidence = if confs.is_empty() {
+    let non_space: Vec<f32> = chars
+        .iter()
+        .filter(|c| c.ch != ' ')
+        .map(|c| c.confidence)
+        .collect();
+
+    let confidence = if non_space.is_empty() {
         0.0
     } else {
-        confs.iter().sum::<f32>() / confs.len() as f32
+        non_space.iter().sum::<f32>() / non_space.len() as f32
     };
+
+    let text: String = chars.iter().map(|c| c.ch).collect();
+
     DecodeResult {
+        chars,
         text,
         confidence,
         detected_tone_hz: 0.0, // filled in by pipeline::decode_samples
@@ -165,34 +249,81 @@ mod tests {
 
     #[test]
     fn collapses_repeats_and_strips_blanks() {
-        // labels: H H _ E _ L L _ L O  (1-indexed into CHARS: H=8,E=5,L=12,O=15)
         let h = 8;
         let e = 5;
         let l = 12;
         let o = 15;
         let labels = [h, h, BLANK_IDX, e, BLANK_IDX, l, l, BLANK_IDX, l, o];
         let lp = one_hot_log_probs(&labels);
-        let res = greedy_decode(&lp, labels.len(), DecodeOptions::default());
+        let res = greedy_decode(&lp, labels.len(), DecodeOptions::default(), None);
         assert_eq!(res.text, "HELLO");
         assert!(res.confidence > 0.99);
+        let non_space: Vec<_> = res.chars.iter().filter(|c| c.ch != ' ').collect();
+        assert_eq!(non_space.len(), 5);
+        assert!(non_space.iter().all(|c| c.confidence > 0.99));
+    }
+
+    #[test]
+    fn inserts_space_at_word_gap() {
+        // "HE HE": the 30-frame blank between the two words is marked as a word gap.
+        // Labels: [h*2, blank*3, e*2, blank*30, h*2, blank*3, e*2]
+        // The second H is at frame 37; the word gap spans frames 7..37.
+        let h = 8;
+        let e = 5;
+        let mut labels = Vec::new();
+        labels.extend(vec![h; 2]); // 0-1
+        labels.extend(vec![BLANK_IDX; 3]); // 2-4
+        labels.extend(vec![e; 2]); // 5-6
+        labels.extend(vec![BLANK_IDX; 30]); // 7-36  ← word gap
+        labels.extend(vec![h; 2]); // 37-38
+        labels.extend(vec![BLANK_IDX; 3]); // 39-41
+        labels.extend(vec![e; 2]); // 42-43
+        let lp = one_hot_log_probs(&labels);
+
+        let mut wgf = vec![false; labels.len()];
+        for i in 7..37 { wgf[i] = true; } // mark the 30-frame silence as a word gap
+        let res = greedy_decode(&lp, labels.len(), DecodeOptions::default(), Some(&wgf));
+        assert_eq!(res.text, "HE HE");
+        let space_idx = res.chars.iter().position(|c| c.ch == ' ').expect("no space");
+        assert_eq!(res.chars[space_idx].confidence, 1.0);
+        assert_eq!(res.chars.iter().filter(|c| c.ch == ' ').count(), 1);
+    }
+
+    #[test]
+    fn no_space_at_inter_character_gap() {
+        // "HEL" with no word_gap_frames → no spaces regardless of blank lengths.
+        let h = 8;
+        let e = 5;
+        let l = 12;
+        let mut labels = Vec::new();
+        labels.extend(vec![h; 2]);
+        labels.extend(vec![BLANK_IDX; 5]);
+        labels.extend(vec![e; 2]);
+        labels.extend(vec![BLANK_IDX; 5]);
+        labels.extend(vec![l; 2]);
+        let lp = one_hot_log_probs(&labels);
+        let res = greedy_decode(&lp, labels.len(), DecodeOptions::default(), None);
+        assert_eq!(res.text, "HEL");
+        assert!(!res.text.contains(' '));
     }
 
     #[test]
     fn all_blank_returns_empty() {
         let labels = [BLANK_IDX; 10];
         let lp = one_hot_log_probs(&labels);
-        let res = greedy_decode(&lp, labels.len(), DecodeOptions::default());
+        let res = greedy_decode(&lp, labels.len(), DecodeOptions::default(), None);
         assert_eq!(res.text, "");
         assert_eq!(res.confidence, 0.0);
+        assert!(res.chars.is_empty());
     }
 
     #[test]
     fn idx_to_char_covers_alphabet_edges() {
-        assert_eq!(idx_to_char(BLANK_IDX), "");
-        assert_eq!(idx_to_char(1), "A");
-        assert_eq!(idx_to_char(26), "Z");
-        assert_eq!(idx_to_char(27), "0");
-        assert_eq!(idx_to_char(CHARS.len()), "/");
-        assert_eq!(idx_to_char(CHARS.len() + 1), "");
+        assert_eq!(idx_to_char(BLANK_IDX), None);
+        assert_eq!(idx_to_char(1), Some('A'));
+        assert_eq!(idx_to_char(26), Some('Z'));
+        assert_eq!(idx_to_char(27), Some('0'));
+        assert_eq!(idx_to_char(CHARS.len()), Some('/'));
+        assert_eq!(idx_to_char(CHARS.len() + 1), None);
     }
 }
