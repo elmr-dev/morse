@@ -13,8 +13,12 @@
     "windows": [
       {
         "title": "Morse Decoder",
-        "width": 800,
-        "height": 600
+        "width": 900,
+        "height": 640,
+        "minWidth": 960,
+        "minHeight": 540,
+        "titleBarStyle": "Overlay",
+        "hiddenTitle": true
       }
     ],
     "security": {

@@ -128,6 +128,73 @@ pub fn detect_tone(samples: &[f32], sample_rate: u32) -> Option<f64> {
     Some(best_freq)
 }
 
+/// The audio passband displayed in the waterfall, in Hz.
+pub const WATERFALL_LO: f64 = 250.0;
+pub const WATERFALL_HI: f64 = 1050.0;
+/// Number of power bins spanning the waterfall passband.
+pub const WATERFALL_BINS: usize = 128;
+
+/// Minimum peak-to-mean power ratio for a bin to be reported as a detected
+/// signal peak in the waterfall display.
+const SIGNAL_PEAK_SNR: f64 = 2.0;
+
+/// Stricter SNR threshold used for AUTO-mode tuning — must clearly stand above
+/// the noise floor before we anchor the decoder to that frequency.
+const AUTO_DETECT_SNR: f64 = 3.0;
+
+/// Compute `WATERFALL_BINS` normalised power samples spanning
+/// [`WATERFALL_LO`]..=[`WATERFALL_HI`] Hz from `samples`.
+///
+/// Returns `(bins, detected_signals, strongest_hz)` where:
+/// - `bins` is a `Vec<f32>` of length [`WATERFALL_BINS`], each value in `[0, 1]`
+///   (normalised to the peak bin).
+/// - `detected_signals` is a sorted `Vec<f64>` of Hz positions where a bin's
+///   power exceeds `SIGNAL_PEAK_SNR × mean`, i.e. signal peaks visible in the
+///   waterfall.
+/// - `strongest_hz` is the Hz position of the highest-power local maximum above
+///   the signal threshold, or `None` if no signal is present.  Use this for
+///   AUTO-mode tuning so the decoder always follows the dominant waterfall peak.
+pub fn spectrum_bins(samples: &[f32], sample_rate: u32) -> (Vec<f32>, Vec<f64>, Option<f64>) {
+    let window = &samples[..samples.len().min(MAX_DETECT_SAMPLES)];
+    let freq_step = (WATERFALL_HI - WATERFALL_LO) / (WATERFALL_BINS - 1) as f64;
+
+    let powers: Vec<f64> = (0..WATERFALL_BINS)
+        .map(|i| {
+            let freq = WATERFALL_LO + i as f64 * freq_step;
+            goertzel(window, sample_rate, freq)
+        })
+        .collect();
+
+    let peak = powers.iter().cloned().fold(0.0f64, f64::max);
+    let mean = powers.iter().sum::<f64>() / powers.len() as f64;
+
+    let bins: Vec<f32> = powers
+        .iter()
+        .map(|&p| if peak > 0.0 { (p / peak) as f32 } else { 0.0 })
+        .collect();
+
+    let display_threshold = mean * SIGNAL_PEAK_SNR;
+    let auto_threshold = mean * AUTO_DETECT_SNR;
+    let mut detected: Vec<f64> = Vec::new();
+    let mut strongest_hz: Option<f64> = None;
+    let mut strongest_power = 0.0f64;
+
+    // Simple peak-pick: local maxima above threshold, avoid double-counting.
+    for i in 1..powers.len().saturating_sub(1) {
+        if powers[i] > display_threshold && powers[i] > powers[i - 1] && powers[i] > powers[i + 1] {
+            let hz = WATERFALL_LO + i as f64 * freq_step;
+            detected.push(hz);
+            // Only consider this bin for auto-tune if it clears the stricter threshold.
+            if powers[i] > auto_threshold && powers[i] > strongest_power {
+                strongest_power = powers[i];
+                strongest_hz = Some(hz);
+            }
+        }
+    }
+
+    (bins, detected, strongest_hz)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

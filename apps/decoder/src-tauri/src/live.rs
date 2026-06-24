@@ -11,12 +11,14 @@
 use std::collections::VecDeque;
 use std::sync::mpsc;
 
+use tauri::Emitter;
+
 use crate::audio::{AudioSource, DeviceSource};
 use crate::decode::DecodeResult;
 use crate::dsp::DSP_SAMPLE_RATE;
 use crate::pipeline::{decode_samples, MAX_DECODE_SAMPLES};
 use crate::resample::resample_to_dsp_rate;
-use crate::tone::detect_tone;
+use crate::tone::{detect_tone, spectrum_bins};
 
 /// New audio accumulated before the window re-decodes (seconds).
 const SLIDE_SECS: f64 = 1.0;
@@ -24,6 +26,16 @@ const SLIDE_SECS: f64 = 1.0;
 /// Minimum rolling-window depth before the first decode (8 kHz samples).
 /// Two seconds avoids running inference on a near-empty window.
 const MIN_DECODE_SAMPLES: usize = DSP_SAMPLE_RATE as usize * 2;
+
+/// Payload for the `spectrum-frame` Tauri event.
+#[derive(serde::Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct SpectrumFrame {
+    /// Normalised power bins spanning 250–1050 Hz, length = WATERFALL_BINS.
+    pub bins: Vec<f32>,
+    /// Hz positions of signal peaks visible above the noise floor.
+    pub detected_signals: Vec<f64>,
+}
 
 /// A handle to a running live-capture session.
 ///
@@ -40,9 +52,13 @@ impl LiveHandle {
     /// thread, resamples to 8 kHz, and re-decodes the rolling 16 s window every
     /// [`SLIDE_SECS`] of new audio. Both non-empty and empty results are delivered
     /// to `on_result` so the frontend can detect end-of-transmission gaps.
+    ///
+    /// A `spectrum-frame` event is also emitted to `app` for each 1-s chunk so
+    /// the waterfall can render live spectral data.
     pub fn start(
         device: Option<String>,
         tone_hz: Option<f64>,
+        app: tauri::AppHandle,
         on_result: impl Fn(DecodeResult) + Send + 'static,
     ) -> Result<Self, String> {
         let (stop_tx, stop_rx) = mpsc::channel::<()>();
@@ -62,6 +78,8 @@ impl LiveHandle {
             let mut rolling: VecDeque<f32> = VecDeque::with_capacity(MAX_DECODE_SAMPLES);
             let mut accum: Vec<f32> = Vec::with_capacity(slide_input);
             let mut buf = vec![0.0f32; 4096];
+            // Track last confirmed CW frequency so we can flush the window on a retune.
+            let mut last_chunk_tone: Option<f64> = None;
 
             loop {
                 if stop_rx.try_recv().is_ok() {
@@ -90,11 +108,17 @@ impl LiveHandle {
                 };
                 accum.clear();
 
-                // Silence detection: if no CW tone in this 1-second chunk, clear the
-                // rolling window so the next transmission decodes from a clean slate,
-                // and emit an empty result so the frontend can detect end-of-transmission.
-                if detect_tone(&dsp_chunk, DSP_SAMPLE_RATE).is_none() {
+                // Emit a spectrum frame for the waterfall on every chunk.
+                // strongest_hz is the dominant waterfall peak — used for AUTO tuning.
+                let (bins, detected_signals, strongest_hz) = spectrum_bins(&dsp_chunk, DSP_SAMPLE_RATE);
+                app.emit("spectrum-frame", SpectrumFrame { bins, detected_signals }).ok();
+
+                // Silence detection: use the proven coarse detect_tone (SNR over ~15 bins)
+                // so a weaker signal that clears the CW threshold still triggers decode.
+                let chunk_tone = detect_tone(&dsp_chunk, DSP_SAMPLE_RATE);
+                if chunk_tone.is_none() {
                     rolling.clear();
+                    last_chunk_tone = None;
                     on_result(DecodeResult {
                         chars: vec![],
                         text: String::new(),
@@ -103,6 +127,16 @@ impl LiveHandle {
                     });
                     continue;
                 }
+
+                // If the dominant tone has shifted by more than 30 Hz since the last
+                // chunk, the user has switched signals — flush the stale window so we
+                // don't decode old-frequency content against the new bandpass centre.
+                if let (Some(prev), Some(cur)) = (last_chunk_tone, chunk_tone) {
+                    if (cur - prev).abs() > 30.0 {
+                        rolling.clear();
+                    }
+                }
+                last_chunk_tone = chunk_tone;
 
                 // Signal present: advance the rolling window with the new chunk.
                 for s in dsp_chunk {
@@ -117,7 +151,17 @@ impl LiveHandle {
                 }
 
                 let window: Vec<f32> = rolling.iter().copied().collect();
-                match decode_samples(&window, DSP_SAMPLE_RATE, tone_hz) {
+                // In AUTO mode (tone_hz == None), anchor the decode to the strongest
+                // tone found in the *current* 1-s chunk so we always follow the
+                // strongest live signal rather than re-detecting in the stale window.
+                // In AUTO mode, prefer the waterfall's strongest peak for better
+                // frequency resolution; fall back to detect_tone's result if the
+                // waterfall peak didn't clear the stricter auto-detect threshold.
+                let effective_tone = match tone_hz {
+                    Some(_) => tone_hz,
+                    None => strongest_hz.map(Some).unwrap_or(chunk_tone),
+                };
+                match decode_samples(&window, DSP_SAMPLE_RATE, effective_tone) {
                     Ok(result) => on_result(result),
                     Err(e) => eprintln!("live capture: decode error: {e}"),
                 }

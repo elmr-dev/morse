@@ -8,35 +8,145 @@
 
 /* Shared brand identity: generic oklch tokens, Tailwind mappings, self-hosted
    fonts, and generic motion — the same theme morse-web reads. */
-@import "@morse/brand/theme/theme.css";
+@import "@morse/brand/theme/theme-decoder.css";
 
 /* The `dark` variant is class-based; main.tsx toggles `.dark` on <html> from
    the OS color-scheme preference. (Tailwind v4 only hoists @theme out of
    imported package CSS, so @custom-variant must live in the entry.) */
 @custom-variant dark (&:is(.dark *));
 
-/* App-local token: a warning/amber for the "fair" confidence badge — the shared
-   theme only carries success (good) and destructive (bad). */
+/* App-local tokens */
 @theme inline {
+  /* Amber tuner / dial — timestamps, MANUAL mode, needle */
+  --color-dial: var(--dial);
+  --color-dial-strong: var(--dial-strong);
+  /* Warning/amber for "fair" confidence badge */
   --color-warning: var(--warning);
 }
 
 :root {
+  --dial: oklch(0.62 0.16 55);
+  --dial-strong: oklch(0.52 0.18 50);
   --warning: oklch(0.62 0.16 55);
+  /* Eyebrow typography shorthand */
+  --text-eyebrow: 10.5px;
 }
 
 .dark {
+  --dial: oklch(0.80 0.15 65);
+  --dial-strong: oklch(0.88 0.16 68);
   --warning: oklch(0.8 0.15 65);
+
+  /* Decoder dark mode: strip purple chroma → pure neutral blacks.
+     --primary stays purple (envelope, CWNet dot, etc.).
+     Everything else is achromatic so buttons/toolbar have no purple tint. */
+  --background:    #282727;
+  --copy-sheet-bg: color-mix(in oklch, var(--card) 96%, var(--foreground) 2%);
+  --card:          #282727;
+  --btn-surface:   #282727;
+  --border:        #232323;
+  --input:         #232323;
+  --muted:         #1e1d1d;
+  --muted-foreground: oklch(0.62 0 0);
+}
+
+/* Graph-paper grid — Cosmic Night signature background */
+.morse-grid::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  background-image:
+    linear-gradient(color-mix(in oklch, var(--border) 40%, transparent) 1px, transparent 1px),
+    linear-gradient(90deg, color-mix(in oklch, var(--border) 40%, transparent) 1px, transparent 1px);
+  background-size: 32px 32px;
+}
+
+/* Eyebrow label utility */
+.morse-eyebrow {
+  font-family: var(--font-sans);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted-foreground);
+}
+
+/* Copy sheet scrollbar */
+.copy-scroll::-webkit-scrollbar { width: 9px; }
+.copy-scroll::-webkit-scrollbar-thumb {
+  background: color-mix(in oklch, var(--muted-foreground) 32%, transparent);
+  border-radius: 5px;
+}
+.copy-scroll::-webkit-scrollbar-track { background: transparent; }
+
+/* Blinking copy cursor — square block the size of one monospace character */
+@keyframes wf-blink {
+  0%, 48% { opacity: 1; }
+  49%, 100% { opacity: 0; }
+}
+.wf-cursor {
+  display: inline-block;
+  width: 0.6em;
+  height: 1.15em;
+  background: hsl(265 35% 62% / 0.65);
+  border-radius: 1px;
+  vertical-align: text-bottom;
+  animation: wf-blink 1s steps(1) infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .wf-cursor { animation: none; opacity: 1; }
+}
+
+/* Status dot pulse */
+@keyframes status-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.45; }
 }
 
 @layer base {
   * {
     @apply border-border;
   }
+  /* Explicitly set a solid background on <html> so the transparent-title-bar
+     native window never bleeds through during re-renders or focus changes. */
+  html {
+    background: var(--background);
+  }
   body {
     @apply bg-background text-foreground;
     margin: 0;
     font-family: var(--font-sans);
     -webkit-font-smoothing: antialiased;
+    /* Global non-selectable; copy log entry text overrides per-element. */
+    user-select: none;
+    -webkit-user-select: none;
   }
+}
+
+/* ── Toolbar button hover states ────────────────────────────────────────── */
+.tb-btn:hover:not(:disabled) {
+  background: color-mix(in oklch, var(--foreground) 8%, var(--card));
+  border-color: color-mix(in oklch, var(--foreground) 20%, var(--border));
+}
+.tb-btn-active:hover:not(:disabled) {
+  filter: brightness(1.12);
+}
+.tb-seg:hover {
+  background: color-mix(in srgb, var(--foreground) 10%, transparent);
+}
+
+/* macOS overlay title-bar drag region */
+[data-tauri-drag-region] {
+  -webkit-app-region: drag;
+  app-region: drag;
+}
+/* Interactive children inside drag regions must opt out */
+[data-tauri-drag-region] button,
+[data-tauri-drag-region] a,
+[data-tauri-drag-region] input,
+[data-tauri-drag-region] select {
+  -webkit-app-region: no-drag;
+  app-region: no-drag;
 }

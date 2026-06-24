@@ -14,6 +14,7 @@ pub mod tone;
 use std::sync::Mutex;
 
 use tauri::Emitter;
+use tauri::menu::{MenuItemBuilder, SubmenuBuilder};
 
 use audio::{
     list_input_devices as enumerate_input_devices,
@@ -166,6 +167,9 @@ fn set_monitor_volume(
 /// every ~1 s of new audio. Both non-empty and empty results are emitted so the
 /// frontend can detect end-of-transmission gaps.
 ///
+/// Also emits `"spectrum-frame"` events (128-bin power spectrum, 250–1050 Hz)
+/// on each chunk for the waterfall renderer.
+///
 /// Returns immediately; decoding runs on a background thread. Call
 /// [`stop_live_capture`] to end the session. Returns an error if a session is
 /// already running.
@@ -180,8 +184,9 @@ fn start_live_capture(
     if guard.is_some() {
         return Err("live capture already running".into());
     }
-    let handle = LiveHandle::start(device, tone_hz, move |result| {
-        app.emit("live-decode", result).ok();
+    let emit_app = app.clone();
+    let handle = LiveHandle::start(device, tone_hz, app, move |result| {
+        emit_app.emit("live-decode", result).ok();
     })?;
     *guard = Some(handle);
     Ok(())
@@ -194,6 +199,15 @@ fn stop_live_capture(state: tauri::State<'_, LiveState>) -> Result<(), String> {
         h.stop();
     }
     Ok(())
+}
+
+/// Write the copy log to `path` (absolute path from the Tauri save dialog).
+///
+/// The frontend formats the log content and provides the user-chosen path via
+/// `@tauri-apps/plugin-dialog`'s `save()` call.
+#[tauri::command]
+fn export_copy_log(path: String, content: String) -> Result<(), String> {
+    std::fs::write(&path, content).map_err(|e| format!("write failed: {e}"))
 }
 
 /// Capture `seconds` of live audio from `device` and decode it to text.
@@ -222,8 +236,59 @@ async fn capture_and_decode(
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .setup(|app| {
+            // Build the "Decoder" menu and append it to the default macOS menu bar.
+            let start = MenuItemBuilder::with_id("decoder-start", "Start Capture")
+                .accelerator("Space")
+                .build(app)?;
+            let stop = MenuItemBuilder::with_id("decoder-stop", "Stop Capture")
+                .accelerator("Escape")
+                .build(app)?;
+            let monitor = MenuItemBuilder::with_id("decoder-monitor", "Toggle Monitor")
+                .accelerator("CmdOrCtrl+Shift+M")
+                .build(app)?;
+            let auto = MenuItemBuilder::with_id("decoder-auto", "Auto Mode")
+                .accelerator("CmdOrCtrl+Shift+A")
+                .build(app)?;
+            let lock = MenuItemBuilder::with_id("decoder-lock", "Lock Frequency")
+                .accelerator("CmdOrCtrl+Shift+L")
+                .build(app)?;
+
+            let decoder_submenu = SubmenuBuilder::new(app, "Decoder")
+                .item(&start)
+                .item(&stop)
+                .separator()
+                .item(&monitor)
+                .separator()
+                .item(&auto)
+                .item(&lock)
+                .build()?;
+
+            if let Some(menu) = app.menu() {
+                // Insert after View (index 3) → position 4, before Window.
+                menu.insert(&decoder_submenu, 4)?;
+            }
+
+            // Route menu events to the frontend as "decoder-action" events.
+            let handle = app.handle().clone();
+            app.on_menu_event(move |_app, event| {
+                let action = match event.id().as_ref() {
+                    "decoder-start"   => "start",
+                    "decoder-stop"    => "stop",
+                    "decoder-monitor" => "monitor",
+                    "decoder-auto"    => "auto",
+                    "decoder-lock"    => "lock",
+                    _ => return,
+                };
+                handle.emit("decoder-action", action).ok();
+            });
+
+            Ok(())
+        })
         .plugin(tauri_plugin_window_state::Builder::default().build())
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_fs::init())
         .manage(MonitorState(Mutex::new(None)))
         .manage(LiveState(Mutex::new(None)))
         .invoke_handler(tauri::generate_handler![
@@ -238,6 +303,7 @@ pub fn run() {
             set_monitor_volume,
             start_live_capture,
             stop_live_capture,
+            export_copy_log,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
