@@ -4,6 +4,7 @@
 
 import { invoke } from '@tauri-apps/api/core';
 import { save } from '@tauri-apps/plugin-dialog';
+import { Download } from 'lucide-react';
 
 interface CharResult {
   ch: string;
@@ -106,7 +107,7 @@ function ExportButton({ lines }: { lines: CopyLine[] }) {
       style={toolBtnStyle}
       title="Export copy log"
     >
-      <span style={{ fontSize: '12px', lineHeight: 1 }}>↧</span> Export
+      <Download size={13} strokeWidth={1.75} /> Export
     </button>
   );
 }

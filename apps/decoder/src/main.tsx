@@ -10,8 +10,11 @@ import './index.css';
 // transparent-title-bar window flashes or goes black. Mirrors the React useState
 // initializer in App so the two never disagree on first paint.
 const THEME_KEY = 'morse-decoder:themeOverride';
-const saved = localStorage.getItem(THEME_KEY);
-const initialDark = saved === 'dark' || (saved !== 'light' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+const _raw = localStorage.getItem(THEME_KEY);
+// Settings are JSON-encoded ('dark' → stored as '"dark"'); parse to get the string.
+let _saved: string | null = null;
+try { _saved = _raw ? (JSON.parse(_raw) as string) : null; } catch { /* ignore */ }
+const initialDark = _saved === 'dark' || (_saved !== 'light' && window.matchMedia('(prefers-color-scheme: dark)').matches);
 document.documentElement.classList.toggle('dark', initialDark);
 
 // Restore window size/position from the previous session.

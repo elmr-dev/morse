@@ -29,6 +29,7 @@ const MIN_DECODE_SAMPLES: usize = DSP_SAMPLE_RATE as usize * 2;
 
 /// Payload for the `spectrum-frame` Tauri event.
 #[derive(serde::Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
 pub struct SpectrumFrame {
     /// Normalised power bins spanning 250–1050 Hz, length = WATERFALL_BINS.
     pub bins: Vec<f32>,

@@ -45,6 +45,9 @@ type MonitorStatus = 'off' | 'starting' | 'on' | 'stopping' | 'error';
 
 type Colormap = 'viridis' | 'inferno' | 'jet' | 'hot' | 'bone' | 'grayscale';
 
+/** Three-way theme selector: follow OS, force light, or force dark. */
+export type ThemeOverride = 'system' | 'light' | 'dark';
+
 // ── Constants ────────────────────────────────────────────────────────────────
 
 const DEFAULT_TONE_HZ = 700;
@@ -127,34 +130,32 @@ function App() {
   const envelopeBarsRef = useRef<number[]>(new Array(ENVELOPE_BARS).fill(0.03));
 
   // ── Theme ──────────────────────────────────────────────────────────────────
-  const [dark, setDark] = useState(() => {
-    const saved = localStorage.getItem(STORAGE_PREFIX + 'themeOverride');
-    if (saved === 'dark' || saved === 'light') return saved === 'dark';
-    return window.matchMedia('(prefers-color-scheme: dark)').matches;
-  });
+  const [themeOverride, setThemeOverride] = useState<ThemeOverride>(
+    () => loadSetting<ThemeOverride>('themeOverride', 'system'),
+  );
+  // Live OS preference — updated by the MQ listener below.
+  const [osDark, setOsDark] = useState(
+    () => window.matchMedia('(prefers-color-scheme: dark)').matches,
+  );
+  // Computed actual dark value.
+  const dark = themeOverride === 'dark' || (themeOverride === 'system' && osDark);
 
-  // Sync theme class whenever `dark` changes.
+  // Sync theme class whenever computed dark changes.
   useEffect(() => {
     applyTheme(dark);
   }, [dark]);
 
-  // OS MQ listener — only fires when no manual override is set.
+  // Always track OS preference so 'system' mode reacts to changes.
   useEffect(() => {
     const mq = window.matchMedia('(prefers-color-scheme: dark)');
-    const listener = (e: MediaQueryListEvent) => {
-      const override = localStorage.getItem(STORAGE_PREFIX + 'themeOverride');
-      if (override !== 'dark' && override !== 'light') {
-        setDark(e.matches);
-      }
-    };
+    const listener = (e: MediaQueryListEvent) => setOsDark(e.matches);
     mq.addEventListener('change', listener);
     return () => mq.removeEventListener('change', listener);
   }, []);
 
-  function handleThemeToggle() {
-    const next = !dark;
-    setDark(next);
-    saveSetting('themeOverride', next ? 'dark' : 'light');
+  function handleThemeChange(next: ThemeOverride) {
+    setThemeOverride(next);
+    saveSetting('themeOverride', next);
   }
 
   // ── Device loading ─────────────────────────────────────────────────────────
@@ -436,7 +437,7 @@ function App() {
         overflow: 'hidden',
       }}
     >
-      <TitleBar dark={dark} onThemeToggle={handleThemeToggle} />
+      <TitleBar themeOverride={themeOverride} onThemeChange={handleThemeChange} />
 
       <Toolbar
         devices={inputDevices}

@@ -3,13 +3,28 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import logoUrl from '@morse/brand/web/logo.svg';
+import { Monitor, Moon, Sun } from 'lucide-react';
+import type { ThemeOverride } from '../app';
 
 interface TitleBarProps {
-  dark: boolean;
-  onThemeToggle: () => void;
+  themeOverride: ThemeOverride;
+  onThemeChange: (t: ThemeOverride) => void;
 }
 
-export function TitleBar({ dark, onThemeToggle }: TitleBarProps) {
+const CYCLE: ThemeOverride[] = ['system', 'light', 'dark'];
+
+const THEME_META: Record<ThemeOverride, { icon: React.ReactNode; label: string; next: ThemeOverride }> = {
+  system: { icon: <Monitor size={14} strokeWidth={1.75} />, label: 'System theme — click for Light', next: 'light' },
+  light:  { icon: <Sun     size={14} strokeWidth={1.75} />, label: 'Light theme — click for Dark',   next: 'dark'   },
+  dark:   { icon: <Moon    size={14} strokeWidth={1.75} />, label: 'Dark theme — click for System',  next: 'system' },
+};
+void CYCLE; // referenced by THEME_META; silence unused-var lint
+
+import React from 'react';
+
+export function TitleBar({ themeOverride, onThemeChange }: TitleBarProps) {
+  const { icon, label, next } = THEME_META[themeOverride];
+
   return (
     <div
       data-tauri-drag-region
@@ -58,11 +73,12 @@ export function TitleBar({ dark, onThemeToggle }: TitleBarProps) {
         </span>
       </div>
 
-      {/* Theme toggle — pinned right */}
+      {/* Theme toggle — pinned right; cycles System → Light → Dark → System */}
       <button
         type="button"
-        onClick={onThemeToggle}
-        aria-label="Toggle theme"
+        onClick={() => onThemeChange(next)}
+        aria-label={label}
+        title={label}
         style={{
           marginLeft: 'auto',
           pointerEvents: 'auto',
@@ -71,7 +87,6 @@ export function TitleBar({ dark, onThemeToggle }: TitleBarProps) {
           cursor: 'pointer',
           padding: '4px',
           borderRadius: '6px',
-          fontSize: '15px',
           lineHeight: 1,
           color: 'var(--muted-foreground)',
           display: 'flex',
@@ -86,7 +101,7 @@ export function TitleBar({ dark, onThemeToggle }: TitleBarProps) {
           (e.currentTarget as HTMLButtonElement).style.background = 'transparent';
         }}
       >
-        {dark ? '☾' : '☀'}
+        {icon}
       </button>
     </div>
   );

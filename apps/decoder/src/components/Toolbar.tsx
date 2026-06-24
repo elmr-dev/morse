@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { Headphones } from 'lucide-react';
+import { Headphones, Play, Square } from 'lucide-react';
 import { StatusDot } from './StatusDot';
 
 interface DeviceInfo {
@@ -269,7 +269,9 @@ export function Toolbar({
           cursor: 'pointer',
         }}
       >
-        <span style={{ fontSize: '11px', lineHeight: 1 }}>{running ? '■' : '▶'}</span>
+        <span style={{ fontSize: '11px', lineHeight: 1, display: 'flex' }}>
+          {running ? <Square size={11} fill="currentColor" strokeWidth={0} /> : <Play size={11} fill="currentColor" strokeWidth={0} />}
+        </span>
         {running ? 'STOP' : 'START'}
       </button>
     </div>
