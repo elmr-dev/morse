@@ -166,6 +166,9 @@ fn set_monitor_volume(
 /// every ~1 s of new audio. Both non-empty and empty results are emitted so the
 /// frontend can detect end-of-transmission gaps.
 ///
+/// Also emits `"spectrum-frame"` events (128-bin power spectrum, 250–1050 Hz)
+/// on each chunk for the waterfall renderer.
+///
 /// Returns immediately; decoding runs on a background thread. Call
 /// [`stop_live_capture`] to end the session. Returns an error if a session is
 /// already running.
@@ -180,8 +183,9 @@ fn start_live_capture(
     if guard.is_some() {
         return Err("live capture already running".into());
     }
-    let handle = LiveHandle::start(device, tone_hz, move |result| {
-        app.emit("live-decode", result).ok();
+    let emit_app = app.clone();
+    let handle = LiveHandle::start(device, tone_hz, app, move |result| {
+        emit_app.emit("live-decode", result).ok();
     })?;
     *guard = Some(handle);
     Ok(())
@@ -194,6 +198,15 @@ fn stop_live_capture(state: tauri::State<'_, LiveState>) -> Result<(), String> {
         h.stop();
     }
     Ok(())
+}
+
+/// Write the copy log to `path` (absolute path from the Tauri save dialog).
+///
+/// The frontend formats the log content and provides the user-chosen path via
+/// `@tauri-apps/plugin-dialog`'s `save()` call.
+#[tauri::command]
+fn export_copy_log(path: String, content: String) -> Result<(), String> {
+    std::fs::write(&path, content).map_err(|e| format!("write failed: {e}"))
 }
 
 /// Capture `seconds` of live audio from `device` and decode it to text.
@@ -224,6 +237,8 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_window_state::Builder::default().build())
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_fs::init())
         .manage(MonitorState(Mutex::new(None)))
         .manage(LiveState(Mutex::new(None)))
         .invoke_handler(tauri::generate_handler![
@@ -238,6 +253,7 @@ pub fn run() {
             set_monitor_volume,
             start_live_capture,
             stop_live_capture,
+            export_copy_log,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

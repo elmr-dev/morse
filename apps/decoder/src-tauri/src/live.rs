@@ -11,12 +11,14 @@
 use std::collections::VecDeque;
 use std::sync::mpsc;
 
+use tauri::Emitter;
+
 use crate::audio::{AudioSource, DeviceSource};
 use crate::decode::DecodeResult;
 use crate::dsp::DSP_SAMPLE_RATE;
 use crate::pipeline::{decode_samples, MAX_DECODE_SAMPLES};
 use crate::resample::resample_to_dsp_rate;
-use crate::tone::detect_tone;
+use crate::tone::{detect_tone, spectrum_bins};
 
 /// New audio accumulated before the window re-decodes (seconds).
 const SLIDE_SECS: f64 = 1.0;
@@ -24,6 +26,15 @@ const SLIDE_SECS: f64 = 1.0;
 /// Minimum rolling-window depth before the first decode (8 kHz samples).
 /// Two seconds avoids running inference on a near-empty window.
 const MIN_DECODE_SAMPLES: usize = DSP_SAMPLE_RATE as usize * 2;
+
+/// Payload for the `spectrum-frame` Tauri event.
+#[derive(serde::Serialize, Clone)]
+pub struct SpectrumFrame {
+    /// Normalised power bins spanning 250–1050 Hz, length = WATERFALL_BINS.
+    pub bins: Vec<f32>,
+    /// Hz positions of signal peaks visible above the noise floor.
+    pub detected_signals: Vec<f64>,
+}
 
 /// A handle to a running live-capture session.
 ///
@@ -40,9 +51,13 @@ impl LiveHandle {
     /// thread, resamples to 8 kHz, and re-decodes the rolling 16 s window every
     /// [`SLIDE_SECS`] of new audio. Both non-empty and empty results are delivered
     /// to `on_result` so the frontend can detect end-of-transmission gaps.
+    ///
+    /// A `spectrum-frame` event is also emitted to `app` for each 1-s chunk so
+    /// the waterfall can render live spectral data.
     pub fn start(
         device: Option<String>,
         tone_hz: Option<f64>,
+        app: tauri::AppHandle,
         on_result: impl Fn(DecodeResult) + Send + 'static,
     ) -> Result<Self, String> {
         let (stop_tx, stop_rx) = mpsc::channel::<()>();
@@ -89,6 +104,10 @@ impl LiveHandle {
                     }
                 };
                 accum.clear();
+
+                // Emit a spectrum frame for the waterfall on every chunk.
+                let (bins, detected_signals) = spectrum_bins(&dsp_chunk, DSP_SAMPLE_RATE);
+                app.emit("spectrum-frame", SpectrumFrame { bins, detected_signals }).ok();
 
                 // Silence detection: if no CW tone in this 1-second chunk, clear the
                 // rolling window so the next transmission decodes from a clean slate,

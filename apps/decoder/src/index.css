@@ -15,18 +15,75 @@
    imported package CSS, so @custom-variant must live in the entry.) */
 @custom-variant dark (&:is(.dark *));
 
-/* App-local token: a warning/amber for the "fair" confidence badge — the shared
-   theme only carries success (good) and destructive (bad). */
+/* App-local tokens */
 @theme inline {
+  /* Amber tuner / dial — timestamps, MANUAL mode, needle */
+  --color-dial: var(--dial);
+  --color-dial-strong: var(--dial-strong);
+  /* Warning/amber for "fair" confidence badge */
   --color-warning: var(--warning);
 }
 
 :root {
+  --dial: oklch(0.62 0.16 55);
+  --dial-strong: oklch(0.52 0.18 50);
   --warning: oklch(0.62 0.16 55);
+  /* Eyebrow typography shorthand */
+  --text-eyebrow: 10.5px;
 }
 
 .dark {
+  --dial: oklch(0.80 0.15 65);
+  --dial-strong: oklch(0.88 0.16 68);
   --warning: oklch(0.8 0.15 65);
+}
+
+/* Graph-paper grid — Cosmic Night signature background */
+.morse-grid::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  background-image:
+    linear-gradient(color-mix(in oklch, var(--border) 40%, transparent) 1px, transparent 1px),
+    linear-gradient(90deg, color-mix(in oklch, var(--border) 40%, transparent) 1px, transparent 1px);
+  background-size: 32px 32px;
+}
+
+/* Eyebrow label utility */
+.morse-eyebrow {
+  font-family: var(--font-mono);
+  font-size: var(--text-eyebrow);
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--muted-foreground);
+}
+
+/* Copy sheet scrollbar */
+.copy-scroll::-webkit-scrollbar { width: 9px; }
+.copy-scroll::-webkit-scrollbar-thumb {
+  background: color-mix(in oklch, var(--muted-foreground) 32%, transparent);
+  border-radius: 5px;
+}
+.copy-scroll::-webkit-scrollbar-track { background: transparent; }
+
+/* Blinking copy cursor */
+@keyframes wf-blink {
+  0%, 48% { opacity: 1; }
+  49%, 100% { opacity: 0; }
+}
+.wf-cursor {
+  animation: wf-blink 1s steps(1) infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .wf-cursor { animation: none; }
+}
+
+/* Status dot pulse */
+@keyframes status-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.45; }
 }
 
 @layer base {

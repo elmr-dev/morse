@@ -2,6 +2,14 @@ import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
+import { CopySheet, type CopyLine } from './components/CopySheet';
+import { StatusBar } from './components/StatusBar';
+import { TitleBar } from './components/TitleBar';
+import { Toolbar } from './components/Toolbar';
+import { WaterfallPanel } from './components/WaterfallPanel';
+
+// ── Types ────────────────────────────────────────────────────────────────────
+
 /** Mirror of `DeviceInfo` from Rust. */
 interface DeviceInfo {
   id: string;
@@ -9,7 +17,6 @@ interface DeviceInfo {
   default: boolean;
 }
 
-/** Single decoded character with its per-emission model confidence. */
 interface CharResult {
   ch: string;
   confidence: number;
@@ -23,35 +30,31 @@ interface DecodeResult {
   detectedToneHz: number;
 }
 
-type DeviceState =
-  | { status: 'loading' }
-  | { status: 'error'; message: string }
-  | { status: 'ready'; devices: DeviceInfo[] };
+/** Mirror of the Rust `SpectrumFrame`. */
+interface SpectrumFrame {
+  bins: number[];
+  detectedSignals: number[];
+}
 
-type OutputDeviceState =
+type DeviceState =
   | { status: 'loading' }
   | { status: 'error'; message: string }
   | { status: 'ready'; devices: DeviceInfo[] };
 
 type MonitorStatus = 'off' | 'starting' | 'on' | 'stopping' | 'error';
 
-/** One row in the copy sheet. */
-interface CopyLine {
-  id: number;
-  /** UTC time the transmission was first detected, formatted as e.g. "1423Z". */
-  timestamp: string;
-  chars: CharResult[];
-  confidence: number;
-  detectedToneHz: number;
-  status: 'active' | 'settled' | 'empty';
-}
+type Colormap = 'viridis' | 'inferno' | 'jet' | 'hot' | 'bone' | 'grayscale';
+
+// ── Constants ────────────────────────────────────────────────────────────────
 
 const DEFAULT_TONE_HZ = 700;
 const STORAGE_PREFIX = 'morse-decoder:';
-/** Opacity floor for low-confidence characters — keeps them readable. */
-const CONFIDENCE_FLOOR = 0.30;
-/** Consecutive empty decode results before the active line is sealed. */
 const GAP_THRESHOLD = 2;
+/** Hz delta that counts as "retuned to a different signal". */
+const RETUNE_THRESHOLD = 30;
+const ENVELOPE_BARS = 52;
+
+// ── Helpers ──────────────────────────────────────────────────────────────────
 
 function loadSetting<T>(key: string, fallback: T): T {
   try {
@@ -70,154 +73,91 @@ function saveSetting(key: string, value: unknown): void {
   }
 }
 
-/** Format a Date as a Zulu (UTC) timestamp: "1423Z". */
 function zuluStamp(date: Date): string {
   const h = date.getUTCHours().toString().padStart(2, '0');
   const m = date.getUTCMinutes().toString().padStart(2, '0');
   return `${h}${m}Z`;
 }
 
-/** Clamp confidence to the opacity floor. */
-function charOpacity(confidence: number): number {
-  return Math.max(CONFIDENCE_FLOOR, Math.min(1.0, confidence));
+function applyTheme(dark: boolean): void {
+  document.documentElement.classList.toggle('dark', dark);
 }
 
-// ---------------------------------------------------------------------------
-// Components
-// ---------------------------------------------------------------------------
-
-/** Render one settled copy-sheet line. */
-function SettledLine({ line }: { line: CopyLine }) {
-  const pct = Math.round(line.confidence * 100);
-  return (
-    <div className="flex items-baseline gap-3 font-mono leading-relaxed">
-      <span className="shrink-0 text-xs text-muted-foreground">{line.timestamp}</span>
-      {line.status === 'empty' ? (
-        <span className="text-muted-foreground/50 text-sm italic">no copy</span>
-      ) : (
-        <>
-          <span className="flex-1 break-all text-base select-text">
-            {line.chars.map((c, i) =>
-              c.ch === ' ' ? (
-                <span key={i}>&nbsp;</span>
-              ) : (
-                <span key={i} style={{ opacity: charOpacity(c.confidence) }}>
-                  {c.ch}
-                </span>
-              )
-            )}
-          </span>
-          <span
-            className="shrink-0 text-xs text-muted-foreground/60 tabular-nums"
-            title="Mean per-emission confidence"
-          >
-            {pct}%
-          </span>
-        </>
-      )}
-    </div>
-  );
-}
-
-/** Render the active (receiving) line — content updates in real-time with a cursor. */
-function ActiveLine({ line }: { line: CopyLine }) {
-  const pct = Math.round(line.confidence * 100);
-  return (
-    <div className="flex items-baseline gap-3 font-mono leading-relaxed">
-      <span className="shrink-0 text-xs text-muted-foreground">{line.timestamp}</span>
-      {line.chars.length > 0 ? (
-        <>
-          <span className="flex-1 break-all text-base select-text">
-            {line.chars.map((c, i) =>
-              c.ch === ' ' ? (
-                <span key={i}>&nbsp;</span>
-              ) : (
-                <span key={i} style={{ opacity: charOpacity(c.confidence) }}>
-                  {c.ch}
-                </span>
-              )
-            )}
-            <span className="text-muted-foreground animate-pulse motion-reduce:animate-none">▌</span>
-          </span>
-          <span className="shrink-0 text-xs text-muted-foreground/60 tabular-nums">
-            {pct}%
-          </span>
-        </>
-      ) : (
-        <span className="text-muted-foreground animate-pulse motion-reduce:animate-none">▌</span>
-      )}
-    </div>
-  );
-}
-
-/** The accumulating copy sheet. */
-function CopySheet({ lines }: { lines: CopyLine[] }) {
-  const bottomRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [lines]);
-
-  if (lines.length === 0) {
-    return (
-      <p className="text-sm text-muted-foreground">
-        Start capture to begin copy. Each transmission appears as a new line.
-      </p>
-    );
-  }
-
-  return (
-    <div className="flex flex-col gap-1 select-text cursor-text">
-      {lines.map((line) =>
-        line.status === 'active' ? (
-          <ActiveLine key={line.id} line={line} />
-        ) : (
-          <SettledLine key={line.id} line={line} />
-        )
-      )}
-      <div ref={bottomRef} />
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// App
-// ---------------------------------------------------------------------------
+// ── App ──────────────────────────────────────────────────────────────────────
 
 function App() {
+  // ── Devices ────────────────────────────────────────────────────────────────
   const [devices, setDevices] = useState<DeviceState>({ status: 'loading' });
-  const [selectedId, setSelectedId] = useState<string>(() =>
-    loadSetting('device', '')
-  );
-  const [autoDetect, setAutoDetect] = useState(() =>
-    loadSetting('autoDetect', true)
-  );
-  const [toneHz, setToneHz] = useState(() =>
-    loadSetting('toneHz', DEFAULT_TONE_HZ)
+  const [selectedId, setSelectedId] = useState<string>(() => loadSetting('device', ''));
+  const [monitorOutputId, setMonitorOutputId] = useState<string>(() =>
+    loadSetting('monitorOutput', ''),
   );
 
-  // Copy sheet
-  const [copyLines, setCopyLines] = useState<CopyLine[]>([]);
+  // ── Tuning ─────────────────────────────────────────────────────────────────
+  const [autoDetect, setAutoDetect] = useState(() => loadSetting('autoDetect', true));
+  const [toneHz, setToneHz] = useState(() => loadSetting('toneHz', DEFAULT_TONE_HZ));
+
+  // ── Capture ────────────────────────────────────────────────────────────────
   const [running, setRunning] = useState(false);
+  const [copyLines, setCopyLines] = useState<CopyLine[]>([]);
   const [lastToneHz, setLastToneHz] = useState(0);
 
-  // Live-capture event state — tracked in refs to avoid stale closures.
+  // Live-capture event state in refs to avoid stale closures.
   const emptyCountRef = useRef(0);
   const currentLineIdRef = useRef<number | null>(null);
+  const lastToneHzRef = useRef(0);
 
-  // Monitor
-  const [outputDevices, setOutputDevices] = useState<OutputDeviceState>({
-    status: 'loading',
-  });
-  const [monitorOutputId, setMonitorOutputId] = useState<string>(() =>
-    loadSetting('monitorOutput', '')
-  );
+  // ── Monitor ────────────────────────────────────────────────────────────────
   const [monitorVolume, setMonitorVolume] = useState<number>(() =>
-    loadSetting('monitorVolume', 1.0)
+    loadSetting('monitorVolume', 1.0),
   );
   const [monitorStatus, setMonitorStatus] = useState<MonitorStatus>('off');
-  const [monitorError, setMonitorError] = useState<string | null>(null);
 
+  // ── Waterfall ──────────────────────────────────────────────────────────────
+  const [spectrumBins, setSpectrumBins] = useState<number[]>([]);
+  const [detectedSignals, setDetectedSignals] = useState<number[]>([]);
+  const [colormap, setColormap] = useState<Colormap>(() =>
+    loadSetting('colormap', 'viridis' as Colormap),
+  );
+
+  // Envelope scope: rolling amplitude bars driven by confidence of incoming events.
+  const [envelopeBars, setEnvelopeBars] = useState<number[]>(() =>
+    new Array(ENVELOPE_BARS).fill(0.03),
+  );
+  const envelopeBarsRef = useRef<number[]>(new Array(ENVELOPE_BARS).fill(0.03));
+
+  // ── Theme ──────────────────────────────────────────────────────────────────
+  const [dark, setDark] = useState(() => {
+    const saved = localStorage.getItem(STORAGE_PREFIX + 'themeOverride');
+    if (saved === 'dark' || saved === 'light') return saved === 'dark';
+    return window.matchMedia('(prefers-color-scheme: dark)').matches;
+  });
+
+  // Sync theme class whenever `dark` changes.
+  useEffect(() => {
+    applyTheme(dark);
+  }, [dark]);
+
+  // OS MQ listener — only fires when no manual override is set.
+  useEffect(() => {
+    const mq = window.matchMedia('(prefers-color-scheme: dark)');
+    const listener = (e: MediaQueryListEvent) => {
+      const override = localStorage.getItem(STORAGE_PREFIX + 'themeOverride');
+      if (override !== 'dark' && override !== 'light') {
+        setDark(e.matches);
+      }
+    };
+    mq.addEventListener('change', listener);
+    return () => mq.removeEventListener('change', listener);
+  }, []);
+
+  function handleThemeToggle() {
+    const next = !dark;
+    setDark(next);
+    saveSetting('themeOverride', next ? 'dark' : 'light');
+  }
+
+  // ── Device loading ─────────────────────────────────────────────────────────
   const loadDevices = useCallback(async () => {
     setDevices({ status: 'loading' });
     try {
@@ -225,8 +165,7 @@ function App() {
       setDevices({ status: 'ready', devices: list });
       setSelectedId((prev) => {
         if (prev && list.some((d) => d.id === prev)) return prev;
-        const preferred = list.find((d) => d.default) ?? list[0];
-        return preferred?.id ?? '';
+        return list.find((d) => d.default)?.id ?? list[0]?.id ?? '';
       });
     } catch (err) {
       setDevices({ status: 'error', message: String(err) });
@@ -234,17 +173,14 @@ function App() {
   }, []);
 
   const loadOutputDevices = useCallback(async () => {
-    setOutputDevices({ status: 'loading' });
     try {
       const list = await invoke<DeviceInfo[]>('list_output_devices');
-      setOutputDevices({ status: 'ready', devices: list });
       setMonitorOutputId((prev) => {
         if (prev && list.some((d) => d.id === prev)) return prev;
-        const preferred = list.find((d) => d.default) ?? list[0];
-        return preferred?.id ?? '';
+        return list.find((d) => d.default)?.id ?? list[0]?.id ?? '';
       });
-    } catch (err) {
-      setOutputDevices({ status: 'error', message: String(err) });
+    } catch {
+      // Non-fatal — monitor will use host default.
     }
   }, []);
 
@@ -253,31 +189,42 @@ function App() {
     void loadOutputDevices();
   }, [loadDevices, loadOutputDevices]);
 
-  useEffect(() => {
-    if (selectedId) saveSetting('device', selectedId);
-  }, [selectedId]);
-  useEffect(() => {
-    saveSetting('autoDetect', autoDetect);
-  }, [autoDetect]);
-  useEffect(() => {
-    saveSetting('toneHz', toneHz);
-  }, [toneHz]);
-  useEffect(() => {
-    if (monitorOutputId) saveSetting('monitorOutput', monitorOutputId);
-  }, [monitorOutputId]);
-  useEffect(() => {
-    saveSetting('monitorVolume', monitorVolume);
-  }, [monitorVolume]);
+  // ── Persist settings ───────────────────────────────────────────────────────
+  useEffect(() => { if (selectedId) saveSetting('device', selectedId); }, [selectedId]);
+  useEffect(() => { saveSetting('autoDetect', autoDetect); }, [autoDetect]);
+  useEffect(() => { saveSetting('toneHz', toneHz); }, [toneHz]);
+  useEffect(() => { if (monitorOutputId) saveSetting('monitorOutput', monitorOutputId); }, [monitorOutputId]);
+  useEffect(() => { saveSetting('monitorVolume', monitorVolume); }, [monitorVolume]);
+  useEffect(() => { saveSetting('colormap', colormap); }, [colormap]);
 
-  // Subscribe to live-decode events while running.
+  // ── Spectrum frames ────────────────────────────────────────────────────────
   useEffect(() => {
     if (!running) return;
+    let unlisten: (() => void) | null = null;
+    listen<SpectrumFrame>('spectrum-frame', (event) => {
+      setSpectrumBins(event.payload.bins);
+      setDetectedSignals(event.payload.detectedSignals);
+    })
+      .then((fn) => { unlisten = fn; })
+      .catch((e: unknown) => console.error('spectrum-frame listen error:', e));
+    return () => { unlisten?.(); };
+  }, [running]);
 
+  // ── Live decode events ─────────────────────────────────────────────────────
+  useEffect(() => {
+    if (!running) return;
     let unlisten: (() => void) | null = null;
 
     listen<DecodeResult>('live-decode', (event) => {
       const result = event.payload;
       const hasContent = result.chars.some((c) => c.ch !== ' ');
+
+      // Update envelope scope.
+      const amp = hasContent
+        ? Math.max(0.1, Math.min(1, result.confidence * 1.2))
+        : 0.03 + Math.random() * 0.05;
+      envelopeBarsRef.current = [...envelopeBarsRef.current.slice(1), amp];
+      setEnvelopeBars(envelopeBarsRef.current.slice());
 
       if (!hasContent) {
         emptyCountRef.current += 1;
@@ -287,70 +234,102 @@ function App() {
           setCopyLines((prev) =>
             prev.map((l) =>
               l.id === sealId
-                ? { ...l, status: l.chars.length > 0 ? ('settled' as const) : ('empty' as const) }
-                : l
-            )
+                ? { ...l, status: (l.chars && l.chars.length > 0 ? 'settled' : 'empty') as CopyLine['status'] }
+                : l,
+            ),
           );
         }
         return;
       }
 
       emptyCountRef.current = 0;
-      if (result.detectedToneHz > 0) setLastToneHz(result.detectedToneHz);
+
+      // Detected a signal at a new frequency — insert a TUNED divider.
+      if (
+        result.detectedToneHz > 0 &&
+        lastToneHzRef.current > 0 &&
+        Math.abs(result.detectedToneHz - lastToneHzRef.current) > RETUNE_THRESHOLD
+      ) {
+        const label = `${Math.round(result.detectedToneHz)} Hz`;
+        setCopyLines((prev) => {
+          if (prev.length === 0) return prev; // first acquisition — no divider
+          const lines = prev.slice();
+          // Collapse rapid hops into the last divider.
+          if (lines[0] && lines[0].divider) {
+            lines[0] = { ...lines[0], label };
+          } else {
+            lines.unshift({ id: 'div-' + Date.now(), divider: true, label });
+          }
+          return lines.length > 250 ? lines.slice(0, 250) : lines;
+        });
+        if (currentLineIdRef.current !== null) {
+          const sealId = currentLineIdRef.current;
+          currentLineIdRef.current = null;
+          setCopyLines((prev) =>
+            prev.map((l) =>
+              l.id === sealId
+                ? { ...l, status: (l.chars && l.chars.length > 0 ? 'settled' : 'empty') as CopyLine['status'] }
+                : l,
+            ),
+          );
+        }
+      }
+
+      if (result.detectedToneHz > 0) {
+        lastToneHzRef.current = result.detectedToneHz;
+        setLastToneHz(result.detectedToneHz);
+        // In AUTO mode, follow the detected tone.
+        if (autoDetect) setToneHz(Math.round(result.detectedToneHz));
+      }
 
       if (currentLineIdRef.current === null) {
-        // New transmission detected after a gap — start a fresh line.
         const lineId = Date.now();
         const ts = zuluStamp(new Date());
         currentLineIdRef.current = lineId;
-        setCopyLines((prev) => [
-          ...prev,
-          {
-            id: lineId,
-            timestamp: ts,
-            chars: result.chars,
-            confidence: result.confidence,
-            detectedToneHz: result.detectedToneHz,
-            status: 'active',
-          },
-        ]);
+        setCopyLines((prev) => {
+          const next = [
+            {
+              id: lineId,
+              timestamp: ts,
+              chars: result.chars,
+              confidence: result.confidence,
+              status: 'active' as const,
+            },
+            ...prev,
+          ];
+          return next.length > 250 ? next.slice(0, 250) : next;
+        });
       } else {
-        // Update the current active line with the latest decode window.
         const updateId = currentLineIdRef.current;
         setCopyLines((prev) =>
           prev.map((l) =>
             l.id === updateId
-              ? {
-                  ...l,
-                  chars: result.chars,
-                  confidence: result.confidence,
-                  detectedToneHz: result.detectedToneHz,
-                }
-              : l
-          )
+              ? { ...l, chars: result.chars, confidence: result.confidence }
+              : l,
+          ),
         );
       }
     })
-      .then((fn) => {
-        unlisten = fn;
-      })
+      .then((fn) => { unlisten = fn; })
       .catch((e: unknown) => console.error('live-decode listen error:', e));
 
-    return () => {
-      unlisten?.();
-    };
-  }, [running]); // eslint-disable-line react-hooks/exhaustive-deps
+    return () => { unlisten?.(); };
+  }, [running, autoDetect]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Ensure the Rust capture stops if the webview is destroyed.
+  // Stop capture when webview is destroyed.
   useEffect(() => {
-    return () => {
-      invoke('stop_live_capture').catch(() => {});
-    };
+    return () => { invoke('stop_live_capture').catch(() => {}); };
   }, []);
 
+  // ── Capture control ────────────────────────────────────────────────────────
   async function handleStart() {
     emptyCountRef.current = 0;
     currentLineIdRef.current = null;
+    lastToneHzRef.current = 0;
+    setSpectrumBins([]);
+    setDetectedSignals([]);
+    envelopeBarsRef.current = new Array(ENVELOPE_BARS).fill(0.03);
+    setEnvelopeBars(envelopeBarsRef.current.slice());
     setRunning(true);
     try {
       await invoke('start_live_capture', {
@@ -361,54 +340,41 @@ function App() {
       setRunning(false);
       const ts = zuluStamp(new Date());
       setCopyLines((prev) => [
+        { id: Date.now(), timestamp: ts, chars: [{ ch: String(err), confidence: 1.0 }], confidence: 0, status: 'empty' as const },
         ...prev,
-        {
-          id: Date.now(),
-          timestamp: ts,
-          chars: [{ ch: String(err), confidence: 1.0 }],
-          confidence: 0,
-          detectedToneHz: 0,
-          status: 'empty',
-        },
       ]);
     }
   }
 
   async function handleStop() {
     setRunning(false);
-    try {
-      await invoke('stop_live_capture');
-    } catch {
-      // ignore
-    }
-    // Seal any still-active line.
+    try { await invoke('stop_live_capture'); } catch { /* ignore */ }
     if (currentLineIdRef.current !== null) {
       const sealId = currentLineIdRef.current;
       currentLineIdRef.current = null;
       setCopyLines((prev) =>
         prev.map((l) =>
           l.id === sealId
-            ? { ...l, status: l.chars.length > 0 ? ('settled' as const) : ('empty' as const) }
-            : l
-        )
+            ? { ...l, status: (l.chars && l.chars.length > 0 ? 'settled' : 'empty') as CopyLine['status'] }
+            : l,
+        ),
       );
     }
     emptyCountRef.current = 0;
+    envelopeBarsRef.current = new Array(ENVELOPE_BARS).fill(0.03);
+    setEnvelopeBars(envelopeBarsRef.current.slice());
   }
 
-  const monitorOn = monitorStatus === 'on';
-  const monitorBusy = monitorStatus === 'starting' || monitorStatus === 'stopping';
-
+  // ── Monitor control ────────────────────────────────────────────────────────
   async function handleMonitorToggle() {
-    setMonitorError(null);
+    const monitorOn = monitorStatus === 'on';
     if (monitorOn) {
       setMonitorStatus('stopping');
       try {
         await invoke('stop_monitor');
         setMonitorStatus('off');
-      } catch (err) {
+      } catch {
         setMonitorStatus('error');
-        setMonitorError(String(err));
       }
     } else {
       setMonitorStatus('starting');
@@ -419,279 +385,104 @@ function App() {
           volume: monitorVolume,
         });
         setMonitorStatus('on');
-      } catch (err) {
+      } catch {
         setMonitorStatus('error');
-        setMonitorError(String(err));
       }
     }
   }
 
   async function handleVolumeChange(v: number) {
     setMonitorVolume(v);
-    if (monitorOn) {
-      try {
-        await invoke('set_monitor_volume', { volume: v });
-      } catch {
-        // non-fatal
-      }
+    if (monitorStatus === 'on') {
+      try { await invoke('set_monitor_volume', { volume: v }); } catch { /* non-fatal */ }
     }
   }
 
-  const fieldCls = 'flex flex-col gap-1.5';
-  const labelCls = 'text-sm font-semibold';
-  const inputCls =
-    'min-h-11 w-full rounded-lg border border-input bg-transparent px-3 text-base';
-  const hintCls = 'text-xs text-muted-foreground';
-  const linkCls = 'min-h-11 px-1 text-primary';
+  // ── Tuning control ─────────────────────────────────────────────────────────
+  function handleSetAuto() {
+    setAutoDetect(true);
+    if (lastToneHz > 0) setToneHz(Math.round(lastToneHz));
+  }
+
+  function handleSetManual() {
+    setAutoDetect(false);
+  }
+
+  function handleWaterfallTune(hz: number) {
+    setToneHz(hz);
+    setAutoDetect(false);
+  }
+
+  // ── Render ─────────────────────────────────────────────────────────────────
+  const inputDevices =
+    devices.status === 'ready' ? devices.devices : [];
+  const selectedDevice = inputDevices.find((d) => d.id === selectedId);
+
+  // Mean confidence of the last settled line.
+  const lastConfidence = (() => {
+    for (const l of copyLines) {
+      if (!l.divider && l.status === 'settled' && l.confidence != null) return l.confidence;
+    }
+    return 0;
+  })();
 
   return (
-    <main className="mx-auto flex max-w-xl flex-col gap-6 px-4 pt-6 pb-12">
-      <header>
-        <h1 className="text-2xl font-semibold">Morse Decoder</h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Capture live audio from an input device and decode CW.
-        </p>
-      </header>
+    <div
+      style={{
+        height: '100vh',
+        display: 'flex',
+        flexDirection: 'column',
+        background: 'var(--card)',
+        overflow: 'hidden',
+      }}
+    >
+      <TitleBar dark={dark} onThemeToggle={handleThemeToggle} />
 
-      {/* Capture settings */}
-      <section className="flex flex-col gap-4" aria-label="Capture settings">
-        <div className={fieldCls}>
-          <label htmlFor="device" className={labelCls}>
-            Input device
-          </label>
-          {devices.status === 'loading' && (
-            <div
-              className="h-11 animate-pulse rounded-lg bg-muted motion-reduce:animate-none"
-              aria-hidden="true"
-            />
-          )}
-          {devices.status === 'error' && (
-            <p className="text-destructive" role="alert">
-              Could not list devices: {devices.message}{' '}
-              <button type="button" className={linkCls} onClick={loadDevices}>
-                Retry
-              </button>
-            </p>
-          )}
-          {devices.status === 'ready' &&
-            (devices.devices.length === 0 ? (
-              <p className="text-muted-foreground">
-                No input devices found.{' '}
-                <button type="button" className={linkCls} onClick={loadDevices}>
-                  Refresh
-                </button>
-              </p>
-            ) : (
-              <div className="flex items-center gap-2">
-                <select
-                  id="device"
-                  className={`${inputCls} flex-1`}
-                  value={selectedId}
-                  onChange={(e) => setSelectedId(e.target.value)}
-                  disabled={running}
-                >
-                  {devices.devices.map((d) => (
-                    <option key={d.id} value={d.id}>
-                      {d.name}
-                      {d.default ? ' (default)' : ''}
-                    </option>
-                  ))}
-                </select>
-                <button
-                  type="button"
-                  className={linkCls}
-                  onClick={loadDevices}
-                  disabled={running}
-                >
-                  Refresh
-                </button>
-              </div>
-            ))}
-        </div>
+      <Toolbar
+        devices={inputDevices}
+        selectedId={selectedId}
+        onDeviceChange={setSelectedId}
+        running={running}
+        monitorStatus={monitorStatus}
+        monitorVolume={monitorVolume}
+        onMonitorToggle={() => void handleMonitorToggle()}
+        onVolumeChange={(v) => void handleVolumeChange(v)}
+        toneHz={autoDetect && lastToneHz > 0 ? lastToneHz : toneHz}
+        autoDetect={autoDetect}
+        onSetAuto={handleSetAuto}
+        onSetManual={handleSetManual}
+        onStart={() => void handleStart()}
+        onStop={() => void handleStop()}
+      />
 
-        <div className={fieldCls}>
-          <span className={labelCls}>Tone (Hz)</span>
-          <label className="flex min-h-11 cursor-pointer items-center gap-2 rounded-lg border border-input px-3">
-            <input
-              type="checkbox"
-              className="h-4 w-4 accent-primary"
-              checked={autoDetect}
-              disabled={running}
-              onChange={(e) => setAutoDetect(e.target.checked)}
-            />
-            <span className="text-base">Auto-detect</span>
-            {lastToneHz > 0 && (
-              <span className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
-                {Math.round(lastToneHz)} Hz
-              </span>
-            )}
-          </label>
-          {!autoDetect && (
-            <input
-              id="tone"
-              className={inputCls}
-              type="number"
-              min={100}
-              max={2000}
-              step={10}
-              value={toneHz}
-              disabled={running}
-              onChange={(e) => setToneHz(Number(e.target.value))}
-            />
-          )}
-          <span className={hintCls}>
-            {autoDetect
-              ? 'Spectral peak in 300–1000 Hz'
-              : 'IC-7300 factory pitch is 600 Hz'}
-          </span>
-        </div>
+      {/* Body: waterfall | copy sheet */}
+      <div style={{ flex: 1, minHeight: 0, display: 'flex' }}>
+        <WaterfallPanel
+          spectrumBins={spectrumBins}
+          detectedSignals={detectedSignals}
+          toneHz={autoDetect && lastToneHz > 0 ? lastToneHz : toneHz}
+          autoDetect={autoDetect}
+          colormap={colormap}
+          running={running}
+          onColormapChange={setColormap}
+          onTune={handleWaterfallTune}
+          envelopeBars={envelopeBars}
+        />
 
-        <button
-          type="button"
-          className={`min-h-12 cursor-pointer rounded-lg px-5 font-semibold transition-opacity active:opacity-85 disabled:cursor-default disabled:opacity-50 ${
-            running
-              ? 'bg-destructive text-destructive-foreground'
-              : 'bg-primary text-primary-foreground'
-          }`}
-          onClick={() => void (running ? handleStop() : handleStart())}
-          disabled={!running && devices.status !== 'ready'}
-          aria-busy={running}
-        >
-          {running ? 'Stop' : 'Start'}
-        </button>
-      </section>
+        <CopySheet
+          lines={copyLines}
+          onClear={() => setCopyLines([])}
+        />
+      </div>
 
-      {/* Copy sheet */}
-      <section
-        className="flex flex-col gap-3 rounded-xl border border-border p-4"
-        aria-label="Copy sheet"
-        aria-live="polite"
-      >
-        <h2 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-          Copy sheet
-        </h2>
-        <CopySheet lines={copyLines} />
-        {copyLines.length > 0 && (
-          <button
-            type="button"
-            className="self-start text-xs text-muted-foreground/60 hover:text-muted-foreground transition-colors"
-            onClick={() => setCopyLines([])}
-          >
-            Clear
-          </button>
-        )}
-      </section>
-
-      {/* Monitor */}
-      <section className="flex flex-col gap-4" aria-label="Monitor">
-        <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-          Monitor
-        </h2>
-
-        <div className={fieldCls}>
-          <label htmlFor="output-device" className={labelCls}>
-            Output device
-          </label>
-          {outputDevices.status === 'loading' && (
-            <div
-              className="h-11 animate-pulse rounded-lg bg-muted motion-reduce:animate-none"
-              aria-hidden="true"
-            />
-          )}
-          {outputDevices.status === 'error' && (
-            <p className="text-destructive" role="alert">
-              Could not list devices: {outputDevices.message}{' '}
-              <button
-                type="button"
-                className={linkCls}
-                onClick={loadOutputDevices}
-              >
-                Retry
-              </button>
-            </p>
-          )}
-          {outputDevices.status === 'ready' &&
-            (outputDevices.devices.length === 0 ? (
-              <p className="text-muted-foreground">
-                No output devices found.{' '}
-                <button
-                  type="button"
-                  className={linkCls}
-                  onClick={loadOutputDevices}
-                >
-                  Refresh
-                </button>
-              </p>
-            ) : (
-              <div className="flex items-center gap-2">
-                <select
-                  id="output-device"
-                  className={`${inputCls} flex-1`}
-                  value={monitorOutputId}
-                  onChange={(e) => setMonitorOutputId(e.target.value)}
-                  disabled={monitorOn || monitorBusy}
-                >
-                  {outputDevices.devices.map((d) => (
-                    <option key={d.id} value={d.id}>
-                      {d.name}
-                      {d.default ? ' (default)' : ''}
-                    </option>
-                  ))}
-                </select>
-                <button
-                  type="button"
-                  className={linkCls}
-                  onClick={loadOutputDevices}
-                  disabled={monitorOn || monitorBusy}
-                >
-                  Refresh
-                </button>
-              </div>
-            ))}
-        </div>
-
-        <div className={fieldCls}>
-          <label htmlFor="monitor-volume" className={labelCls}>
-            Volume{' '}
-            <span className="font-normal text-muted-foreground">
-              {Math.round(monitorVolume * 100)}%
-            </span>
-          </label>
-          <input
-            id="monitor-volume"
-            type="range"
-            min={0}
-            max={1}
-            step={0.05}
-            value={monitorVolume}
-            className="h-11 w-full cursor-pointer accent-primary"
-            onChange={(e) => void handleVolumeChange(Number(e.target.value))}
-          />
-        </div>
-
-        <button
-          type="button"
-          className="min-h-12 cursor-pointer rounded-lg bg-primary px-5 font-semibold text-primary-foreground transition-opacity active:opacity-85 disabled:cursor-default disabled:opacity-50"
-          onClick={() => void handleMonitorToggle()}
-          disabled={monitorBusy || outputDevices.status !== 'ready'}
-          aria-pressed={monitorOn}
-        >
-          {monitorStatus === 'starting'
-            ? 'Starting…'
-            : monitorStatus === 'stopping'
-              ? 'Stopping…'
-              : monitorOn
-                ? 'Stop monitor'
-                : 'Start monitor'}
-        </button>
-
-        {monitorStatus === 'error' && monitorError && (
-          <p className="text-sm text-destructive" role="alert">
-            {monitorError}
-          </p>
-        )}
-      </section>
-    </main>
+      <StatusBar
+        running={running}
+        deviceName={selectedDevice?.name ?? ''}
+        toneHz={autoDetect && lastToneHz > 0 ? lastToneHz : toneHz}
+        autoDetect={autoDetect}
+        confidence={lastConfidence}
+      />
+    </div>
   );
 }
 
