@@ -155,6 +155,7 @@ export function WaterfallPanel({
       if (!ctx) return;
       const W = c.width;
       const H = c.height;
+      if (H < 2) return; // can't scroll a degenerate canvas
 
       // Scroll existing content down by 1 px.
       ctx.drawImage(c, 0, 0, W, H - 1, 0, 1, W, H - 1);

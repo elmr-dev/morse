@@ -90,6 +90,11 @@
   * {
     @apply border-border;
   }
+  /* Explicitly set a solid background on <html> so the transparent-title-bar
+     native window never bleeds through during re-renders or focus changes. */
+  html {
+    background: var(--background);
+  }
   body {
     @apply bg-background text-foreground;
     margin: 0;
