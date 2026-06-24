@@ -2,8 +2,10 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+import { getCurrentWindow } from '@tauri-apps/api/window';
 import logoUrl from '@morse/brand/web/logo.svg';
 import { Monitor, Moon, Sun } from 'lucide-react';
+import React from 'react';
 import type { ThemeOverride } from '../app';
 
 interface TitleBarProps {
@@ -20,7 +22,12 @@ const THEME_META: Record<ThemeOverride, { icon: React.ReactNode; label: string; 
 };
 void CYCLE; // referenced by THEME_META; silence unused-var lint
 
-import React from 'react';
+function handleBarMouseDown(e: React.MouseEvent<HTMLDivElement>) {
+  if (e.button !== 0) return;
+  const target = e.target as HTMLElement;
+  if (target.closest('button, a, input, select')) return;
+  void getCurrentWindow().startDragging();
+}
 
 export function TitleBar({ themeOverride, onThemeChange }: TitleBarProps) {
   const { icon, label, next } = THEME_META[themeOverride];
@@ -28,6 +35,7 @@ export function TitleBar({ themeOverride, onThemeChange }: TitleBarProps) {
   return (
     <div
       data-tauri-drag-region
+      onMouseDown={handleBarMouseDown}
       style={{
         height: '38px',
         flexShrink: 0,
