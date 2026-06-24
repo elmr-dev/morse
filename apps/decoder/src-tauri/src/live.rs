@@ -113,7 +113,8 @@ impl LiveHandle {
                 // Silence detection: if no CW tone in this 1-second chunk, clear the
                 // rolling window so the next transmission decodes from a clean slate,
                 // and emit an empty result so the frontend can detect end-of-transmission.
-                if detect_tone(&dsp_chunk, DSP_SAMPLE_RATE).is_none() {
+                let chunk_tone = detect_tone(&dsp_chunk, DSP_SAMPLE_RATE);
+                if chunk_tone.is_none() {
                     rolling.clear();
                     on_result(DecodeResult {
                         chars: vec![],
@@ -137,7 +138,14 @@ impl LiveHandle {
                 }
 
                 let window: Vec<f32> = rolling.iter().copied().collect();
-                match decode_samples(&window, DSP_SAMPLE_RATE, tone_hz) {
+                // In AUTO mode (tone_hz == None), anchor the decode to the strongest
+                // tone found in the *current* 1-s chunk so we always follow the
+                // strongest live signal rather than re-detecting in the stale window.
+                let effective_tone = match tone_hz {
+                    Some(_) => tone_hz,
+                    None => chunk_tone,
+                };
+                match decode_samples(&window, DSP_SAMPLE_RATE, effective_tone) {
                     Ok(result) => on_result(result),
                     Err(e) => eprintln!("live capture: decode error: {e}"),
                 }
