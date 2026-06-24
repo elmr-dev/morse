@@ -26,7 +26,9 @@ function handleBarMouseDown(e: React.MouseEvent<HTMLDivElement>) {
   if (e.button !== 0) return;
   const target = e.target as HTMLElement;
   if (target.closest('button, a, input, select')) return;
-  void getCurrentWindow().startDragging();
+  getCurrentWindow().startDragging().catch((err: unknown) => {
+    console.error('[TitleBar] startDragging failed:', err);
+  });
 }
 
 export function TitleBar({ themeOverride, onThemeChange }: TitleBarProps) {
